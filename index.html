@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse Lab</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Pulse Lab</h1>
+          <p>Trend, flow, and momentum monitor</p>
+        </div>
+        <button id="refreshBtn" class="refresh-btn" type="button">Refresh</button>
+      </header>
+
+      <main>
+        <section class="status-strip" id="statusStrip" aria-live="polite">
+          <span id="statusText">Loading market data...</span>
+        </section>
+
+        <section class="overview" id="overviewCards">
+          <article class="card">
+            <h2>BTC Price</h2>
+            <p id="btcPrice" class="value">—</p>
+            <p id="btcMeta" class="meta">Waiting for update</p>
+          </article>
+          <article class="card">
+            <h2>ETH Price</h2>
+            <p id="ethPrice" class="value">—</p>
+            <p id="ethMeta" class="meta">Waiting for update</p>
+          </article>
+          <article class="card">
+            <h2>SOL Price</h2>
+            <p id="solPrice" class="value">—</p>
+            <p id="solMeta" class="meta">Waiting for update</p>
+          </article>
+          <article class="card">
+            <h2>24h Change</h2>
+            <p id="marketChange" class="value">—</p>
+            <p class="meta">Average of BTC, ETH, SOL</p>
+          </article>
+          <article class="card">
+            <h2>24h Volume</h2>
+            <p id="marketVolume" class="value">—</p>
+            <p class="meta">Combined quote volume (USDT)</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Watchlist</h2>
+            <p>Signal status for monitored pairs</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pair</th>
+                  <th>Price</th>
+                  <th>24h Change</th>
+                  <th>24h Volume</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody id="watchlistBody">
+                <tr>
+                  <td colspan="5" class="state-row">Loading watchlist...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel sentiment" id="sentimentPanel">
+          <div class="panel-header">
+            <h2>Market Sentiment</h2>
+            <p>Alternative.me Fear &amp; Greed Index</p>
+          </div>
+          <div class="sentiment-grid">
+            <div>
+              <p class="label">Index Value</p>
+              <p class="sentiment-value" id="fgValue">—</p>
+            </div>
+            <div>
+              <p class="label">Classification</p>
+              <p class="sentiment-text" id="fgText">Waiting for data</p>
+            </div>
+            <div>
+              <p class="label">Updated</p>
+              <p class="sentiment-text" id="fgTime">—</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
