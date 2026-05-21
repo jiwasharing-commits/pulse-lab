@@ -1,234 +1,261 @@
-const WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
-const OVERVIEW_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
-const BINANCE_TICKER_ENDPOINTS = [
-  "https://api.binance.com/api/v3/ticker/24hr",
-  "https://data-api.binance.vision/api/v3/ticker/24hr",
-];
+const BTC_TICKER_URL = "https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT";
+const BTC_WEEKLY_KLINE_URL = "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=120";
+const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
+const RSI_PERIOD = 14;
+const RSI_WINDOW = 13;
 
 const els = {
   statusText: document.getElementById("statusText"),
   refreshBtn: document.getElementById("refreshBtn"),
-  watchlistBody: document.getElementById("watchlistBody"),
   btcPrice: document.getElementById("btcPrice"),
-  ethPrice: document.getElementById("ethPrice"),
-  solPrice: document.getElementById("solPrice"),
-  btcMeta: document.getElementById("btcMeta"),
-  ethMeta: document.getElementById("ethMeta"),
-  solMeta: document.getElementById("solMeta"),
-  marketChange: document.getElementById("marketChange"),
-  marketVolume: document.getElementById("marketVolume"),
+  btcPriceMeta: document.getElementById("btcPriceMeta"),
+  btc24h: document.getElementById("btc24h"),
+  rsiCurrent: document.getElementById("rsiCurrent"),
+  rsiStatus: document.getElementById("rsiStatus"),
+  rsi4w: document.getElementById("rsi4w"),
+  rsi12w: document.getElementById("rsi12w"),
+  direction: document.getElementById("direction"),
+  chartState: document.getElementById("chartState"),
   fgValue: document.getElementById("fgValue"),
   fgText: document.getElementById("fgText"),
   fgTime: document.getElementById("fgTime"),
+  rsiChart: document.getElementById("rsiChart"),
 };
 
+let chart;
+
 function formatUsd(value) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value > 1000 ? 0 : 2,
-  }).format(value);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value > 1000 ? 0 : 2 }).format(value);
 }
 
-function formatCompact(value) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
+function setLoadingState() {
+  els.statusText.textContent = "Loading BTC ticker, weekly RSI, and sentiment...";
+  els.btcPrice.textContent = "—";
+  els.btcPriceMeta.textContent = "Loading...";
+  els.btc24h.textContent = "—";
+  els.rsiCurrent.textContent = "—";
+  els.rsiStatus.textContent = "Loading...";
+  els.rsi4w.textContent = "—";
+  els.rsi12w.textContent = "—";
+  els.direction.textContent = "—";
+  els.chartState.textContent = "Loading weekly RSI chart...";
+  els.fgValue.textContent = "—";
+  els.fgText.textContent = "Loading...";
+  els.fgTime.textContent = "—";
 }
 
-function getSignal(changePct, quoteVolume, averageVolume) {
-  const volumeStrong = quoteVolume > averageVolume * 1.05;
+function classifyRsi(rsi) {
+  if (rsi < 30) return "Deep Weak Zone";
+  if (rsi < 45) return "Weak Zone";
+  if (rsi < 55) return "Neutral Zone";
+  if (rsi <= 70) return "Strong Zone";
+  return "Heated Zone";
+}
 
-  if (changePct > 3 && volumeStrong) {
-    return { label: "Bullish", className: "bullish" };
+function getDirection(w0, w1, w4, w12) {
+  if (w0 > w1 && w0 > w4 && w0 > w12) return "Strong Rising";
+  if (w0 > w4 && w0 > w12) return "Rising";
+  if (w0 < w4 && w0 < w12) return "Weakening";
+  return "Mixed";
+}
+
+function calculateRsiSeries(closes, period = RSI_PERIOD) {
+  if (closes.length <= period) return [];
+
+  const rsis = [];
+  let gainSum = 0;
+  let lossSum = 0;
+
+  for (let i = 1; i <= period; i += 1) {
+    const delta = closes[i] - closes[i - 1];
+    gainSum += delta > 0 ? delta : 0;
+    lossSum += delta < 0 ? Math.abs(delta) : 0;
   }
-  if (changePct < -3) {
-    return { label: "Bearish", className: "bearish" };
-  }
-  return { label: "Neutral", className: "neutral" };
-}
 
-async function fetchJsonWithFallback(urls) {
-  let lastError;
+  let avgGain = gainSum / period;
+  let avgLoss = lossSum / period;
 
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, { method: "GET" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      return await response.json();
-    } catch (error) {
-      lastError = error;
+  for (let i = period + 1; i < closes.length; i += 1) {
+    const delta = closes[i] - closes[i - 1];
+    const gain = delta > 0 ? delta : 0;
+    const loss = delta < 0 ? Math.abs(delta) : 0;
+
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+    if (avgLoss === 0) {
+      rsis.push(100);
+    } else {
+      const rs = avgGain / avgLoss;
+      rsis.push(100 - 100 / (1 + rs));
     }
   }
 
-  throw lastError || new Error("All endpoints failed");
+  return rsis;
 }
 
-async function fetchTickerData() {
-  return fetchJsonWithFallback(BINANCE_TICKER_ENDPOINTS);
+function renderChart(values) {
+  const labels = ["W-12", "W-11", "W-10", "W-9", "W-8", "W-7", "W-6", "W-5", "W-4", "W-3", "W-2", "W-1", "W0"];
+
+  if (chart) chart.destroy();
+
+  chart = new Chart(els.rsiChart, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "BTC Weekly RSI",
+          data: values,
+          borderColor: "#6f8cff",
+          backgroundColor: "rgba(111,140,255,0.2)",
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.28,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#e8ecf8" } },
+        tooltip: { callbacks: { label: (ctx) => `RSI: ${ctx.parsed.y.toFixed(2)}` } },
+      },
+      scales: {
+        x: {
+          ticks: { color: "#95a2c7" },
+          grid: { color: "rgba(35,48,83,0.5)" },
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: { color: "#95a2c7", stepSize: 10 },
+          grid: {
+            color: (ctx) => ([30, 50, 70].includes(ctx.tick.value) ? "rgba(246,196,69,0.7)" : "rgba(35,48,83,0.5)"),
+          },
+        },
+      },
+    },
+  });
 }
 
-async function fetchFearGreed() {
-  const response = await fetch("https://api.alternative.me/fng/?limit=1", { method: "GET" });
-  if (!response.ok) {
-    throw new Error(`Fear & Greed HTTP ${response.status}`);
-  }
+async function fetchJson(url) {
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
 
-function setOverviewState(message) {
-  els.btcPrice.textContent = "—";
-  els.ethPrice.textContent = "—";
-  els.solPrice.textContent = "—";
-  els.marketChange.textContent = "—";
-  els.marketVolume.textContent = "—";
-  els.marketChange.className = "value";
-  els.btcMeta.textContent = message;
-  els.ethMeta.textContent = message;
-  els.solMeta.textContent = message;
-}
+function updateTickerCard(ticker) {
+  const price = Number(ticker.lastPrice);
+  const change = Number(ticker.priceChangePercent);
 
-function setWatchlistState(message) {
-  els.watchlistBody.innerHTML = `<tr><td colspan="5" class="state-row">${message}</td></tr>`;
-}
-
-function setSentimentState(value, text, time) {
-  els.fgValue.textContent = value;
-  els.fgText.textContent = text;
-  els.fgTime.textContent = time;
-}
-
-function setLoadingStates() {
-  els.statusText.textContent = "Loading market data...";
-  setOverviewState("Loading...");
-  setWatchlistState("Loading watchlist...");
-  setSentimentState("—", "Loading sentiment...", "—");
-}
-
-function updateOverview(overviewRows) {
-  if (overviewRows.length !== OVERVIEW_SYMBOLS.length) {
-    setOverviewState("Overview unavailable");
-    return;
+  if (!Number.isFinite(price) || !Number.isFinite(change)) {
+    throw new Error("Ticker parse error");
   }
 
-  const bySymbol = Object.fromEntries(overviewRows.map((row) => [row.symbol, row]));
-  const btc = bySymbol.BTCUSDT;
-  const eth = bySymbol.ETHUSDT;
-  const sol = bySymbol.SOLUSDT;
-
-  const setCoin = (coin, priceEl, metaEl) => {
-    const changeClass = coin.changePct >= 0 ? "pos" : "neg";
-    priceEl.textContent = formatUsd(coin.lastPrice);
-    metaEl.innerHTML = `<span class="${changeClass}">${coin.changePct.toFixed(2)}%</span> in 24h`;
-  };
-
-  setCoin(btc, els.btcPrice, els.btcMeta);
-  setCoin(eth, els.ethPrice, els.ethMeta);
-  setCoin(sol, els.solPrice, els.solMeta);
-
-  const averageChange = (btc.changePct + eth.changePct + sol.changePct) / 3;
-  const combinedVolume = btc.quoteVolume + eth.quoteVolume + sol.quoteVolume;
-
-  els.marketChange.textContent = `${averageChange >= 0 ? "+" : ""}${averageChange.toFixed(2)}%`;
-  els.marketChange.className = `value ${averageChange >= 0 ? "pos" : "neg"}`;
-  els.marketVolume.textContent = formatCompact(combinedVolume);
+  els.btcPrice.textContent = formatUsd(price);
+  els.btcPriceMeta.textContent = "BTCUSDT 24h ticker";
+  els.btc24h.textContent = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+  els.btc24h.className = `value ${change >= 0 ? "pos" : "neg"}`;
 }
 
-function updateWatchlist(rows) {
-  if (!rows.length) {
-    setWatchlistState("No symbols available.");
-    return;
+function updateRsiSection(klines) {
+  const closes = klines.map((k) => Number(k[4])).filter((v) => Number.isFinite(v));
+  const rsiSeries = calculateRsiSeries(closes, RSI_PERIOD);
+
+  if (rsiSeries.length < RSI_WINDOW) {
+    throw new Error("Not enough weekly data for RSI window");
   }
 
-  const avgVolume = rows.reduce((sum, row) => sum + row.quoteVolume, 0) / rows.length;
+  const latest13 = rsiSeries.slice(-RSI_WINDOW);
+  const w0 = latest13[12];
+  const w1 = latest13[11];
+  const w4 = latest13[8];
+  const w12 = latest13[0];
 
-  els.watchlistBody.innerHTML = rows
-    .map((row) => {
-      const signal = getSignal(row.changePct, row.quoteVolume, avgVolume);
-      const changeClass = row.changePct >= 0 ? "pos" : "neg";
+  const delta4w = w0 - w4;
+  const delta12w = w0 - w12;
 
-      return `
-        <tr>
-          <td>${row.symbol}</td>
-          <td>${formatUsd(row.lastPrice)}</td>
-          <td class="${changeClass}">${row.changePct.toFixed(2)}%</td>
-          <td>${formatCompact(row.quoteVolume)}</td>
-          <td><span class="badge ${signal.className}">${signal.label}</span></td>
-        </tr>
-      `;
-    })
-    .join("");
+  els.rsiCurrent.textContent = w0.toFixed(2);
+  els.rsiStatus.textContent = classifyRsi(w0);
+  els.rsi4w.textContent = `${delta4w >= 0 ? "+" : ""}${delta4w.toFixed(2)}`;
+  els.rsi4w.className = `value ${delta4w >= 0 ? "pos" : "neg"}`;
+  els.rsi12w.textContent = `${delta12w >= 0 ? "+" : ""}${delta12w.toFixed(2)}`;
+  els.rsi12w.className = `value ${delta12w >= 0 ? "pos" : "neg"}`;
+  els.direction.textContent = getDirection(w0, w1, w4, w12);
+  els.chartState.textContent = "Weekly data is used for long-range momentum monitoring.";
+
+  renderChart(latest13.map((v) => Number(v.toFixed(2))));
 }
 
-function updateFearGreed(payload) {
-  const latest = payload?.data?.[0];
+function updateFearGreed(data) {
+  const latest = data?.data?.[0];
   if (!latest) {
-    setSentimentState("—", "Sentiment unavailable", "No timestamp");
+    els.fgValue.textContent = "—";
+    els.fgText.textContent = "Unavailable";
+    els.fgTime.textContent = "No timestamp";
     return;
   }
 
   const timestamp = Number(latest.timestamp) * 1000;
-  setSentimentState(
-    latest.value,
-    latest.value_classification,
-    Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : "Timestamp unavailable"
-  );
-}
-
-function normalizeTickerRows(tickerData) {
-  if (!Array.isArray(tickerData)) {
-    return [];
-  }
-
-  return tickerData
-    .filter((row) => WATCHLIST.includes(row.symbol))
-    .map((row) => ({
-      symbol: row.symbol,
-      lastPrice: Number(row.lastPrice),
-      changePct: Number(row.priceChangePercent),
-      quoteVolume: Number(row.quoteVolume),
-    }))
-    .filter((row) => Number.isFinite(row.lastPrice) && Number.isFinite(row.changePct) && Number.isFinite(row.quoteVolume));
+  els.fgValue.textContent = latest.value;
+  els.fgText.textContent = latest.value_classification;
+  els.fgTime.textContent = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : "Timestamp unavailable";
 }
 
 async function loadDashboard() {
-  setLoadingStates();
+  setLoadingState();
   els.refreshBtn.disabled = true;
 
-  const results = await Promise.allSettled([fetchTickerData(), fetchFearGreed()]);
-  const [tickerResult, sentimentResult] = results;
+  const [tickerResult, klineResult, sentimentResult] = await Promise.allSettled([
+    fetchJson(BTC_TICKER_URL),
+    fetchJson(BTC_WEEKLY_KLINE_URL),
+    fetchJson(FEAR_GREED_URL),
+  ]);
 
   let tickerOk = false;
-  let sentimentOk = false;
+  let rsiOk = false;
 
   if (tickerResult.status === "fulfilled") {
-    const filteredRows = normalizeTickerRows(tickerResult.value);
-    const overviewRows = filteredRows.filter((row) => OVERVIEW_SYMBOLS.includes(row.symbol));
-
-    updateOverview(overviewRows);
-    updateWatchlist(filteredRows);
-    tickerOk = true;
+    try {
+      updateTickerCard(tickerResult.value);
+      tickerOk = true;
+    } catch {
+      els.btcPriceMeta.textContent = "Ticker unavailable";
+    }
   } else {
-    setOverviewState("Unable to load data");
-    setWatchlistState("Error loading watchlist data. Try refresh.");
+    els.btcPriceMeta.textContent = "Ticker unavailable";
+  }
+
+  if (klineResult.status === "fulfilled") {
+    try {
+      updateRsiSection(klineResult.value);
+      rsiOk = true;
+    } catch {
+      els.rsiStatus.textContent = "RSI unavailable";
+      els.chartState.textContent = "Unable to load RSI chart data.";
+    }
+  } else {
+    els.rsiStatus.textContent = "RSI unavailable";
+    els.chartState.textContent = "Unable to load RSI chart data.";
   }
 
   if (sentimentResult.status === "fulfilled") {
     updateFearGreed(sentimentResult.value);
-    sentimentOk = true;
   } else {
-    setSentimentState("—", "Error loading sentiment", "Try refresh");
+    els.fgText.textContent = "Sentiment unavailable";
+    els.fgTime.textContent = "Try refresh";
   }
 
-  if (tickerOk && sentimentOk) {
-    els.statusText.textContent = `Monitoring live market trend and momentum. Last update: ${new Date().toLocaleTimeString()}`;
-  } else if (tickerOk || sentimentOk) {
-    els.statusText.textContent = "Partial update loaded. One source is currently unavailable.";
+  if (tickerOk && rsiOk) {
+    els.statusText.textContent = `Monitoring BTC weekly trend and momentum. Last update: ${new Date().toLocaleTimeString()}`;
+  } else if (tickerOk || rsiOk) {
+    els.statusText.textContent = "Partial update loaded. One market source is unavailable.";
   } else {
-    els.statusText.textContent = "Unable to load market sources right now.";
+    els.statusText.textContent = "Unable to load BTC monitor sources right now.";
   }
 
   els.refreshBtn.disabled = false;

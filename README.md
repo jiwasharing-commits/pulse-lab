@@ -1,26 +1,29 @@
 # Pulse Lab
 
-Pulse Lab is a lightweight, static web dashboard for monitoring crypto market trend, flow, momentum, and signal status using free public APIs.
+Pulse Lab is a static Bitcoin monitoring dashboard focused on **BTCUSDT Weekly RSI**.
 
-## Purpose
+## App Purpose
 
-- Monitor live market movement for selected pairs without a backend.
-- Show quick overview metrics for BTC, ETH, and SOL.
-- Display simple signal status (Bullish / Neutral / Bearish) based on 24h change and relative volume.
-- Surface market sentiment with the Fear & Greed Index.
+- Monitor BTC trend, momentum, and weekly direction in a single-page dashboard.
+- Visualize the latest 13 weekly RSI points (W-12 to W0).
+- Keep the app lightweight and deployable on GitHub Pages.
 
-## APIs Used
+## Data Sources
 
-1. **Binance public API**
-   - `https://api.binance.com/api/v3/ticker/24hr`
-   - Fallback: `https://data-api.binance.vision/api/v3/ticker/24hr`
-   - Used for price, 24h change, and quote volume values.
-
-2. **Alternative.me Fear & Greed API**
+1. Binance weekly klines (BTCUSDT, 1w, limit 120):
+   - `https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=120`
+2. Binance BTC 24h ticker:
+   - `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT`
+3. Alternative.me Fear & Greed:
    - `https://api.alternative.me/fng/?limit=1`
-   - Used for sentiment index value, classification, and timestamp.
 
-No paid APIs, backend services, databases, or secret keys are used.
+## RSI Method
+
+- RSI 14 is calculated manually in client-side JavaScript from weekly close prices.
+- The full RSI series is computed from fetched klines.
+- The chart displays the latest 13 weekly RSI values:
+  - `W-12, W-11, W-10, W-9, W-8, W-7, W-6, W-5, W-4, W-3, W-2, W-1, W0`
+- `W0` means the latest available weekly RSI.
 
 ## Project Structure
 
@@ -29,11 +32,9 @@ No paid APIs, backend services, databases, or secret keys are used.
 - `app.js`
 - `README.md`
 
-## Open Locally
+## Local Usage
 
-Because this app uses browser `fetch()` to call HTTPS APIs, open it from a local static server:
-
-### Option A: Python
+Run from a local static server:
 
 ```bash
 python3 -m http.server 8000
@@ -43,26 +44,19 @@ Then open:
 
 - `http://localhost:8000`
 
-### Option B: VS Code Live Server
-
-- Open the folder in VS Code.
-- Start **Live Server**.
-- Open the served URL in your browser.
-
-## Deploy to GitHub Pages
+## GitHub Pages Deployment
 
 1. Push this repository to GitHub.
-2. Go to **Settings → Pages**.
-3. Under **Build and deployment**:
-   - **Source**: `Deploy from a branch`
-   - **Branch**: `main` (or your default branch), folder `/ (root)`
-4. Save and wait for deployment.
-5. Open the published Pages URL.
+2. Open **Settings → Pages**.
+3. Select **Deploy from a branch**.
+4. Choose branch (for example `main`) and folder `/ (root)`.
+5. Save and open the published URL.
 
-The app runs directly as static files from GitHub Pages with no build tools required.
+The app runs directly as static files with no build tools.
 
-## Notes
+## Constraints
 
-- Refresh data with the **Refresh** button.
-- The dashboard includes loading, empty, and error handling states for overview, watchlist, and sentiment sections.
-- Wording is neutral and focused on monitoring and signal status.
+- No API keys.
+- No backend or server logic.
+- No database.
+- No paid APIs.

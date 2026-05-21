@@ -5,79 +5,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pulse Lab</title>
     <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div>
           <h1>Pulse Lab</h1>
-          <p>Trend, flow, and momentum monitor</p>
+          <p>Bitcoin Weekly RSI Monitor</p>
         </div>
         <button id="refreshBtn" class="refresh-btn" type="button">Refresh</button>
       </header>
 
       <main>
-        <section class="status-strip" id="statusStrip" aria-live="polite">
-          <span id="statusText">Loading market data...</span>
+        <section class="status-strip" aria-live="polite">
+          <span id="statusText">Loading BTC weekly monitor...</span>
         </section>
 
-        <section class="overview" id="overviewCards">
+        <section class="overview">
           <article class="card">
             <h2>BTC Price</h2>
             <p id="btcPrice" class="value">—</p>
-            <p id="btcMeta" class="meta">Waiting for update</p>
-          </article>
-          <article class="card">
-            <h2>ETH Price</h2>
-            <p id="ethPrice" class="value">—</p>
-            <p id="ethMeta" class="meta">Waiting for update</p>
-          </article>
-          <article class="card">
-            <h2>SOL Price</h2>
-            <p id="solPrice" class="value">—</p>
-            <p id="solMeta" class="meta">Waiting for update</p>
+            <p id="btcPriceMeta" class="meta">Loading...</p>
           </article>
           <article class="card">
             <h2>24h Change</h2>
-            <p id="marketChange" class="value">—</p>
-            <p class="meta">Average of BTC, ETH, SOL</p>
+            <p id="btc24h" class="value">—</p>
+            <p class="meta">Binance 24h ticker</p>
           </article>
           <article class="card">
-            <h2>24h Volume</h2>
-            <p id="marketVolume" class="value">—</p>
-            <p class="meta">Combined quote volume (USDT)</p>
+            <h2>Current Weekly RSI</h2>
+            <p id="rsiCurrent" class="value">—</p>
+            <p id="rsiStatus" class="meta">Loading...</p>
+          </article>
+          <article class="card">
+            <h2>4W RSI Change</h2>
+            <p id="rsi4w" class="value">—</p>
+            <p class="meta">W0 - W-4</p>
+          </article>
+          <article class="card">
+            <h2>12W RSI Change</h2>
+            <p id="rsi12w" class="value">—</p>
+            <p class="meta">W0 - W-12</p>
+          </article>
+          <article class="card">
+            <h2>Direction</h2>
+            <p id="direction" class="value">—</p>
+            <p class="meta">Weekly momentum direction</p>
           </article>
         </section>
 
         <section class="panel">
           <div class="panel-header">
-            <h2>Watchlist</h2>
-            <p>Signal status for monitored pairs</p>
+            <h2>BTC Weekly RSI Chart</h2>
+            <p>W-12 to W0 weekly view</p>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Pair</th>
-                  <th>Price</th>
-                  <th>24h Change</th>
-                  <th>24h Volume</th>
-                  <th>Signal</th>
-                </tr>
-              </thead>
-              <tbody id="watchlistBody">
-                <tr>
-                  <td colspan="5" class="state-row">Loading watchlist...</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="chart-wrap">
+            <canvas id="rsiChart" aria-label="BTC Weekly RSI Chart" role="img"></canvas>
           </div>
+          <p id="chartState" class="panel-note">Weekly data is used for long-range momentum monitoring.</p>
         </section>
 
-        <section class="panel sentiment" id="sentimentPanel">
+        <section class="panel sentiment">
           <div class="panel-header">
-            <h2>Market Sentiment</h2>
-            <p>Alternative.me Fear &amp; Greed Index</p>
+            <h2>Fear &amp; Greed Index</h2>
+            <p>Supporting sentiment context</p>
           </div>
           <div class="sentiment-grid">
             <div>
@@ -86,7 +78,7 @@
             </div>
             <div>
               <p class="label">Classification</p>
-              <p class="sentiment-text" id="fgText">Waiting for data</p>
+              <p class="sentiment-text" id="fgText">Loading...</p>
             </div>
             <div>
               <p class="label">Updated</p>
