@@ -52,12 +52,30 @@ function buildWeeklyDataset(klines){
   const closes = mapped.map((d)=>d.close);
   const rsiSeries = calculateRsiSeries(closes).map((v)=>Number(v.toFixed(1)));
   const start = mapped.length - RSI_WINDOW;
-  return mapped.slice(-RSI_WINDOW).map((d, i)=>({
+  const dataset = mapped.slice(-RSI_WINDOW).map((d, i)=>({
     label: i === RSI_WINDOW - 1 ? "W0" : `W-${(RSI_WINDOW - 1) - i}`,
     time: d.time,
     open: d.open, high: d.high, low: d.low, close: d.close,
     rsi: Number.isFinite(rsiSeries[start + i - RSI_PERIOD]) ? rsiSeries[start + i - RSI_PERIOD] : null,
   }));
+  console.log("Dataset length:", dataset.length);
+  console.log("Sample dataset item:", dataset[0]);
+  return dataset;
+}
+
+
+function createWeekLabelMap(dataset){
+  const map = new Map();
+  dataset.forEach((d)=>map.set(d.time, d.label));
+  return map;
+}
+function timeKey(t){
+  if(typeof t === "string") return t;
+  if(t && typeof t === "object" && "year" in t) {
+    const mm=String(t.month).padStart(2,"0"), dd=String(t.day).padStart(2,"0");
+    return `${t.year}-${mm}-${dd}`;
+  }
+  return "";
 }
 
 function togglePriceChartError(msg=""){ if(!els.priceChartError) return; els.priceChartError.hidden = !msg; if(msg) els.priceChartError.textContent = msg; }
@@ -101,26 +119,28 @@ function renderPotentialBiasScanner(dataset, metrics){
 }
 
 function renderPriceChart(dataset){
+  const weekLabelMap = createWeekLabelMap(dataset);
   if (typeof LightweightCharts === "undefined") throw new Error("LightweightCharts is not defined");
   if (!els.priceChart) throw new Error("priceChart container is null");
   if (priceChart) { priceChart.remove(); priceChart = null; candleSeries = null; }
   els.priceChart.innerHTML = "";
   const candles = dataset.map(d=>({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close }));
   if(!candles.length) throw new Error("No valid OHLC candle data.");
-  priceChart = LightweightCharts.createChart(els.priceChart, { width: Math.max(els.priceChart.clientWidth||0,320), height: 300, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true} });
+  priceChart = LightweightCharts.createChart(els.priceChart, { width: Math.max(els.priceChart.clientWidth||0,320), height: 300, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
   candleSeries = priceChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e", borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
   candleSeries.setData(candles);
   priceChart.timeScale().fitContent();
 }
 
 function renderRsiChart(dataset){
+  const weekLabelMap = createWeekLabelMap(dataset);
   if (typeof LightweightCharts === "undefined") throw new Error("LightweightCharts is not defined");
   if (!els.rsiChart) throw new Error("rsiChart container is null");
   if (rsiChart) { rsiChart.remove(); rsiChart = null; }
   els.rsiChart.innerHTML = "";
   const points = dataset.filter(d=>Number.isFinite(d.rsi)).map(d=>({ time:d.time, value:d.rsi }));
   if(!points.length) throw new Error("No valid RSI chart data.");
-  rsiChart = LightweightCharts.createChart(els.rsiChart, { width: Math.max(els.rsiChart.clientWidth||0,320), height: 240, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)", scaleMargins:{top:0.05,bottom:0.05}}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true} });
+  rsiChart = LightweightCharts.createChart(els.rsiChart, { width: Math.max(els.rsiChart.clientWidth||0,320), height: 240, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)", scaleMargins:{top:0.05,bottom:0.05}}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
   const line = rsiChart.addLineSeries({ color:'#6f8cff', lineWidth:2 });
   line.setData(points);
   line.createPriceLine({ price:30, color:'rgba(239,68,68,.65)', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'30' });
