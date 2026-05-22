@@ -14,9 +14,10 @@ const els = {
   direction: document.getElementById("direction"), momentumPhase: document.getElementById("momentumPhase"), analyticsStrip: document.getElementById("analyticsStrip"),
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
   fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"), biasScannerList: document.getElementById("biasScannerList"),
-  priceChart: document.getElementById("priceChart"), rsiCompareChart: document.getElementById("rsiCompareChart"),
+  priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiCompareChart: document.getElementById("rsiCompareChart"),
 };
 let rsiCompareChart, lwChart, candleSeries;
+let resizeHandlerBound = false;
 
 const rsiZonePlugin = { id: "rsiZonePlugin", beforeDraw(c) { const {ctx, chartArea, scales}=c; if(!chartArea||!scales.y) return; const y=scales.y; [[0,30,"rgba(255,95,122,.08)"],[30,45,"rgba(255,150,120,.05)"],[45,55,"rgba(160,170,200,.06)"],[55,70,"rgba(111,140,255,.05)"],[70,100,"rgba(246,196,69,.06)"]].forEach(([f,t,col])=>{const yt=y.getPixelForValue(t), yb=y.getPixelForValue(f); ctx.save(); ctx.fillStyle=col; ctx.fillRect(chartArea.left,yt,chartArea.right-chartArea.left,yb-yt); ctx.restore();}); }};
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
@@ -34,14 +35,43 @@ function runBiasScanner(prices, rsis){const out=[];for(let i=0;i<prices.length;i
 function renderBiasScanner(items){if(!items.length){els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>';return;}els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');}
 function calculateRsiSeries(closes,p=RSI_PERIOD){ if(closes.length<=p) return []; let gs=0,ls=0; const rsis=[]; for(let i=1;i<=p;i++){const d=closes[i]-closes[i-1]; gs+=d>0?d:0; ls+=d<0?Math.abs(d):0;} let ag=gs/p, al=ls/p; rsis.push(al===0?100:100-100/(1+ag/al)); for(let i=p+1;i<closes.length;i++){const d=closes[i]-closes[i-1], g=d>0?d:0, l=d<0?Math.abs(d):0; ag=(ag*(p-1)+g)/p; al=(al*(p-1)+l)/p; rsis.push(al===0?100:100-100/(1+ag/al));} return rsis; }
 function renderRsiChart(values){if(rsiCompareChart) rsiCompareChart.destroy(); const refs=[0,24,44,48]; const pointRadius=values.map((_,i)=>i===48?6:(refs.includes(i)?4:1.8)); rsiCompareChart=new Chart(els.rsiCompareChart,{type:"line",data:{labels:RSI_LABELS,datasets:[{label:"BTC Weekly RSI",data:values,borderColor:"#6f8cff",borderWidth:2,pointBackgroundColor:"#d7deff",pointBorderColor:"#6f8cff",pointRadius,pointHoverRadius:pointRadius.map(v=>v+1),tension:.25,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#e8ecf8"}},tooltip:{callbacks:{title:(c)=>c[0].label,label:(c)=>`RSI: ${c.parsed.y.toFixed(1)}`}}},scales:{x:{ticks:{color:"#95a2c7",maxTicksLimit:13},grid:{color:"rgba(35,48,83,.5)"}},y:{min:0,max:100,ticks:{color:"#95a2c7",stepSize:10},grid:{color:(ctx)=>[30,50,70].includes(ctx.tick.value)?"rgba(246,196,69,.8)":"rgba(35,48,83,.5)"}}}},plugins:[rsiZonePlugin]});}
+function toYmd(ms){ return new Date(ms).toISOString().slice(0,10); }
+function togglePriceChartError(msg=""){
+  if(!els.priceChartError) return;
+  if(msg){ els.priceChartError.textContent=msg; els.priceChartError.hidden=false; }
+  else { els.priceChartError.hidden=true; }
+}
 function renderCandleChart(ohlc){
+  if(!els.priceChart) throw new Error("price chart container not found");
+  if (!ohlc.length) throw new Error("empty ohlc data");
+  const width = Math.max(els.priceChart.clientWidth || 0, 320);
+  const height = Math.max(els.priceChart.clientHeight || 0, 235);
+
   if (!lwChart) {
-    lwChart = LightweightCharts.createChart(els.priceChart, { layout:{background:{color:'#121a30'}, textColor:'#95a2c7'}, grid:{vertLines:{color:'rgba(35,48,83,.4)'}, horzLines:{color:'rgba(35,48,83,.4)'}}, rightPriceScale:{borderColor:'#233053'}, timeScale:{borderColor:'#233053', timeVisible:false, secondsVisible:false} });
+    lwChart = LightweightCharts.createChart(els.priceChart, {
+      width, height,
+      layout:{background:{color:'#121a30'}, textColor:'#95a2c7'},
+      grid:{vertLines:{color:'rgba(35,48,83,.4)'}, horzLines:{color:'rgba(35,48,83,.4)'}},
+      rightPriceScale:{borderColor:'#233053'},
+      timeScale:{borderColor:'#233053', timeVisible:false, secondsVisible:false},
+      crosshair:{mode:1}
+    });
     candleSeries = lwChart.addCandlestickSeries({ upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
+  } else {
+    lwChart.applyOptions({ width, height });
   }
-  const data = ohlc.map((c,i)=>({ time: i+1, open:c.open, high:c.high, low:c.low, close:c.close }));
+
+  const data = ohlc.map((c)=>({ time: toYmd(c.openTime), open:c.open, high:c.high, low:c.low, close:c.close }));
   candleSeries.setData(data);
   lwChart.timeScale().fitContent();
+
+  if(!resizeHandlerBound){
+    window.addEventListener("resize", ()=>{
+      if(!lwChart || !els.priceChart) return;
+      lwChart.applyOptions({ width: Math.max(els.priceChart.clientWidth || 0, 320), height: Math.max(els.priceChart.clientHeight || 0, 205) });
+    });
+    resizeHandlerBound = true;
+  }
 }
 
 async function fetchJson(url){ const r=await fetch(url,{method:"GET"}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
@@ -50,7 +80,7 @@ function updateTicker(t){ const p=Number(t.lastPrice), ch=Number(t.priceChangePe
 function updateFearGreed(data){ const l=data?.data?.[0]; if(!l){els.fgText.textContent="Market context unavailable"; return;} const ts=Number(l.timestamp)*1000; els.fgValue.textContent=l.value; els.fgText.textContent=l.value_classification; els.fgTime.textContent=Number.isFinite(ts)?new Date(ts).toLocaleString():"Timestamp unavailable"; }
 
 function updateRsiAndPrice(klines){
-  const mapped = klines.map(k=>({open:Number(k[1]),high:Number(k[2]),low:Number(k[3]),close:Number(k[4])})).filter(c=>Object.values(c).every(Number.isFinite));
+  const mapped = klines.map(k=>({openTime:Number(k[0]),open:parseFloat(k[1]),high:parseFloat(k[2]),low:parseFloat(k[3]),close:parseFloat(k[4])})).filter(c=>Object.values(c).every(Number.isFinite));
   const latest = mapped.slice(-RSI_WINDOW);
   const closes = mapped.map(c=>c.close);
   const rsiSeries=calculateRsiSeries(closes);
@@ -77,7 +107,13 @@ function updateRsiAndPrice(klines){
   els.divergenceText.textContent=`4W context: Price ${signed1(pc4)}%, RSI ${signed1(d4)}. ${divergence.note}`;
 
   renderRsiChart(v);
-  renderCandleChart(latest);
+  try {
+    renderCandleChart(latest);
+    togglePriceChartError();
+  } catch (error) {
+    togglePriceChartError("Price chart unavailable. Weekly candlestick data could not be rendered.");
+    console.error("failed to render price chart", error);
+  }
   renderBiasScanner(runBiasScanner(latest.map(x=>x.close), v));
 }
 

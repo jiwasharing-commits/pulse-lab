@@ -62,3 +62,10 @@ Then open `http://localhost:8000`.
 2. Go to **Settings → Pages**.
 3. Select **Deploy from a branch** and choose `/ (root)`.
 4. Open the published URL.
+
+
+## Price Chart Rendering Note
+
+- BTC weekly price uses a dedicated **candlestick chart** rendered with **Lightweight Charts** (CDN) so OHLC candles render reliably in static GitHub Pages deployments.
+- OHLC mapping uses Binance weekly kline indices: `open=kline[1]`, `high=kline[2]`, `low=kline[3]`, `close=kline[4]` and each value is parsed to numeric format before rendering.
+- RSI remains separate in the lower chart and is still calculated from weekly close prices only.
