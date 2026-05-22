@@ -39,13 +39,17 @@ function renderRsiChart(values){if(rsiCompareChart) rsiCompareChart.destroy(); c
 function toYmd(ms){ return new Date(ms).toISOString().slice(0,10); }
 
 function createCandleSeries(chart){
-  if (typeof chart.addCandlestickSeries === "function") {
-    return chart.addCandlestickSeries({ upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
+  if (typeof chart.addCandlestickSeries !== "function") {
+    throw new Error("addCandlestickSeries is unavailable on current Lightweight Charts build");
   }
-  if (typeof chart.addSeries === "function" && typeof LightweightCharts !== "undefined" && LightweightCharts.CandlestickSeries) {
-    return chart.addSeries(LightweightCharts.CandlestickSeries, { upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
-  }
-  throw new Error("candlestick series API unavailable");
+  return chart.addCandlestickSeries({
+    upColor: "#22c55e",
+    downColor: "#ef4444",
+    borderUpColor: "#22c55e",
+    borderDownColor: "#ef4444",
+    wickUpColor: "#22c55e",
+    wickDownColor: "#ef4444"
+  });
 }
 
 function resetPriceChart(){
@@ -54,6 +58,9 @@ function resetPriceChart(){
     lwChart = null;
     candleSeries = null;
   }
+  if (els.priceChart) {
+    els.priceChart.innerHTML = "";
+  }
 }
 function togglePriceChartError(msg=""){
   if(!els.priceChartError) return;
@@ -61,37 +68,42 @@ function togglePriceChartError(msg=""){
   else { els.priceChartError.hidden=true; }
 }
 function renderCandleChart(ohlc){
+  if (typeof LightweightCharts === "undefined") throw new Error("LightweightCharts not loaded");
   if(!els.priceChart) throw new Error("price chart container not found");
   if (!ohlc.length) throw new Error("empty ohlc data");
+
+  const candles = ohlc.map((c)=>({ time: toYmd(c.openTime), open:c.open, high:c.high, low:c.low, close:c.close }));
+  const validCandles = candles.filter((c)=>c.time && Number.isFinite(c.open) && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
+  console.log("LightweightCharts:", window.LightweightCharts);
+  console.log("Price chart container:", els.priceChart);
+  console.log("Candles length:", candles.length);
+  console.log("Sample candle:", candles[0]);
+  if (!validCandles.length) throw new Error("No valid OHLC candle data.");
+
+  resetPriceChart();
   const width = Math.max(els.priceChart.clientWidth || 0, 320);
-  const height = Math.max(els.priceChart.clientHeight || 0, 235);
-
-  if (!lwChart) {
-    lwChart = LightweightCharts.createChart(els.priceChart, {
-      width, height,
-      layout:{background:{color:'#121a30'}, textColor:'#95a2c7'},
-      grid:{vertLines:{color:'rgba(35,48,83,.4)'}, horzLines:{color:'rgba(35,48,83,.4)'}},
-      rightPriceScale:{borderColor:'#233053'},
-      timeScale:{borderColor:'#233053', timeVisible:false, secondsVisible:false},
-      crosshair:{mode:1}
-    });
-    candleSeries = lwChart.addCandlestickSeries({ upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
-  } else {
-    lwChart.applyOptions({ width, height });
-  }
-
-  const data = ohlc.map((c)=>({ time: toYmd(c.openTime), open:c.open, high:c.high, low:c.low, close:c.close }));
-  candleSeries.setData(data);
+  const height = 300;
+  lwChart = LightweightCharts.createChart(els.priceChart, {
+    width,
+    height,
+    layout:{ background:{ type:"solid", color:"transparent" }, textColor:'#cbd5e1' },
+    grid:{ vertLines:{color:'rgba(148, 163, 184, 0.12)'}, horzLines:{color:'rgba(148, 163, 184, 0.12)'} },
+    rightPriceScale:{ borderColor:'rgba(148, 163, 184, 0.2)' },
+    timeScale:{ borderColor:'rgba(148, 163, 184, 0.2)', timeVisible:true }
+  });
+  candleSeries = createCandleSeries(lwChart);
+  candleSeries.setData(validCandles);
   lwChart.timeScale().fitContent();
 
   if(!resizeHandlerBound){
     window.addEventListener("resize", ()=>{
       if(!lwChart || !els.priceChart) return;
-      lwChart.applyOptions({ width: Math.max(els.priceChart.clientWidth || 0, 320), height: Math.max(els.priceChart.clientHeight || 0, 205) });
+      lwChart.applyOptions({ width: Math.max(els.priceChart.clientWidth || 0, 320) });
     });
     resizeHandlerBound = true;
   }
 }
+
 
 async function fetchJson(url){ const r=await fetch(url,{method:"GET"}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
 function setLoading(){ els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context..."; els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading..."; els.rsiCurrent.textContent="—"; els.rsiStatus.textContent="Loading..."; els.rsiRegime.textContent="Regime: —"; els.rsiChangeLines.textContent="4W: — · 12W: — · 24W: — · 48W: —"; els.rsiRefs.textContent="W0: — | W-4: — | W-12: — | W-24: — | W-48: —"; els.rsiSlope.textContent="RSI Slope 48W: — / week"; els.direction.textContent="—"; els.momentumPhase.textContent="—"; els.analyticsStrip.textContent="RSI Slope 12W: — · RSI Slope 24W: — · RSI Slope 48W: — · Consistency 12W: — · Consistency 24W: — · Distance to 50: — · Regime: —"; els.priceMetrics.textContent="12W Price: — | 12W RSI: — | 24W Price: — | 24W RSI: — | 48W Price: — | 48W RSI: —"; els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context..."; els.fgValue.textContent="—"; els.fgText.textContent="Loading..."; els.fgTime.textContent="—"; els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>'; }
@@ -130,8 +142,8 @@ function updateRsiAndPrice(klines){
     renderCandleChart(latest);
     togglePriceChartError();
   } catch (error) {
-    togglePriceChartError("Price chart unavailable. Weekly candlestick data could not be rendered.");
-    console.error("failed to render price chart", { error, lightweightLoaded: typeof LightweightCharts !== "undefined", containerFound: !!els.priceChart, sampleCandle: latest[0] });
+    togglePriceChartError("Price chart unavailable. Check console for candlestick render details.");
+    console.error("Candlestick render failed:", error);
   }
   renderBiasScanner(runBiasScanner(latest.map(x=>x.close), v));
 }
