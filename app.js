@@ -18,6 +18,7 @@ const els = {
 let priceChart = null;
 let candleSeries = null;
 let rsiChart = null;
+let fvgOverlayLines = [];
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -187,25 +188,51 @@ function fvgDistancePct(fvg,currentPrice){
 function renderFvgPanel(dataset){
   if(!els.fvgList) return;
   try {
-    const currentPrice=dataset[dataset.length-1].close;
-    const active=scanWeeklyFvg(dataset)
-      .filter(f=>f.status!=="Filled")
-      .map(f=>({ ...f, distance:fvgDistancePct(f,currentPrice) }))
-      .sort((a,b)=>{
-        const sa=(a.status==="Unfilled"?0:1), sb=(b.status==="Unfilled"?0:1);
-        if(sa!==sb) return sa-sb;
-        if(Math.abs(a.distance)!==Math.abs(b.distance)) return Math.abs(a.distance)-Math.abs(b.distance);
-        return b.index-a.index;
-      })
-      .slice(0,5);
-    if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return; }
+    const active=getActiveFvgs(dataset);
+    if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
     els.fvgList.innerHTML=active.map(f=>{
       const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
       return `<div class="scanner-row"><span class="scanner-title">${f.type}</span> | ${f.startLabel} → ${f.endLabel} | ${usd(f.lower)} - ${usd(f.upper)} | ${f.status} | Distance: ${distLabel} | Size: ${f1(f.sizePercent)}%</div>`;
     }).join('');
+    return active;
   } catch (e) {
     console.error("FVG scan failed:", e);
     els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    return [];
+  }
+}
+
+
+function getActiveFvgs(dataset){
+  const currentPrice=dataset[dataset.length-1].close;
+  return scanWeeklyFvg(dataset)
+    .filter(f=>f.status!=="Filled")
+    .map(f=>({ ...f, distance:fvgDistancePct(f,currentPrice) }))
+    .sort((a,b)=>{
+      const sa=(a.status==="Unfilled"?0:1), sb=(b.status==="Unfilled"?0:1);
+      if(sa!==sb) return sa-sb;
+      if(Math.abs(a.distance)!==Math.abs(b.distance)) return Math.abs(a.distance)-Math.abs(b.distance);
+      return b.index-a.index;
+    })
+    .slice(0,5);
+}
+function clearFvgOverlay(){
+  fvgOverlayLines.forEach((line)=>{ try { candleSeries?.removePriceLine(line); } catch(_){} });
+  fvgOverlayLines = [];
+}
+function renderFvgOverlay(activeFvgs){
+  try {
+    if(!candleSeries) return;
+    clearFvgOverlay();
+    activeFvgs.forEach((f)=>{
+      const bull = f.type === "Bullish FVG";
+      const color = bull ? "rgba(34,197,94,0.38)" : "rgba(239,68,68,0.38)";
+      const upperLine = candleSeries.createPriceLine({ price:f.upper, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} upper` });
+      const lowerLine = candleSeries.createPriceLine({ price:f.lower, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} lower` });
+      fvgOverlayLines.push(upperLine, lowerLine);
+    });
+  } catch (e) {
+    console.error("FVG overlay render failed", e);
   }
 }
 
@@ -220,6 +247,7 @@ function setLoading(){
   els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
   if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
   togglePriceChartError(""); toggleRsiChartError("");
+  clearFvgOverlay();
 }
 
 function renderTicker(t){
@@ -251,10 +279,10 @@ async function loadDashboard(){
       const metrics = renderSummaryCards(dataset);
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);
-      renderFvgPanel(dataset);
+      const activeFvgs = renderFvgPanel(dataset);
       weeklyOk = true;
 
-      try { renderPriceChart(dataset); togglePriceChartError(""); }
+      try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs); }
       catch (error) { console.error("Price chart render failed:", error); togglePriceChartError("Chart unavailable, but data is still loaded."); }
 
       try { renderRsiChart(dataset); toggleRsiChartError(""); }
@@ -268,6 +296,7 @@ async function loadDashboard(){
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
       els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
     if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    clearFvgOverlay();
     }
   } else {
     els.rsiStatus.textContent = "Weekly Binance data unavailable.";
