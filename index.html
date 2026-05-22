@@ -6,6 +6,7 @@
     <title>Pulse Lab</title>
     <link rel="stylesheet" href="style.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -33,11 +34,11 @@
         </section>
 
         <section class="panel dual-panel">
-          <div class="panel-header"><h2>BTC Weekly Price vs RSI</h2><p>Main weekly divergence monitoring section</p></div>
+          <div class="panel-header"><h2>BTC Weekly Candlestick vs RSI</h2><p>Main weekly divergence monitoring section</p></div>
           <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
           <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
           <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
-          <div class="chart-wrap compact"><canvas id="priceChart" aria-label="BTC Weekly Price Chart" role="img"></canvas></div>
+          <div class="chart-wrap compact"><div id="priceChart" aria-label="BTC Weekly Candlestick Chart" role="img"></div></div>
           <div class="chart-wrap compact"><canvas id="rsiCompareChart" aria-label="BTC Weekly RSI Comparison Chart" role="img"></canvas></div>
           <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
         </section>
