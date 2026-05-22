@@ -14,6 +14,7 @@ const els = {
   analyticsStrip: document.getElementById("analyticsStrip"),
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
   fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"),
+  biasScannerList: document.getElementById("biasScannerList"),
   priceChart: document.getElementById("priceChart"), rsiCompareChart: document.getElementById("rsiCompareChart"),
 };
 let priceChart, rsiCompareChart;
@@ -58,6 +59,35 @@ function getDivergence(priceChange12W, rsiChange12W, rsiChange4W) {
   return { status, note };
 }
 
+
+function getConfidence(score){ return score>=20?"Strong":score>=12?"Moderate":"Weak"; }
+function runBiasScanner(prices, rsis){
+  const out=[];
+  for(let i=0;i<prices.length;i++){
+    for(let j=i+3;j<prices.length && j-i<=12;j++){
+      const p0=prices[i], p1=prices[j], r0=rsis[i], r1=rsis[j];
+      const priceChangePercent=((p1-p0)/p0)*100;
+      const rsiChange=r1-r0;
+      if(Math.abs(priceChangePercent)<3 && Math.abs(rsiChange)<4) continue;
+      let bias="";
+      if((priceChangePercent<=-3 || (priceChangePercent>=-3&&priceChangePercent<=3)) && rsiChange>=4){
+        bias="Potential Upward Bias";
+      } else if((priceChangePercent>=3 || (priceChangePercent>=-3&&priceChangePercent<=3)) && rsiChange<=-4){
+        bias="Potential Downward Bias";
+      }
+      if(!bias) continue;
+      const score=Math.abs(priceChangePercent)+Math.abs(rsiChange);
+      out.push({bias, range:`W-${12-i} → W-${12-j}`, priceChangePercent, rsiChange, score, confidence:getConfidence(score)});
+    }
+  }
+  out.sort((a,b)=>b.score-a.score);
+  return out.slice(0,3);
+}
+function renderBiasScanner(items){
+  if(!items.length){ els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
+  els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
+}
+
 function calculateRsiSeries(closes,p=RSI_PERIOD){ if(closes.length<=p) return []; let gs=0,ls=0; const rsis=[]; for(let i=1;i<=p;i++){const d=closes[i]-closes[i-1]; gs+=d>0?d:0; ls+=d<0?Math.abs(d):0;} let ag=gs/p, al=ls/p; rsis.push(al===0?100:100-100/(1+ag/al)); for(let i=p+1;i<closes.length;i++){const d=closes[i]-closes[i-1], g=d>0?d:0, l=d<0?Math.abs(d):0; ag=(ag*(p-1)+g)/p; al=(al*(p-1)+l)/p; rsis.push(al===0?100:100-100/(1+ag/al));} return rsis; }
 
 function renderRsiChart(values){
@@ -85,6 +115,7 @@ function setLoading(){
   els.divergenceStatus.textContent="Divergence Status: —";
   els.divergenceText.textContent="Loading divergence context...";
   els.fgValue.textContent="—"; els.fgText.textContent="Loading..."; els.fgTime.textContent="—";
+  els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
 }
 
 function updateTicker(t){ const p=Number(t.lastPrice), ch=Number(t.priceChangePercent); if(!Number.isFinite(p)||!Number.isFinite(ch)) throw new Error("Ticker parse error"); els.btcPrice.textContent=usd(p); els.btc24hInline.textContent=`24h: ${ch>=0?"+":""}${ch.toFixed(1)}%`; els.btc24hInline.className=`meta ${ch>0?"pos":ch<0?"neg":"neu"}`; els.btcPriceMeta.textContent="BTCUSDT 24h ticker"; }
@@ -123,6 +154,7 @@ function updateRsiAndPrice(klines){
 
   renderRsiChart(v);
   renderPriceChart(latest13Prices);
+  renderBiasScanner(runBiasScanner(latest13Prices, v));
 }
 
 async function loadDashboard(){
@@ -134,8 +166,8 @@ async function loadDashboard(){
   if(t.status==="fulfilled"){ try{updateTicker(t.value); tickerOk=true;}catch{els.btcPriceMeta.textContent="Ticker unavailable";} }
   else els.btcPriceMeta.textContent="Ticker unavailable";
 
-  if(k.status==="fulfilled"){ try{updateRsiAndPrice(k.value); rsiOk=true;}catch{els.rsiStatus.textContent="RSI unavailable"; els.analyticsStrip.textContent="RSI analytics unavailable."; els.divergenceStatus.textContent="Divergence Status: unavailable"; els.divergenceText.textContent="Price and RSI comparison is unavailable.";} }
-  else { els.rsiStatus.textContent="RSI unavailable"; els.analyticsStrip.textContent="RSI analytics unavailable."; els.divergenceStatus.textContent="Divergence Status: unavailable"; els.divergenceText.textContent="Price and RSI comparison is unavailable."; }
+  if(k.status==="fulfilled"){ try{updateRsiAndPrice(k.value); rsiOk=true;}catch{els.rsiStatus.textContent="RSI unavailable"; els.analyticsStrip.textContent="RSI analytics unavailable."; els.divergenceStatus.textContent="Divergence Status: unavailable"; els.divergenceText.textContent="Price and RSI comparison is unavailable."; els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';} }
+  else { els.rsiStatus.textContent="RSI unavailable"; els.analyticsStrip.textContent="RSI analytics unavailable."; els.divergenceStatus.textContent="Divergence Status: unavailable"; els.divergenceText.textContent="Price and RSI comparison is unavailable."; els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>'; }
 
   if(f.status==="fulfilled") updateFearGreed(f.value);
   else { els.fgText.textContent="Market context unavailable"; els.fgTime.textContent="Try refresh"; }

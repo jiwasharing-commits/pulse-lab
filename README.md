@@ -31,6 +31,12 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 3. Alternative.me Fear & Greed:
    - `https://api.alternative.me/fng/`
 
+
+## Potential Bias Scanner
+- Scans all weekly ranges inside `W-12` to `W0` using existing weekly price and RSI data.
+- Uses filtered rules to find potential upward/downward bias from price movement vs RSI movement.
+- Keeps only the top 3 strongest ranges by score after filtering noisy ranges.
+
 ## Technical constraints
 - Static frontend only.
 - All calculations run client-side JavaScript.
