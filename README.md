@@ -5,7 +5,7 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 ## What Pulse Lab monitors
 - BTCUSDT only.
 - Weekly RSI only (RSI 14 from weekly closes).
-- W-12 to W0 weekly RSI view.
+- W-24 to W0 weekly RSI view (25 weekly points).
 - Direction and Momentum Phase from W0, W-1, W-4, and W-12.
 - BTC Weekly Price vs RSI dual chart as the main chart section.
 - Fear & Greed as supporting market context.
@@ -19,7 +19,7 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 - Price and RSI are shown separately because their scales are different.
 
 ## Divergence status
-- Divergence Status compares 12W price movement and 12W RSI movement using automatic thresholds.
+- Divergence Status compares 12W price movement and 12W RSI movement using automatic thresholds, with additional 24W context.
 - It classifies: Price and RSI Aligned, Bearish Divergence, Bullish Divergence, consolidation improving/cooling, or Mixed Relationship.
 - A compact 4W context line is added to show short-window price and RSI behavior.
 
@@ -33,9 +33,10 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 
 
 ## Potential Bias Scanner
-- Scans all weekly ranges inside `W-12` to `W0` using existing weekly price and RSI data.
+- Scans all weekly ranges inside `W-24` to `W0` using existing weekly price and RSI data.
 - Uses filtered rules to find potential upward/downward bias from price movement vs RSI movement.
 - Keeps only the top 3 strongest ranges by score after filtering noisy ranges.
+- Includes 24W Price Change, 24W RSI Change, and 24W RSI Slope while keeping 4W and 12W context.
 
 ## Technical constraints
 - Static frontend only.
