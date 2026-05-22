@@ -19,8 +19,9 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 - Price and RSI are shown separately because their scales are different.
 
 ## Divergence status
-- Divergence Status compares 12W price movement and 12W RSI movement.
-- It labels alignment, divergence, recovery divergence, consolidation improvement/cooling, or mixed relationship.
+- Divergence Status compares 12W price movement and 12W RSI movement using automatic thresholds.
+- It classifies: Price and RSI Aligned, Bearish Divergence, Bullish Divergence, consolidation improving/cooling, or Mixed Relationship.
+- A compact 4W context line is added to show short-window price and RSI behavior.
 
 ## Data sources
 1. Binance weekly candles (`1w`, `limit=120`):
