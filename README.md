@@ -1,11 +1,12 @@
 # Pulse Lab
 
-Pulse Lab is a static **BTCUSDT Weekly RSI** monitor focused on reading weekly momentum direction from a W-12 to W0 view.
+Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly momentum reading.
 
 ## What Pulse Lab monitors
 - BTCUSDT only.
 - Weekly RSI only (RSI 14 from weekly closes).
-- Weekly momentum reading with Direction and Momentum Phase.
+- W-12 to W0 weekly RSI view.
+- Direction and Momentum Phase from W0, W-1, W-4, and W-12.
 - Fear & Greed as supporting market context.
 
 ## Data sources
@@ -16,23 +17,24 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor focused on reading weekly m
 3. Alternative.me Fear & Greed:
    - `https://api.alternative.me/fng/`
 
-## Weekly RSI method
-- RSI 14 is calculated client-side in JavaScript from weekly close prices.
-- The app stores the full RSI series, then extracts the latest 13 points:
-  `W-12` ... `W0`.
-- Definitions:
-  - `4W RSI Change = W0 - W-4`
-  - `12W RSI Change = W0 - W-12`
+## Weekly analytics
+- Full RSI series is calculated client-side, then latest 13 points (`W-12 ... W0`) are used.
+- `4W RSI Change = W0 - W-4`
+- `12W RSI Change = W0 - W-12`
+- `RSI Slope = (W0 - W-12) / 12` (average weekly change)
+- Momentum Consistency counts rising weeks across 12 transitions in the W-12..W0 window.
+- Distance to RSI 50 tracks below/near/above midline status.
+- Weekly RSI Regime gives zone-specific classification for W0.
 
-## Momentum reading logic
-- **Direction** compares `W0` with `W-1`, `W-4`, and `W-12`.
-- **Momentum Phase** classifies weekly momentum condition from RSI level and 4W/12W changes.
-
-## Project structure
-- `index.html`
-- `style.css`
-- `app.js`
-- `README.md`
+## Technical constraints
+- Static frontend only.
+- All calculations run client-side JavaScript.
+- No API key.
+- No backend.
+- No database.
+- No paid APIs.
+- No build tools required.
+- GitHub Pages compatible.
 
 ## Run locally
 ```bash
@@ -45,11 +47,3 @@ Then open `http://localhost:8000`.
 2. Go to **Settings → Pages**.
 3. Select **Deploy from a branch** and choose `/ (root)`.
 4. Open the published URL.
-
-## Technical constraints
-- Static frontend only.
-- No API key.
-- No backend.
-- No database.
-- No paid APIs.
-- No build tools required.

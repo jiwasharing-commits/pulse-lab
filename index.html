@@ -24,45 +24,42 @@
 
         <p class="intro-note">Long-range momentum view based on weekly data.</p>
 
-        <section class="overview">
-          <article class="card">
+        <section class="overview compact-overview">
+          <article class="card compact-card">
             <h2>BTC Price</h2>
             <p id="btcPrice" class="value">—</p>
-            <p id="btcPriceMeta" class="meta">Loading...</p>
+            <p id="btc24hInline" class="meta">24h: —</p>
+            <p id="btcPriceMeta" class="meta submeta">Loading...</p>
           </article>
-          <article class="card">
-            <h2>24h Change</h2>
-            <p id="btc24h" class="value">—</p>
-            <p class="meta">Binance 24h ticker</p>
-          </article>
-          <article class="card">
-            <h2>Current Weekly RSI</h2>
+
+          <article class="card compact-card">
+            <h2>Weekly RSI</h2>
             <p id="rsiCurrent" class="value">—</p>
             <p id="rsiStatus" class="meta">Loading...</p>
+            <p id="rsiRegime" class="meta submeta">Regime: —</p>
           </article>
-          <article class="card">
-            <h2>4W RSI Change</h2>
-            <p id="rsi4w" class="value">—</p>
-            <p class="meta">W0 - W-4</p>
+
+          <article class="card compact-card">
+            <h2>RSI Change</h2>
+            <p id="rsiChangeLines" class="meta">4W: — · 12W: —</p>
+            <p id="rsiRefs" class="meta submeta">W0: — | W-4: — | W-12: —</p>
+            <p id="rsiSlope" class="meta submeta">RSI Slope: — / week</p>
           </article>
-          <article class="card">
-            <h2>12W RSI Change</h2>
-            <p id="rsi12w" class="value">—</p>
-            <p class="meta">W0 - W-12</p>
-          </article>
-          <article class="card">
+
+          <article class="card compact-card">
             <h2>Direction</h2>
-            <p id="direction" class="value">—</p>
+            <p id="direction" class="value compact-value">—</p>
             <p class="meta">Weekly momentum direction</p>
           </article>
-          <article class="card">
+
+          <article class="card compact-card">
             <h2>Momentum Phase</h2>
-            <p id="momentumPhase" class="value">—</p>
+            <p id="momentumPhase" class="value compact-value">—</p>
             <p id="momentumPhaseMeta" class="meta">Weekly phase status</p>
           </article>
         </section>
 
-        <section class="panel">
+        <section class="panel chart-panel">
           <div class="panel-header">
             <h2>BTC Weekly RSI Chart</h2>
             <p>W-12 to W0 weekly view</p>
@@ -72,6 +69,7 @@
           </div>
           <p id="chartState" class="panel-note">Weekly data is used for long-range momentum monitoring.</p>
           <div id="interpretationBox" class="interpretation-box">Loading weekly direction interpretation...</div>
+          <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
         </section>
 
         <section class="panel sentiment">

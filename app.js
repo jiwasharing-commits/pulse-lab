@@ -9,234 +9,96 @@ const els = {
   statusText: document.getElementById("statusText"),
   refreshBtn: document.getElementById("refreshBtn"),
   btcPrice: document.getElementById("btcPrice"),
+  btc24hInline: document.getElementById("btc24hInline"),
   btcPriceMeta: document.getElementById("btcPriceMeta"),
-  btc24h: document.getElementById("btc24h"),
   rsiCurrent: document.getElementById("rsiCurrent"),
   rsiStatus: document.getElementById("rsiStatus"),
-  rsi4w: document.getElementById("rsi4w"),
-  rsi12w: document.getElementById("rsi12w"),
+  rsiRegime: document.getElementById("rsiRegime"),
+  rsiChangeLines: document.getElementById("rsiChangeLines"),
+  rsiRefs: document.getElementById("rsiRefs"),
+  rsiSlope: document.getElementById("rsiSlope"),
   direction: document.getElementById("direction"),
   momentumPhase: document.getElementById("momentumPhase"),
   momentumPhaseMeta: document.getElementById("momentumPhaseMeta"),
   chartState: document.getElementById("chartState"),
   interpretationBox: document.getElementById("interpretationBox"),
+  analyticsStrip: document.getElementById("analyticsStrip"),
   fgValue: document.getElementById("fgValue"),
   fgText: document.getElementById("fgText"),
   fgTime: document.getElementById("fgTime"),
   rsiChart: document.getElementById("rsiChart"),
 };
-
 let chart;
 
-const rsiZonePlugin = {
-  id: "rsiZonePlugin",
-  beforeDraw(chartObj) {
-    const { ctx, chartArea, scales } = chartObj;
-    if (!chartArea || !scales.y) return;
-    const y = scales.y;
-    const zones = [
-      { from: 0, to: 30, color: "rgba(255, 95, 122, 0.08)" },
-      { from: 30, to: 45, color: "rgba(255, 150, 120, 0.06)" },
-      { from: 45, to: 55, color: "rgba(160, 170, 200, 0.06)" },
-      { from: 55, to: 70, color: "rgba(111, 140, 255, 0.06)" },
-      { from: 70, to: 100, color: "rgba(246, 196, 69, 0.07)" },
-    ];
-    ctx.save();
-    zones.forEach((z) => {
-      const yTop = y.getPixelForValue(z.to);
-      const yBottom = y.getPixelForValue(z.from);
-      ctx.fillStyle = z.color;
-      ctx.fillRect(chartArea.left, yTop, chartArea.right - chartArea.left, yBottom - yTop);
-    });
-    ctx.restore();
-  },
-};
+const rsiZonePlugin = { id: "rsiZonePlugin", beforeDraw(c) { const {ctx, chartArea, scales}=c; if(!chartArea||!scales.y) return; const y=scales.y; const zones=[[0,30,"rgba(255,95,122,.08)"],[30,45,"rgba(255,150,120,.05)"],[45,55,"rgba(160,170,200,.06)"],[55,70,"rgba(111,140,255,.05)"],[70,100,"rgba(246,196,69,.06)"]]; ctx.save(); zones.forEach(([f,t,col])=>{const yt=y.getPixelForValue(t), yb=y.getPixelForValue(f); ctx.fillStyle=col; ctx.fillRect(chartArea.left,yt,chartArea.right-chartArea.left,yb-yt);}); ctx.restore(); }};
 
-function formatUsd(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value > 1000 ? 0 : 2 }).format(value);
-}
 const f1 = (n) => Number(n).toFixed(1);
-const signed1 = (n) => `${n >= 0 ? "+" : ""}${Number(n).toFixed(1)}`;
+const f2 = (n) => Number(n).toFixed(2);
+const signed1 = (n) => `${n >= 0 ? "+" : ""}${f1(n)}`;
+const signed2 = (n) => `${n >= 0 ? "+" : ""}${f2(n)}`;
+const usd = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: v > 1000 ? 0 : 2 }).format(v);
 
-function setLoadingState() {
-  els.statusText.textContent = "Loading BTC ticker, weekly RSI, and market context...";
-  [els.btcPrice, els.btc24h, els.rsiCurrent, els.rsi4w, els.rsi12w, els.direction, els.momentumPhase].forEach((e) => (e.textContent = "—"));
-  els.btcPriceMeta.textContent = "Loading...";
-  els.rsiStatus.textContent = "Loading...";
-  els.momentumPhaseMeta.textContent = "Weekly phase status";
-  els.chartState.textContent = "Loading weekly RSI chart...";
-  els.interpretationBox.textContent = "Loading weekly direction interpretation...";
-  els.fgValue.textContent = "—";
-  els.fgText.textContent = "Loading...";
-  els.fgTime.textContent = "—";
+function classifyRsi(rsi) { if (rsi < 30) return "Deep Weak Zone"; if (rsi < 45) return "Weak Zone"; if (rsi < 55) return "Neutral Zone"; if (rsi <= 70) return "Strong Zone"; return "Heated Zone"; }
+function getRegime(w0){ if(w0<30) return "Deep Weakness"; if(w0<45) return "Recovery Attempt"; if(w0<50) return "Neutral Below Midline"; if(w0<55) return "Neutral Above Midline"; if(w0<=70) return "Momentum Strength"; return "Heated Momentum"; }
+function getDirection(w0,w1,w4,w12){ if(w0>w1&&w0>w4&&w0>w12) return "Strong Rising"; if(w0>w4&&w0>w12) return "Rising"; if(w0>w12&&w0<w4) return "Long-term Improving, Short-term Cooling"; if(w0<w12&&w0>w4) return "Short-term Bounce, Long-term Weak"; if(w0<w4&&w0<w12) return "Weakening"; return "Mixed / Sideways"; }
+function getPhase(w0,d4,d12,w4,w12){ if(w0>70) return "Heated Phase"; if(w0>=30&&w0<45&&d12>0) return "Recovery Phase"; if(w0>=45&&w0<55&&d12>0) return "Neutral Recovery"; if(w0>=55&&w0<=70&&d4>0&&d12>0) return "Strength Phase"; if(w0<w4&&w0>w12) return "Cooling Phase"; if(d4<0&&d12<0) return "Weakening Phase"; return "Mixed Phase"; }
+function slopeStatus(s){ if(s>1) return "Strong Positive Slope"; if(s>=0.3) return "Mild Positive Slope"; if(s>-0.3) return "Flat Slope"; if(s>=-1) return "Mild Negative Slope"; return "Negative Slope"; }
+function consistencyStatus(c){ if(c>=9) return "Highly Consistent"; if(c>=6) return "Moderately Consistent"; if(c>=3) return "Weak Consistency"; return "Low Consistency"; }
+function midlineStatus(d){ if(d<-5) return "Below Midline"; if(d<=5) return "Near Midline"; return "Above Midline"; }
+function interpretation(direction, phase){
+  const long = direction.includes("Long-term Improving") || direction === "Rising" || direction === "Strong Rising" ? "Improving" : direction.includes("Long-term Weak") || direction === "Weakening" ? "Weakening" : "Mixed";
+  const short = direction.includes("Short-term Cooling") || direction === "Weakening" ? "Cooling" : direction.includes("Bounce") || direction === "Strong Rising" || direction === "Rising" ? "Improving" : "Mixed";
+  return `12W trend: ${long}. 4W trend: ${short}. Phase: ${phase}.`;
 }
 
-function classifyRsi(rsi) {
-  if (rsi < 30) return "Deep Weak Zone";
-  if (rsi < 45) return "Weak Zone";
-  if (rsi < 55) return "Neutral Zone";
-  if (rsi <= 70) return "Strong Zone";
-  return "Heated Zone";
+function calculateRsiSeries(closes, p=RSI_PERIOD){ if(closes.length<=p) return []; let gs=0, ls=0; const rsis=[]; for(let i=1;i<=p;i++){const d=closes[i]-closes[i-1]; gs+=d>0?d:0; ls+=d<0?Math.abs(d):0;} let ag=gs/p, al=ls/p; rsis.push(al===0?100:100-100/(1+ag/al)); for(let i=p+1;i<closes.length;i++){const d=closes[i]-closes[i-1], g=d>0?d:0, l=d<0?Math.abs(d):0; ag=(ag*(p-1)+g)/p; al=(al*(p-1)+l)/p; rsis.push(al===0?100:100-100/(1+ag/al));} return rsis; }
+
+function renderChart(values){ if(chart) chart.destroy(); const pointRadius=values.map((_,i)=>i===12?6:(i===0||i===8?4:2.4)); chart=new Chart(els.rsiChart,{type:"line",data:{labels:RSI_LABELS,datasets:[{label:"BTC Weekly RSI",data:values,borderColor:"#6f8cff",borderWidth:2,pointBackgroundColor:"#d7deff",pointBorderColor:"#6f8cff",pointRadius,pointHoverRadius:pointRadius.map(v=>v+1),tension:.3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#e8ecf8"}},tooltip:{callbacks:{title:(c)=>c[0].label,label:(c)=>`RSI: ${c.parsed.y.toFixed(1)}`}}},scales:{x:{ticks:{color:"#95a2c7"},grid:{color:"rgba(35,48,83,.5)"}},y:{min:0,max:100,ticks:{color:"#95a2c7",stepSize:10},grid:{color:(ctx)=>[30,50,70].includes(ctx.tick.value)?"rgba(246,196,69,.8)":"rgba(35,48,83,.5)"}}}},plugins:[rsiZonePlugin]}); }
+
+async function fetchJson(url){ const r=await fetch(url,{method:"GET"}); if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
+
+function setLoading(){
+  els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
+  els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
+  els.rsiCurrent.textContent="—"; els.rsiStatus.textContent="Loading..."; els.rsiRegime.textContent="Regime: —";
+  els.rsiChangeLines.textContent="4W: — · 12W: —"; els.rsiRefs.textContent="W0: — | W-4: — | W-12: —"; els.rsiSlope.textContent="RSI Slope: — / week";
+  els.direction.textContent="—"; els.momentumPhase.textContent="—"; els.momentumPhaseMeta.textContent="Weekly phase status";
+  els.chartState.textContent="Loading weekly RSI chart..."; els.interpretationBox.textContent="Loading weekly direction interpretation...";
+  els.analyticsStrip.textContent="RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —";
+  els.fgValue.textContent="—"; els.fgText.textContent="Loading..."; els.fgTime.textContent="—";
 }
 
-function getDirection(w0, w1, w4, w12) {
-  if (w0 > w1 && w0 > w4 && w0 > w12) return "Strong Rising";
-  if (w0 > w4 && w0 > w12) return "Rising";
-  if (w0 > w12 && w0 < w4) return "Long-term Improving, Short-term Cooling";
-  if (w0 < w12 && w0 > w4) return "Short-term Bounce, Long-term Weak";
-  if (w0 < w4 && w0 < w12) return "Weakening";
-  return "Mixed / Sideways";
+function updateTicker(t){ const p=Number(t.lastPrice), ch=Number(t.priceChangePercent); if(!Number.isFinite(p)||!Number.isFinite(ch)) throw new Error("Ticker parse error"); els.btcPrice.textContent=usd(p); els.btc24hInline.textContent=`24h: ${ch>=0?"+":""}${ch.toFixed(1)}%`; els.btc24hInline.className=`meta ${ch>0?"pos":ch<0?"neg":"neu"}`; els.btcPriceMeta.textContent="BTCUSDT 24h ticker"; }
+function updateFearGreed(data){ const l=data?.data?.[0]; if(!l){els.fgText.textContent="Market context unavailable"; return;} const ts=Number(l.timestamp)*1000; els.fgValue.textContent=l.value; els.fgText.textContent=l.value_classification; els.fgTime.textContent=Number.isFinite(ts)?new Date(ts).toLocaleString():"Timestamp unavailable"; }
+
+function updateRsi(klines){
+  const closes=klines.map(k=>Number(k[4])).filter(Number.isFinite); const rsiSeries=calculateRsiSeries(closes);
+  if(rsiSeries.length<RSI_WINDOW) throw new Error("Not enough weekly data");
+  const v=rsiSeries.slice(-RSI_WINDOW).map(n=>Number(n.toFixed(1)));
+  const w0=v[12], w1=v[11], w4=v[8], w12=v[0];
+  const d4=w0-w4, d12=w0-w12, slope=d12/12, distance50=w0-50;
+  const direction=getDirection(w0,w1,w4,w12); const phase=getPhase(w0,d4,d12,w4,w12); const regime=getRegime(w0);
+  let rises=0; for(let i=1;i<v.length;i++) if(v[i]>v[i-1]) rises+=1;
+
+  els.rsiCurrent.textContent=f1(w0); els.rsiStatus.textContent=classifyRsi(w0); els.rsiRegime.textContent=`Regime: ${regime}`;
+  els.rsiChangeLines.textContent=`4W: ${signed1(d4)} · 12W: ${signed1(d12)}`;
+  els.rsiRefs.textContent=`W0: ${f1(w0)} | W-4: ${f1(w4)} | W-12: ${f1(w12)}`;
+  els.rsiSlope.textContent=`RSI Slope: ${signed2(slope)} / week (${slopeStatus(slope)})`;
+  els.direction.textContent=direction; els.momentumPhase.textContent=phase; els.interpretationBox.textContent=interpretation(direction,phase);
+  els.analyticsStrip.textContent=`RSI Slope: ${signed2(slope)} / week (${slopeStatus(slope)}) · Consistency: ${rises}/12 rising weeks (${consistencyStatus(rises)}) · Distance to 50: ${signed1(distance50)} (${midlineStatus(distance50)}) · Regime: ${regime}`;
+  renderChart(v);
 }
 
-function getMomentumPhase(w0, d4, d12, w4, w12) {
-  if (w0 > 70) return "Heated Phase";
-  if (w0 >= 30 && w0 < 45 && d12 > 0) return "Recovery Phase";
-  if (w0 >= 45 && w0 < 55 && d12 > 0) return "Neutral Recovery";
-  if (w0 >= 55 && w0 <= 70 && d4 > 0 && d12 > 0) return "Strength Phase";
-  if (w0 < w4 && w0 > w12) return "Cooling Phase";
-  if (d4 < 0 && d12 < 0) return "Weakening Phase";
-  return "Mixed Phase";
-}
+async function loadDashboard(){
+  setLoading(); els.refreshBtn.disabled=true;
+  const [t,k,f]=await Promise.allSettled([fetchJson(BTC_TICKER_URL),fetchJson(BTC_WEEKLY_KLINE_URL),fetchJson(FEAR_GREED_URL)]);
+  let tickerOk=false,rsiOk=false;
+  if(t.status==="fulfilled"){ try{updateTicker(t.value); tickerOk=true;}catch{els.btcPriceMeta.textContent="Ticker unavailable";} } else els.btcPriceMeta.textContent="Ticker unavailable";
+  if(k.status==="fulfilled"){ try{updateRsi(k.value); rsiOk=true;}catch{els.rsiStatus.textContent="RSI unavailable"; els.chartState.textContent="Unable to load RSI chart and analytics data."; els.interpretationBox.textContent="Weekly momentum interpretation is unavailable until RSI data loads."; els.analyticsStrip.textContent="RSI analytics unavailable.";} } else { els.rsiStatus.textContent="RSI unavailable"; els.chartState.textContent="Unable to load RSI chart and analytics data."; els.interpretationBox.textContent="Weekly momentum interpretation is unavailable until RSI data loads."; els.analyticsStrip.textContent="RSI analytics unavailable."; }
+  if(f.status==="fulfilled") updateFearGreed(f.value); else { els.fgText.textContent="Market context unavailable"; els.fgTime.textContent="Try refresh"; }
 
-function getInterpretation(direction, phase) {
-  const map = {
-    "Long-term Improving, Short-term Cooling": "Weekly RSI remains improved compared with 12 weeks ago, but short-term weekly momentum is cooling compared with the 4-week reference point.",
-    "Strong Rising": "Weekly momentum is strengthening across short, medium, and longer comparison points.",
-    Rising: "Weekly momentum is improving compared with the 4-week and 12-week reference points.",
-    Weakening: "Weekly momentum is below both the 4-week and 12-week reference points.",
-    "Short-term Bounce, Long-term Weak": "Weekly RSI is improving against the 4-week reference point, but remains below the 12-week reference point.",
-    "Mixed / Sideways": "Weekly momentum is mixed and does not show a clear single direction.",
-  };
-  return `${map[direction]} Current momentum phase: ${phase}.`;
-}
-
-function calculateRsiSeries(closes, period = RSI_PERIOD) {
-  if (closes.length <= period) return [];
-  const rsis = [];
-  let gainSum = 0;
-  let lossSum = 0;
-  for (let i = 1; i <= period; i += 1) {
-    const d = closes[i] - closes[i - 1];
-    gainSum += d > 0 ? d : 0;
-    lossSum += d < 0 ? Math.abs(d) : 0;
-  }
-  let avgGain = gainSum / period;
-  let avgLoss = lossSum / period;
-  rsis.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
-  for (let i = period + 1; i < closes.length; i += 1) {
-    const d = closes[i] - closes[i - 1];
-    const g = d > 0 ? d : 0;
-    const l = d < 0 ? Math.abs(d) : 0;
-    avgGain = (avgGain * (period - 1) + g) / period;
-    avgLoss = (avgLoss * (period - 1) + l) / period;
-    rsis.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
-  }
-  return rsis;
-}
-
-function renderChart(values) {
-  if (chart) chart.destroy();
-  const pointRadius = values.map((_, i) => (i === 0 || i === 8 ? 4 : i === 12 ? 5.5 : 2.5));
-  chart = new Chart(els.rsiChart, {
-    type: "line",
-    data: { labels: RSI_LABELS, datasets: [{ label: "BTC Weekly RSI", data: values, borderColor: "#6f8cff", borderWidth: 2, pointBackgroundColor: "#cfd8ff", pointBorderColor: "#6f8cff", pointRadius, pointHoverRadius: pointRadius.map((v) => v + 1), tension: 0.3, fill: false }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: "#e8ecf8" } },
-        tooltip: { callbacks: { title: (ctx) => ctx[0].label, label: (ctx) => `RSI: ${ctx.parsed.y.toFixed(1)}` } },
-      },
-      scales: {
-        x: { ticks: { color: "#95a2c7" }, grid: { color: "rgba(35,48,83,0.5)" } },
-        y: { min: 0, max: 100, ticks: { color: "#95a2c7", stepSize: 10 }, grid: { color: (ctx) => ([30, 50, 70].includes(ctx.tick.value) ? "rgba(246,196,69,0.8)" : "rgba(35,48,83,0.5)") } },
-      },
-    },
-    plugins: [rsiZonePlugin],
-  });
-}
-
-async function fetchJson(url) {
-  const r = await fetch(url, { method: "GET" });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-function updateTickerCard(t) {
-  const price = Number(t.lastPrice);
-  const ch = Number(t.priceChangePercent);
-  if (!Number.isFinite(price) || !Number.isFinite(ch)) throw new Error("Ticker parse error");
-  els.btcPrice.textContent = formatUsd(price);
-  els.btcPriceMeta.textContent = "BTCUSDT 24h ticker";
-  els.btc24h.textContent = `${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%`;
-  els.btc24h.className = `value ${ch >= 0 ? "pos" : "neg"}`;
-}
-
-function updateRsiSection(klines) {
-  const closes = klines.map((k) => Number(k[4])).filter(Number.isFinite);
-  const rsiSeries = calculateRsiSeries(closes, RSI_PERIOD);
-  if (rsiSeries.length < RSI_WINDOW) throw new Error("Not enough weekly data");
-  const v = rsiSeries.slice(-RSI_WINDOW);
-  const w0 = v[12], w1 = v[11], w4 = v[8], w12 = v[0];
-  const d4 = w0 - w4, d12 = w0 - w12;
-  const direction = getDirection(w0, w1, w4, w12);
-  const phase = getMomentumPhase(w0, d4, d12, w4, w12);
-
-  els.rsiCurrent.textContent = f1(w0);
-  els.rsiStatus.textContent = classifyRsi(w0);
-  els.rsi4w.textContent = signed1(d4);
-  els.rsi4w.className = `value ${d4 >= 0 ? "pos" : "neg"}`;
-  els.rsi12w.textContent = signed1(d12);
-  els.rsi12w.className = `value ${d12 >= 0 ? "pos" : "neg"}`;
-  document.querySelector('#rsi4w + .meta').textContent = `W0: ${f1(w0)} | W-4: ${f1(w4)}`;
-  document.querySelector('#rsi12w + .meta').textContent = `W0: ${f1(w0)} | W-12: ${f1(w12)}`;
-  els.direction.textContent = direction;
-  els.momentumPhase.textContent = phase;
-  els.momentumPhaseMeta.textContent = "Weekly phase status";
-  els.chartState.textContent = "Weekly data is used for long-range momentum monitoring.";
-  els.interpretationBox.textContent = getInterpretation(direction, phase);
-
-  renderChart(v.map((n) => Number(n.toFixed(1))));
-}
-
-function updateFearGreed(data) {
-  const latest = data?.data?.[0];
-  if (!latest) return;
-  const ts = Number(latest.timestamp) * 1000;
-  els.fgValue.textContent = latest.value;
-  els.fgText.textContent = latest.value_classification;
-  els.fgTime.textContent = Number.isFinite(ts) ? new Date(ts).toLocaleString() : "Timestamp unavailable";
-}
-
-async function loadDashboard() {
-  setLoadingState();
-  els.refreshBtn.disabled = true;
-  const [tickerResult, klineResult, sentimentResult] = await Promise.allSettled([fetchJson(BTC_TICKER_URL), fetchJson(BTC_WEEKLY_KLINE_URL), fetchJson(FEAR_GREED_URL)]);
-  let tickerOk = false, rsiOk = false;
-  if (tickerResult.status === "fulfilled") {
-    try { updateTickerCard(tickerResult.value); tickerOk = true; } catch { els.btcPriceMeta.textContent = "Ticker unavailable"; }
-  } else els.btcPriceMeta.textContent = "Ticker unavailable";
-
-  if (klineResult.status === "fulfilled") {
-    try { updateRsiSection(klineResult.value); rsiOk = true; } catch {
-      els.rsiStatus.textContent = "RSI unavailable";
-      els.chartState.textContent = "Unable to load RSI chart data.";
-      els.interpretationBox.textContent = "Weekly direction interpretation is unavailable until RSI data loads.";
-      els.momentumPhase.textContent = "—";
-    }
-  } else {
-    els.rsiStatus.textContent = "RSI unavailable";
-    els.chartState.textContent = "Unable to load RSI chart data.";
-    els.interpretationBox.textContent = "Weekly direction interpretation is unavailable until RSI data loads.";
-  }
-
-  if (sentimentResult.status === "fulfilled") updateFearGreed(sentimentResult.value);
-  else { els.fgText.textContent = "Market context unavailable"; els.fgTime.textContent = "Try refresh"; }
-
-  els.statusText.textContent = tickerOk && rsiOk
-    ? `Monitoring BTC weekly momentum and direction. Last update: ${new Date().toLocaleTimeString()}`
-    : (tickerOk || rsiOk) ? "Partial update loaded. One source is currently unavailable." : "Unable to load BTC weekly monitor sources right now.";
-  els.refreshBtn.disabled = false;
+  els.statusText.textContent=tickerOk&&rsiOk?`Monitoring BTC weekly momentum and direction. Last update: ${new Date().toLocaleTimeString()}`:(tickerOk||rsiOk)?"Partial update loaded. One source is currently unavailable.":"Unable to load BTC weekly monitor sources right now.";
+  els.refreshBtn.disabled=false;
 }
 
 els.refreshBtn.addEventListener("click", loadDashboard);
