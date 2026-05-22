@@ -19,6 +19,8 @@ let priceChart = null;
 let candleSeries = null;
 let rsiChart = null;
 let fvgOverlayLines = [];
+let fvgOverlayLayer = null;
+let activeFvgZonesForOverlay = [];
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -203,24 +205,68 @@ function renderFvgPanel(dataset){
 }
 
 
+
+function ensureFvgOverlayLayer(){
+  if(!els.priceChart) return null;
+  if(!fvgOverlayLayer){
+    fvgOverlayLayer = document.createElement("div");
+    fvgOverlayLayer.className = "fvg-overlay-layer";
+    els.priceChart.appendChild(fvgOverlayLayer);
+  }
+  return fvgOverlayLayer;
+}
+function clearFvgFilledOverlay(){
+  if(fvgOverlayLayer) fvgOverlayLayer.innerHTML = "";
+}
+function renderFvgFilledOverlay(){
+  try {
+    if(!priceChart || !candleSeries || !activeFvgZonesForOverlay.length) return;
+    const layer = ensureFvgOverlayLayer();
+    if(!layer) return;
+    layer.innerHTML = "";
+    const rightEdge = els.priceChart.clientWidth;
+
+    activeFvgZonesForOverlay.forEach((f)=>{
+      const xStart = priceChart.timeScale().timeToCoordinate(f.endTime);
+      const yTop = candleSeries.priceToCoordinate(f.upper);
+      const yBottom = candleSeries.priceToCoordinate(f.lower);
+      if(xStart == null || yTop == null || yBottom == null) return;
+
+      const rect = document.createElement("div");
+      const bullish = f.type === "Bullish FVG";
+      rect.className = `fvg-zone ${bullish ? "bullish" : "bearish"}`;
+      rect.style.left = `${Math.max(0, xStart)}px`;
+      rect.style.top = `${Math.min(yTop, yBottom)}px`;
+      rect.style.width = `${Math.max(1, rightEdge - xStart)}px`;
+      rect.style.height = `${Math.max(1, Math.abs(yBottom - yTop))}px`;
+      rect.title = `${f.type} | ${f.startLabel} → ${f.endLabel}`;
+      layer.appendChild(rect);
+    });
+  } catch (e) {
+    console.error("FVG filled overlay render failed", e);
+  }
+}
+
 function getActiveFvgs(dataset){
   const currentPrice=dataset[dataset.length-1].close;
   return scanWeeklyFvg(dataset)
     .filter(f=>f.status!=="Filled")
     .map(f=>({ ...f, distance:fvgDistancePct(f,currentPrice) }))
     .sort((a,b)=>{
-      const sa=(a.status==="Unfilled"?0:1), sb=(b.status==="Unfilled"?0:1);
-      if(sa!==sb) return sa-sb;
       if(Math.abs(a.distance)!==Math.abs(b.distance)) return Math.abs(a.distance)-Math.abs(b.distance);
-      return b.index-a.index;
+      if(b.index!==a.index) return b.index-a.index;
+      const sa=(a.status==="Unfilled"?0:1), sb=(b.status==="Unfilled"?0:1);
+      return sa-sb;
     })
     .slice(0,5);
 }
 function clearFvgOverlay(){
   fvgOverlayLines.forEach((line)=>{ try { candleSeries?.removePriceLine(line); } catch(_){} });
   fvgOverlayLines = [];
+  clearFvgFilledOverlay();
 }
 function renderFvgOverlay(activeFvgs){
+  activeFvgZonesForOverlay = activeFvgs || [];
   try {
     if(!candleSeries) return;
     clearFvgOverlay();
@@ -231,6 +277,10 @@ function renderFvgOverlay(activeFvgs){
       const lowerLine = candleSeries.createPriceLine({ price:f.lower, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} lower` });
       fvgOverlayLines.push(upperLine, lowerLine);
     });
+    renderFvgFilledOverlay();
+
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => renderFvgFilledOverlay());
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderFvgFilledOverlay());
   } catch (e) {
     console.error("FVG overlay render failed", e);
   }
