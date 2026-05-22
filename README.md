@@ -1,62 +1,76 @@
 # Pulse Lab
 
-Pulse Lab is a static Bitcoin monitoring dashboard focused on **BTCUSDT Weekly RSI**.
+Pulse Lab is a static **Bitcoin Weekly RSI Monitor** focused on long-range BTCUSDT momentum and weekly direction.
 
-## App Purpose
+## What this app monitors
 
-- Monitor BTC trend, momentum, and weekly direction in a single-page dashboard.
-- Visualize the latest 13 weekly RSI points (W-12 to W0).
-- Keep the app lightweight and deployable on GitHub Pages.
+- BTCUSDT weekly momentum using RSI 14.
+- Weekly RSI trend points from `W-12` to `W0` displayed as a line chart.
+- Supporting market context from the Fear & Greed Index.
 
-## Data Sources
+## Data sources (public, no key)
 
-1. Binance weekly klines (BTCUSDT, 1w, limit 120):
+1. Binance BTCUSDT weekly candles (`1w`, `limit=120`):
    - `https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=120`
-2. Binance BTC 24h ticker:
+2. Binance BTCUSDT 24h ticker:
    - `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT`
 3. Alternative.me Fear & Greed:
-   - `https://api.alternative.me/fng/?limit=1`
+   - `https://api.alternative.me/fng/`
 
-## RSI Method
+## RSI method and weekly points
 
-- RSI 14 is calculated manually in client-side JavaScript from weekly close prices.
-- The full RSI series is computed from fetched klines.
-- The chart displays the latest 13 weekly RSI values:
+- RSI 14 is calculated client-side in JavaScript from weekly close prices.
+- The full RSI series is generated from the kline close sequence.
+- The dashboard extracts the latest 13 RSI points in order:
   - `W-12, W-11, W-10, W-9, W-8, W-7, W-6, W-5, W-4, W-3, W-2, W-1, W0`
-- `W0` means the latest available weekly RSI.
+- Meanings:
+  - `W0` = latest weekly RSI
+  - `W-4` = RSI 4 weeks before W0
+  - `W-12` = RSI 12 weeks before W0
 
-## Project Structure
+## Dashboard calculations
+
+- **Current Weekly RSI** = `W0`
+- **4W RSI Change** = `W0 - W-4`
+- **12W RSI Change** = `W0 - W-12`
+- **Direction** compares `W0` with `W-1`, `W-4`, and `W-12`:
+  - Strong Rising / Rising / Weakening / Mixed
+
+## Fear & Greed usage
+
+Fear & Greed appears below the RSI chart as supporting market context. It is not the primary monitor metric.
+
+## Project structure
 
 - `index.html`
 - `style.css`
 - `app.js`
 - `README.md`
 
-## Local Usage
+## Run locally
 
-Run from a local static server:
+Use any simple static server. Example:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open:
+Open `http://localhost:8000`.
 
-- `http://localhost:8000`
+## Deploy to GitHub Pages
 
-## GitHub Pages Deployment
-
-1. Push this repository to GitHub.
+1. Push the repository to GitHub.
 2. Open **Settings → Pages**.
-3. Select **Deploy from a branch**.
-4. Choose branch (for example `main`) and folder `/ (root)`.
+3. Choose **Deploy from a branch**.
+4. Select your branch (for example `main`) and `/ (root)`.
 5. Save and open the published URL.
 
-The app runs directly as static files with no build tools.
+The app is fully static and GitHub Pages compatible.
 
 ## Constraints
 
-- No API keys.
-- No backend or server logic.
-- No database.
-- No paid APIs.
+- No API key
+- No backend
+- No database
+- No paid API
+- No build tools required
