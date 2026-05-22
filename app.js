@@ -19,6 +19,7 @@ const els = {
 let rsiCompareChart, lwChart, candleSeries;
 let resizeHandlerBound = false;
 
+
 const rsiZonePlugin = { id: "rsiZonePlugin", beforeDraw(c) { const {ctx, chartArea, scales}=c; if(!chartArea||!scales.y) return; const y=scales.y; [[0,30,"rgba(255,95,122,.08)"],[30,45,"rgba(255,150,120,.05)"],[45,55,"rgba(160,170,200,.06)"],[55,70,"rgba(111,140,255,.05)"],[70,100,"rgba(246,196,69,.06)"]].forEach(([f,t,col])=>{const yt=y.getPixelForValue(t), yb=y.getPixelForValue(f); ctx.save(); ctx.fillStyle=col; ctx.fillRect(chartArea.left,yt,chartArea.right-chartArea.left,yb-yt); ctx.restore();}); }};
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -36,6 +37,24 @@ function renderBiasScanner(items){if(!items.length){els.biasScannerList.innerHTM
 function calculateRsiSeries(closes,p=RSI_PERIOD){ if(closes.length<=p) return []; let gs=0,ls=0; const rsis=[]; for(let i=1;i<=p;i++){const d=closes[i]-closes[i-1]; gs+=d>0?d:0; ls+=d<0?Math.abs(d):0;} let ag=gs/p, al=ls/p; rsis.push(al===0?100:100-100/(1+ag/al)); for(let i=p+1;i<closes.length;i++){const d=closes[i]-closes[i-1], g=d>0?d:0, l=d<0?Math.abs(d):0; ag=(ag*(p-1)+g)/p; al=(al*(p-1)+l)/p; rsis.push(al===0?100:100-100/(1+ag/al));} return rsis; }
 function renderRsiChart(values){if(rsiCompareChart) rsiCompareChart.destroy(); const refs=[0,24,44,48]; const pointRadius=values.map((_,i)=>i===48?6:(refs.includes(i)?4:1.8)); rsiCompareChart=new Chart(els.rsiCompareChart,{type:"line",data:{labels:RSI_LABELS,datasets:[{label:"BTC Weekly RSI",data:values,borderColor:"#6f8cff",borderWidth:2,pointBackgroundColor:"#d7deff",pointBorderColor:"#6f8cff",pointRadius,pointHoverRadius:pointRadius.map(v=>v+1),tension:.25,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#e8ecf8"}},tooltip:{callbacks:{title:(c)=>c[0].label,label:(c)=>`RSI: ${c.parsed.y.toFixed(1)}`}}},scales:{x:{ticks:{color:"#95a2c7",maxTicksLimit:13},grid:{color:"rgba(35,48,83,.5)"}},y:{min:0,max:100,ticks:{color:"#95a2c7",stepSize:10},grid:{color:(ctx)=>[30,50,70].includes(ctx.tick.value)?"rgba(246,196,69,.8)":"rgba(35,48,83,.5)"}}}},plugins:[rsiZonePlugin]});}
 function toYmd(ms){ return new Date(ms).toISOString().slice(0,10); }
+
+function createCandleSeries(chart){
+  if (typeof chart.addCandlestickSeries === "function") {
+    return chart.addCandlestickSeries({ upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
+  }
+  if (typeof chart.addSeries === "function" && typeof LightweightCharts !== "undefined" && LightweightCharts.CandlestickSeries) {
+    return chart.addSeries(LightweightCharts.CandlestickSeries, { upColor:'#1fc981', downColor:'#ff5f7a', borderVisible:false, wickUpColor:'#1fc981', wickDownColor:'#ff5f7a' });
+  }
+  throw new Error("candlestick series API unavailable");
+}
+
+function resetPriceChart(){
+  if (lwChart) {
+    lwChart.remove();
+    lwChart = null;
+    candleSeries = null;
+  }
+}
 function togglePriceChartError(msg=""){
   if(!els.priceChartError) return;
   if(msg){ els.priceChartError.textContent=msg; els.priceChartError.hidden=false; }
@@ -112,7 +131,7 @@ function updateRsiAndPrice(klines){
     togglePriceChartError();
   } catch (error) {
     togglePriceChartError("Price chart unavailable. Weekly candlestick data could not be rendered.");
-    console.error("failed to render price chart", error);
+    console.error("failed to render price chart", { error, lightweightLoaded: typeof LightweightCharts !== "undefined", containerFound: !!els.priceChart, sampleCandle: latest[0] });
   }
   renderBiasScanner(runBiasScanner(latest.map(x=>x.close), v));
 }
