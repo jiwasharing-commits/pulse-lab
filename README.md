@@ -7,6 +7,7 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 - Weekly RSI only (RSI 14 from weekly closes).
 - W-12 to W0 weekly RSI view.
 - Direction and Momentum Phase from W0, W-1, W-4, and W-12.
+- BTC Weekly Price vs RSI comparison using aligned weekly labels.
 - Fear & Greed as supporting market context.
 
 ## Data sources
@@ -25,6 +26,11 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 - Momentum Consistency counts rising weeks across 12 transitions in the W-12..W0 window.
 - Distance to RSI 50 tracks below/near/above midline status.
 - Weekly RSI Regime gives zone-specific classification for W0.
+
+## Price vs RSI comparison
+- Weekly close price and weekly RSI are shown in separate aligned charts because their scales are different.
+- Divergence Status compares 12W price change and 12W RSI change to label alignment, divergence, recovery divergence, or consolidation relationship.
+- This feature is for momentum relationship monitoring using long-range weekly data.
 
 ## Technical constraints
 - Static frontend only.
