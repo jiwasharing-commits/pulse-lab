@@ -11,7 +11,7 @@ const els = {
   rsiChangeLines: document.getElementById("rsiChangeLines"), rsiRefs: document.getElementById("rsiRefs"), rsiSlope: document.getElementById("rsiSlope"),
   direction: document.getElementById("direction"), momentumPhase: document.getElementById("momentumPhase"), analyticsStrip: document.getElementById("analyticsStrip"),
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
-  fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"), biasScannerList: document.getElementById("biasScannerList"),
+  fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"), biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
 };
 
@@ -152,6 +152,63 @@ function renderRsiChart(dataset){
 
 function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){els.fgText.textContent="Market context unavailable"; return;} const ts=Number(l.timestamp)*1000; els.fgValue.textContent=l.value; els.fgText.textContent=l.value_classification; els.fgTime.textContent=Number.isFinite(ts)?new Date(ts).toLocaleString():"Timestamp unavailable"; }
 
+
+function scanWeeklyFvg(dataset){
+  const fvgs=[];
+  for(let i=2;i<dataset.length;i++){
+    const a=dataset[i-2], c=dataset[i];
+    if(c.low>a.high){
+      const lower=a.high, upper=c.low;
+      fvgs.push({type:"Bullish FVG", index:i, startLabel:a.label,endLabel:c.label,startTime:a.time,endTime:c.time,lower,upper,midpoint:(lower+upper)/2,sizePercent:((upper-lower)/((lower+upper)/2))*100});
+    }
+    if(c.high<a.low){
+      const lower=c.high, upper=a.low;
+      fvgs.push({type:"Bearish FVG", index:i, startLabel:a.label,endLabel:c.label,startTime:a.time,endTime:c.time,lower,upper,midpoint:(lower+upper)/2,sizePercent:((upper-lower)/((lower+upper)/2))*100});
+    }
+  }
+  return fvgs.map((f)=>({ ...f, status:getFvgStatus(f,dataset) }));
+}
+function getFvgStatus(fvg,dataset){
+  const after=dataset.slice(fvg.index+1);
+  if(fvg.type==="Bullish FVG"){
+    if(after.some(c=>c.low<=fvg.lower)) return "Filled";
+    if(after.some(c=>c.low<fvg.upper && c.low>fvg.lower)) return "Partially Filled";
+    return "Unfilled";
+  }
+  if(after.some(c=>c.high>=fvg.upper)) return "Filled";
+  if(after.some(c=>c.high>fvg.lower && c.high<fvg.upper)) return "Partially Filled";
+  return "Unfilled";
+}
+function fvgDistancePct(fvg,currentPrice){
+  if(currentPrice>fvg.upper) return ((currentPrice-fvg.upper)/currentPrice)*100;
+  if(currentPrice<fvg.lower) return ((fvg.lower-currentPrice)/currentPrice)*100;
+  return 0;
+}
+function renderFvgPanel(dataset){
+  if(!els.fvgList) return;
+  try {
+    const currentPrice=dataset[dataset.length-1].close;
+    const active=scanWeeklyFvg(dataset)
+      .filter(f=>f.status!=="Filled")
+      .map(f=>({ ...f, distance:fvgDistancePct(f,currentPrice) }))
+      .sort((a,b)=>{
+        const sa=(a.status==="Unfilled"?0:1), sb=(b.status==="Unfilled"?0:1);
+        if(sa!==sb) return sa-sb;
+        if(Math.abs(a.distance)!==Math.abs(b.distance)) return Math.abs(a.distance)-Math.abs(b.distance);
+        return b.index-a.index;
+      })
+      .slice(0,5);
+    if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return; }
+    els.fvgList.innerHTML=active.map(f=>{
+      const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
+      return `<div class="scanner-row"><span class="scanner-title">${f.type}</span> | ${f.startLabel} → ${f.endLabel} | ${usd(f.lower)} - ${usd(f.upper)} | ${f.status} | Distance: ${distLabel} | Size: ${f1(f.sizePercent)}%</div>`;
+    }).join('');
+  } catch (e) {
+    console.error("FVG scan failed:", e);
+    els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+  }
+}
+
 function setLoading(){
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
   els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
@@ -161,6 +218,7 @@ function setLoading(){
   els.analyticsStrip.textContent="RSI analytics loading..."; els.priceMetrics.textContent="Price/RSI comparison loading...";
   els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context...";
   els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
+  if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
   togglePriceChartError(""); toggleRsiChartError("");
 }
 
@@ -193,6 +251,7 @@ async function loadDashboard(){
       const metrics = renderSummaryCards(dataset);
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);
+      renderFvgPanel(dataset);
       weeklyOk = true;
 
       try { renderPriceChart(dataset); togglePriceChartError(""); }
@@ -208,6 +267,7 @@ async function loadDashboard(){
       els.divergenceStatus.textContent = "Divergence Status: unavailable";
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
       els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
+    if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
     }
   } else {
     els.rsiStatus.textContent = "Weekly Binance data unavailable.";

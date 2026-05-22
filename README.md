@@ -69,3 +69,12 @@ Then open `http://localhost:8000`.
 - BTC weekly price uses a dedicated **candlestick chart** rendered with **Lightweight Charts** (CDN) so OHLC candles render reliably in static GitHub Pages deployments.
 - OHLC mapping uses Binance weekly kline indices: `open=kline[1]`, `high=kline[2]`, `low=kline[3]`, `close=kline[4]` and each value is parsed to numeric format before rendering.
 - RSI remains separate in the lower chart and is still calculated from weekly close prices only.
+
+
+## Weekly Fair Value Gap (FVG)
+
+- Pulse Lab scans weekly BTCUSDT candles for 3-candle imbalance zones (FVG).
+- Bullish FVG: current candle low is above the high from two candles back.
+- Bearish FVG: current candle high is below the low from two candles back.
+- Only active zones (Unfilled or Partially Filled) are shown by default.
+- This feature is for monitoring weekly imbalance zones, not financial advice.
