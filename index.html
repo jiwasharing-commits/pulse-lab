@@ -32,21 +32,14 @@
           <article class="card compact-card"><h2>Momentum Phase</h2><p id="momentumPhase" class="value compact-value">—</p><p id="momentumPhaseMeta" class="meta">Weekly phase status</p></article>
         </section>
 
-        <section class="panel chart-panel">
-          <div class="panel-header"><h2>BTC Weekly RSI Chart</h2><p>W-12 to W0 weekly view</p></div>
-          <div class="chart-wrap"><canvas id="rsiChart" aria-label="BTC Weekly RSI Chart" role="img"></canvas></div>
-          <p id="chartState" class="panel-note">Weekly data is used for long-range momentum monitoring.</p>
-          <div id="interpretationBox" class="interpretation-box">Loading weekly direction interpretation...</div>
-          <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
-        </section>
-
         <section class="panel dual-panel">
-          <div class="panel-header"><h2>BTC Weekly Price vs RSI</h2><p>Aligned weekly labels for divergence monitoring</p></div>
-          <div class="dual-metrics" id="priceMetrics">4W Price Change: — · 12W Price Change: —</div>
+          <div class="panel-header"><h2>BTC Weekly Price vs RSI</h2><p>Main weekly divergence monitoring section</p></div>
           <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
+          <div class="dual-metrics" id="priceMetrics">4W Price: — | 12W Price: —</div>
           <div class="interpretation-box" id="divergenceText">Loading divergence interpretation...</div>
           <div class="chart-wrap compact"><canvas id="priceChart" aria-label="BTC Weekly Price Chart" role="img"></canvas></div>
           <div class="chart-wrap compact"><canvas id="rsiCompareChart" aria-label="BTC Weekly RSI Comparison Chart" role="img"></canvas></div>
+          <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
         </section>
 
         <section class="panel sentiment">

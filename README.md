@@ -7,8 +7,20 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
 - Weekly RSI only (RSI 14 from weekly closes).
 - W-12 to W0 weekly RSI view.
 - Direction and Momentum Phase from W0, W-1, W-4, and W-12.
-- BTC Weekly Price vs RSI comparison using aligned weekly labels.
+- BTC Weekly Price vs RSI dual chart as the main chart section.
 - Fear & Greed as supporting market context.
+
+## Main chart section
+- The standalone RSI-only chart was removed to avoid duplication.
+- The main chart section is **BTC Weekly Price vs RSI**.
+- Top chart: BTC weekly close price.
+- Bottom chart: BTC weekly RSI.
+- Both use aligned `W-12` to `W0` labels.
+- Price and RSI are shown separately because their scales are different.
+
+## Divergence status
+- Divergence Status compares 12W price movement and 12W RSI movement.
+- It labels alignment, divergence, recovery divergence, consolidation improvement/cooling, or mixed relationship.
 
 ## Data sources
 1. Binance weekly candles (`1w`, `limit=120`):
@@ -17,20 +29,6 @@ Pulse Lab is a static **BTCUSDT Weekly RSI** monitor designed for compact weekly
    - `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT`
 3. Alternative.me Fear & Greed:
    - `https://api.alternative.me/fng/`
-
-## Weekly analytics
-- Full RSI series is calculated client-side, then latest 13 points (`W-12 ... W0`) are used.
-- `4W RSI Change = W0 - W-4`
-- `12W RSI Change = W0 - W-12`
-- `RSI Slope = (W0 - W-12) / 12` (average weekly change)
-- Momentum Consistency counts rising weeks across 12 transitions in the W-12..W0 window.
-- Distance to RSI 50 tracks below/near/above midline status.
-- Weekly RSI Regime gives zone-specific classification for W0.
-
-## Price vs RSI comparison
-- Weekly close price and weekly RSI are shown in separate aligned charts because their scales are different.
-- Divergence Status compares 12W price change and 12W RSI change to label alignment, divergence, recovery divergence, or consolidation relationship.
-- This feature is for momentum relationship monitoring using long-range weekly data.
 
 ## Technical constraints
 - Static frontend only.
