@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pulse Lab</title>
     <link rel="stylesheet" href="style.css" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+        <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -39,7 +38,7 @@
           <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
           <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
           <div class="chart-wrap compact"><div id="priceChart" aria-label="BTC Weekly Candlestick Chart" role="img"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
-          <div class="chart-wrap compact"><canvas id="rsiCompareChart" aria-label="BTC Weekly RSI Comparison Chart" role="img"></canvas></div>
+          <div class="chart-wrap compact"><div id="rsiChart" aria-label="BTC Weekly RSI Comparison Chart" role="img"></div><div id="rsiChartError" class="chart-error" hidden>RSI chart unavailable.</div></div>
           <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
         </section>
 
