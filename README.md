@@ -104,3 +104,11 @@ Then open `http://localhost:8000`.
 - Main area contains summary cards, weekly chart, and collapsible lower timeframe detail.
 - Right panel contains compact FVG, divergence, and potential bias summaries with collapsible detail lists.
 - Mobile layout automatically stacks into one column.
+
+
+## Lower Timeframe Presets
+
+- Default lower timeframe view tracks one weekly candle range.
+- 1W Detail: 4H shows latest 42 candles, 1H shows latest 168 candles.
+- 2W Detail: 4H shows latest 84 candles, 1H shows latest 336 candles.
+- Custom Date allows selected-range inspection with Binance `startTime` and `endTime`.
