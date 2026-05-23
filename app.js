@@ -23,7 +23,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"),
+  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -418,7 +418,7 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
       else { const r=renderSingleLtfChart(els.lower4hChart,candles,280); ltf4hChart=r.chart; ltf4hSeries=r.series; ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight); render4hFvgSummaryAndOverlay(candles); }
     }
     catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
-  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; }
+  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: 4H data unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: 4H data unavailable.'; }
   if(h1.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
@@ -472,6 +472,28 @@ function render4hVsWeeklyFvgSummary(){
 }
 
 
+
+function find4hSwings(candles){
+  const highs=[], lows=[];
+  for(let i=2;i<candles.length-2;i++){
+    const c=candles[i];
+    if(c.high>candles[i-1].high&&c.high>candles[i-2].high&&c.high>candles[i+1].high&&c.high>candles[i+2].high) highs.push({index:i,price:c.high,time:c.time});
+    if(c.low<candles[i-1].low&&c.low<candles[i-2].low&&c.low<candles[i+1].low&&c.low<candles[i+2].low) lows.push({index:i,price:c.low,time:c.time});
+  }
+  return {highs,lows};
+}
+function detect4hStructure(candles){
+  const latest=candles[candles.length-1];
+  const {highs,lows}=find4hSwings(candles);
+  const sh=highs[highs.length-1], sl=lows[lows.length-1];
+  let status='No clear 4H structure shift', broken=null, ref='—';
+  const bearishTrend = lows.length>=2 && lows[lows.length-1].price<lows[lows.length-2].price;
+  const bullishTrend = highs.length>=2 && highs[highs.length-1].price>highs[highs.length-2].price;
+  if(sh && latest.close>sh.price){ status = bearishTrend ? 'Bullish CHoCH' : 'Bullish BOS'; broken=sh.price; ref=String(sh.time); }
+  else if(sl && latest.close<sl.price){ status = bullishTrend ? 'Bearish CHoCH' : 'Bearish BOS'; broken=sl.price; ref=String(sl.time); }
+  return {status, broken, ref, latestClose: latest.close};
+}
+
 function scan4hFvg(candles){
   const fvgs=[];
   for(let i=2;i<candles.length;i++){
@@ -519,7 +541,9 @@ function render4hFvgSummaryAndOverlay(candles){
       const distance = inside?0:Math.abs(current-nearest)/current*100;
       return { ...f, distance };
     }).sort((a,b)=>Math.abs(a.distance)-Math.abs(b.distance) || b.index-a.index || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1))).slice(0,5);
-    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; return; }
+    const structure = detect4hStructure(candles);
+    if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
+    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; return; }
     const nearest = active4hFvgs[0];
     if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status}`;
     const layer=ensure4hFvgLayer();
@@ -536,7 +560,10 @@ function render4hFvgSummaryAndOverlay(candles){
         r.style.left=`${Math.max(0,xStart)}px`; r.style.top=`${Math.min(yTop,yBottom)}px`; r.style.width=`${Math.max(1,rightEdge-xStart)}px`; r.style.height=`${Math.max(1,Math.abs(yBottom-yTop))}px`; layer.appendChild(r);
       }
     });
-  } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
+    const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
+    if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
+    ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>render4hFvgSummaryAndOverlay(candles));
+  } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
 function setLoading(){
@@ -560,6 +587,8 @@ function setLoading(){
   if(els.leftChanges) els.leftChanges.textContent="loading";
   if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: loading";
   if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent="4H FVG: loading";
+  if(els.lower4hStructure) els.lower4hStructure.textContent="4H Structure: loading";
+  if(els.lower4hReaction) els.lower4hReaction.textContent="4H Reaction: loading";
   if(els.right4hFvgType) els.right4hFvgType.textContent='loading';
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
   if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
