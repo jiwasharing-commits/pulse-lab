@@ -11,7 +11,10 @@ const els = {
   rsiChangeLines: document.getElementById("rsiChangeLines"), rsiRefs: document.getElementById("rsiRefs"), rsiSlope: document.getElementById("rsiSlope"),
   direction: document.getElementById("direction"), momentumPhase: document.getElementById("momentumPhase"), analyticsStrip: document.getElementById("analyticsStrip"),
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
-  fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"), biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
+  biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
+  ctxFearGreed: document.getElementById("ctxFearGreed"), ctxFvgCount: document.getElementById("ctxFvgCount"), ctxBiasCount: document.getElementById("ctxBiasCount"), ctxLtfState: document.getElementById("ctxLtfState"),
+  fvgTitle: document.getElementById("fvgTitle"), biasTitle: document.getElementById("biasTitle"),
+  fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
@@ -27,6 +30,8 @@ let activeFvgZonesForOverlay = [];
 let ltf4hChart = null;
 let ltf1hChart = null;
 let ltfVisible = false;
+let fvgOpen=false;
+let biasOpen=false;
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -123,6 +128,8 @@ function renderPotentialBiasScanner(dataset, metrics){
   if(!metrics) return;
   const prices=dataset.map(x=>x.close), rsis=metrics.rsiValues;
   const items = runBiasScanner(prices, rsis);
+  if(els.ctxBiasCount) els.ctxBiasCount.textContent=`Bias: ${items.length}`;
+  if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
   if(!items.length){ els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
   els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
 }
@@ -159,7 +166,7 @@ function renderRsiChart(dataset){
   // TODO: re-enable time-scale sync after data pipeline stability is fully verified.
 }
 
-function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){els.fgText.textContent="Market context unavailable"; return;} const ts=Number(l.timestamp)*1000; els.fgValue.textContent=l.value; els.fgText.textContent=l.value_classification; els.fgTime.textContent=Number.isFinite(ts)?new Date(ts).toLocaleString():"Timestamp unavailable"; }
+function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ els.ctxFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; els.ctxFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.ctxFearGreed.title=`Updated: ${t}`; }
 
 
 function scanWeeklyFvg(dataset){
@@ -197,6 +204,8 @@ function renderFvgPanel(dataset){
   if(!els.fvgList) return;
   try {
     const active=getActiveFvgs(dataset);
+    if(els.fvgTitle) els.fvgTitle.textContent=`Active Weekly FVG Zones (${active.length})`;
+    if(els.ctxFvgCount) els.ctxFvgCount.textContent=`Active FVG: ${active.length}`;
     if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
     els.fvgList.innerHTML=active.map(f=>{
       const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
@@ -293,6 +302,26 @@ function renderFvgOverlay(activeFvgs){
 }
 
 
+
+function setToggleState(name, open){
+  if(name==='ltf'){ ltfVisible=open; els.ltfContent.hidden=!open; els.ltfToggleBtn.textContent=open?'Hide':'Show'; els.ctxLtfState.textContent=`Lower TF: ${open?'Open':'Hidden'}`; }
+  if(name==='fvg'){ fvgOpen=open; els.fvgContent.hidden=!open; els.fvgToggleBtn.textContent=open?'Hide':'Show'; }
+  if(name==='bias'){ biasOpen=open; els.biasContent.hidden=!open; els.biasToggleBtn.textContent=open?'Hide':'Show'; }
+  try { sessionStorage.setItem(`pl_${name}_open`, open?'1':'0'); } catch(_){}
+}
+function restoreToggleState(){
+  const read=(k)=>{ try { return sessionStorage.getItem(k)==='1'; } catch(_) { return false; } };
+  setToggleState('ltf', read('pl_ltf_open'));
+  setToggleState('fvg', read('pl_fvg_open'));
+  setToggleState('bias', read('pl_bias_open'));
+}
+function setupCollapsibleSections(){
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible) await loadLowerTimeframeDetail(false); else destroyLtfCharts(); });
+  els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
+  els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
+  restoreToggleState();
+}
+
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
 function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } }
 function mapKlinesToCandles(klines, limit){
@@ -350,18 +379,6 @@ async function loadLowerTimeframeDetail(useRange=false){
     catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
   } else { toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
 }
-function setupLtfControls(){
-  if(!els.ltfToggleBtn) return;
-  els.ltfToggleBtn.addEventListener('click', async ()=>{
-    ltfVisible = !ltfVisible;
-    els.ltfContent.hidden = !ltfVisible;
-    els.ltfToggleBtn.textContent = ltfVisible ? 'Hide Lower Timeframe Detail' : 'Show Lower Timeframe Detail';
-    if(ltfVisible) await loadLowerTimeframeDetail(false); else destroyLtfCharts();
-  });
-  els.ltfApplyBtn?.addEventListener('click', ()=>loadLowerTimeframeDetail(true));
-  els.ltfResetBtn?.addEventListener('click', ()=>{ els.ltfStartDate.value=''; els.ltfEndDate.value=''; loadLowerTimeframeDetail(false); });
-}
-
 function setLoading(){
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
   els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
@@ -372,6 +389,9 @@ function setLoading(){
   els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context...";
   els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
   if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
+  if(els.ctxFearGreed) els.ctxFearGreed.textContent="Fear & Greed: loading";
+  if(els.ctxFvgCount) els.ctxFvgCount.textContent="Active FVG: —";
+  if(els.ctxBiasCount) els.ctxBiasCount.textContent="Bias: —";
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -421,7 +441,10 @@ async function loadDashboard(){
       els.divergenceStatus.textContent = "Divergence Status: unavailable";
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
       els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
+    if(els.ctxBiasCount) els.ctxBiasCount.textContent='Bias: unavailable';
+    if(els.ctxBiasCount) els.ctxBiasCount.textContent='Bias: unavailable';
     if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    if(els.ctxFvgCount) els.ctxFvgCount.textContent='Active FVG: unavailable';
     clearFvgOverlay();
     }
   } else {
@@ -433,7 +456,7 @@ async function loadDashboard(){
   }
 
   if(fgRes.status === "fulfilled") renderFearGreed(fgRes.value);
-  else { els.fgText.textContent="Market context unavailable"; els.fgTime.textContent="Try refresh"; }
+  else { if(els.ctxFearGreed) els.ctxFearGreed.textContent="Fear & Greed: unavailable"; }
 
   els.statusText.textContent = tickerOk && weeklyOk
     ? `Monitoring BTC weekly momentum and direction. Last update: ${new Date().toLocaleTimeString()}`
@@ -447,4 +470,4 @@ async function loadDashboard(){
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadDashboard();
 
-setupLtfControls();
+setupCollapsibleSections();

@@ -87,3 +87,11 @@ Then open `http://localhost:8000`.
 - You can inspect selected ranges with BTCUSDT 4H and 1H candlestick charts.
 - Date range requests use Binance `startTime` and `endTime` parameters.
 - No API key, backend, database, or paid API is required.
+
+
+## Compact Analysis-First Layout
+
+- Main weekly chart remains the primary analysis view.
+- Fear & Greed is shown as a compact quick-context chip instead of a large panel.
+- Lower Timeframe Detail is collapsed by default.
+- Active Weekly FVG Zones and Potential Bias Scanner are collapsible detail panels.

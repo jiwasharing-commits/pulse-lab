@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pulse Lab</title>
     <link rel="stylesheet" href="style.css" />
-            <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -21,8 +21,6 @@
         <section class="status-strip" aria-live="polite">
           <span id="statusText">Loading BTC weekly monitor...</span>
         </section>
-
-        <p class="intro-note">Long-range momentum view based on weekly data.</p>
 
         <section class="overview compact-overview">
           <article class="card compact-card"><h2>BTC Price</h2><p id="btcPrice" class="value">—</p><p id="btc24hInline" class="meta">24h: —</p><p id="btcPriceMeta" class="meta submeta">Loading...</p></article>
@@ -42,26 +40,17 @@
           <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
         </section>
 
-
-        <section class="panel" id="fvgPanel">
-          <div class="panel-header"><h2>Active Weekly FVG Zones</h2><p>Weekly imbalance zone monitor</p></div>
-          <div id="fvgList" class="scanner-list">
-            <div class="scanner-row">Loading weekly FVG zones...</div>
-          </div>
+        <section class="context-row" id="quickContextRow">
+          <span class="context-chip" id="ctxFearGreed">Fear &amp; Greed: —</span>
+          <span class="context-chip" id="ctxFvgCount">Active FVG: —</span>
+          <span class="context-chip" id="ctxBiasCount">Bias: —</span>
+          <span class="context-chip" id="ctxLtfState">Lower TF: Hidden</span>
         </section>
 
-        <section class="panel" id="biasScannerPanel">
-          <div class="panel-header"><h2>Potential Bias Scanner</h2><p>Top filtered weekly price vs RSI ranges</p></div>
-          <div id="biasScannerList" class="scanner-list">
-            <div class="scanner-row">Loading scanner results...</div>
-          </div>
-        </section>
-
-        
-        <section class="panel" id="ltfPanel">
-          <div class="panel-header">
+        <section class="panel collapsible" id="ltfPanel">
+          <div class="panel-header compact-header">
             <h2>Lower Timeframe Detail</h2>
-            <button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show Lower Timeframe Detail</button>
+            <button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button>
           </div>
           <div id="ltfContent" hidden>
             <p class="panel-note">Use 4H and 1H charts to inspect price behavior inside a selected weekly range.</p>
@@ -78,12 +67,17 @@
           </div>
         </section>
 
-        <section class="panel sentiment">
-          <div class="panel-header"><h2>Fear &amp; Greed Index</h2><p>Supporting market context</p></div>
-          <div class="sentiment-grid">
-            <div><p class="label">Index Value</p><p class="sentiment-value" id="fgValue">—</p></div>
-            <div><p class="label">Classification</p><p class="sentiment-text" id="fgText">Loading...</p></div>
-            <div><p class="label">Updated</p><p class="sentiment-text" id="fgTime">—</p></div>
+        <section class="panel collapsible" id="fvgPanel">
+          <div class="panel-header compact-header"><h2 id="fvgTitle">Active Weekly FVG Zones (—)</h2><button id="fvgToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button></div>
+          <div id="fvgContent" hidden>
+            <div id="fvgList" class="scanner-list"><div class="scanner-row">Loading weekly FVG zones...</div></div>
+          </div>
+        </section>
+
+        <section class="panel collapsible" id="biasScannerPanel">
+          <div class="panel-header compact-header"><h2 id="biasTitle">Potential Bias Scanner (—)</h2><button id="biasToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button></div>
+          <div id="biasContent" hidden>
+            <div id="biasScannerList" class="scanner-list"><div class="scanner-row">Loading scanner results...</div></div>
           </div>
         </section>
       </main>
