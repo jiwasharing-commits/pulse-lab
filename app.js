@@ -3,7 +3,8 @@ const BTC_WEEKLY_KLINE_URL = "https://data-api.binance.vision/api/v3/klines?symb
 const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
 const RSI_PERIOD = 14;
 const RSI_WINDOW = 49;
-const APP_LAST_UPDATED = "2026-05-23 21:30";
+// Update this timestamp whenever deploying a new app version.
+const APP_LAST_UPDATED = "2026-05-23 22:45";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -24,6 +25,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -39,6 +41,8 @@ let ltf4hSeries = null;
 let ltf4hFvgLines = [];
 let ltf4hFvgLayer = null;
 let active4hFvgs = [];
+let latest4hStructureStatus = "No clear 4H structure shift";
+let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let ltfVisible = false;
 let ltfPreset = "1w";
 let lowerTimeframeLoaded = false;
@@ -391,7 +395,13 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   console.log("Lower TF visible:", ltfVisible);
   console.log("4H container:", document.getElementById("lower4hChart"));
   console.log("1H container:", document.getElementById("lower1hChart"));
+  console.log("4H container size:", els.lower4hChart?.clientWidth, els.lower4hChart?.clientHeight);
+  console.log("1H container size:", els.lower1hChart?.clientWidth, els.lower1hChart?.clientHeight);
   if(!ltfVisible) return;
+  if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0){
+    requestAnimationFrame(()=>loadLowerTimeframeDetail(useRange,preset));
+    return;
+  }
   lowerTimeframeLoaded = true;
   toggleLtfError(els.lower4hError,''); toggleLtfError(els.lower1hError,'');
   destroyLtfCharts();
@@ -425,10 +435,10 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
-      else { ltf1hChart=renderSingleLtfChart(els.lower1hChart,candles,280); ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight); }
+      else { ltf1hChart=renderSingleLtfChart(els.lower1hChart,candles,280); ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight); render1hSweepSummary(candles); renderLowerTfReactionSummary(); }
     }
-    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
-  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
+    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
+  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; }
   render4hVsWeeklyFvgSummary();
 }
 
@@ -542,6 +552,7 @@ function render4hFvgSummaryAndOverlay(candles){
       return { ...f, distance };
     }).sort((a,b)=>Math.abs(a.distance)-Math.abs(b.distance) || b.index-a.index || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1))).slice(0,5);
     const structure = detect4hStructure(candles);
+    latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
     if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; return; }
     const nearest = active4hFvgs[0];
@@ -562,8 +573,47 @@ function render4hFvgSummaryAndOverlay(candles){
     });
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
+    renderLowerTfReactionSummary();
     ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>render4hFvgSummaryAndOverlay(candles));
   } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
+}
+
+
+function detect1hLiquiditySweep(candles){
+  const swingsH=[], swingsL=[];
+  for(let i=2;i<candles.length-2;i++){
+    const c=candles[i];
+    if(c.high>candles[i-1].high&&c.high>candles[i-2].high&&c.high>candles[i+1].high&&c.high>candles[i+2].high) swingsH.push({price:c.high,time:c.time,index:i});
+    if(c.low<candles[i-1].low&&c.low<candles[i-2].low&&c.low<candles[i+1].low&&c.low<candles[i+2].low) swingsL.push({price:c.low,time:c.time,index:i});
+  }
+  const start=Math.max(0,candles.length-20);
+  let found=null;
+  for(let i=start;i<candles.length;i++){
+    const c=candles[i];
+    const lowRef=[...swingsL].reverse().find(s=>s.index<i);
+    if(lowRef && c.low<lowRef.price && c.close>lowRef.price) found={status:'Bullish Sweep', level:lowRef.price, time:c.time, close:c.close};
+    const highRef=[...swingsH].reverse().find(s=>s.index<i);
+    if(highRef && c.high>highRef.price && c.close<highRef.price) found={status:'Bearish Sweep', level:highRef.price, time:c.time, close:c.close};
+    if(found) break;
+  }
+  if(!found) return {status:'No recent sweep'};
+  const dist=Math.abs(found.close-found.level)/found.close*100;
+  return {...found, distance:dist};
+}
+function render1hSweepSummary(candles){
+  try{
+    const sweep=detect1hLiquiditySweep(candles);
+    latest1hSweepStatus = sweep.status;
+    if(!els.lower1hSweepSummary) return;
+    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No recent 1H liquidity sweep.'; return; }
+    els.lower1hSweepSummary.textContent=`1H Liquidity Sweep | Status: ${sweep.status} | Swept Level: ${usd(sweep.level)} | Candle Time: ${sweep.time} | Distance: ${f1(sweep.distance)}%`;
+  }catch(e){ console.error('1H sweep scanner failed',e); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
+}
+function renderLowerTfReactionSummary(){
+  if(!els.lowerTfReactionSummary) return;
+  const nearest = active4hFvgs[0];
+  const fvgTxt = nearest ? `${nearest.type} (${nearest.status})` : 'No active 4H FVG';
+  els.lowerTfReactionSummary.textContent = `Lower TF Reaction | 4H Structure: ${latest4hStructureStatus} | 4H FVG: ${fvgTxt} | 1H Sweep: ${latest1hSweepStatus}`;
 }
 
 function setLoading(){
@@ -589,6 +639,8 @@ function setLoading(){
   if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent="4H FVG: loading";
   if(els.lower4hStructure) els.lower4hStructure.textContent="4H Structure: loading";
   if(els.lower4hReaction) els.lower4hReaction.textContent="4H Reaction: loading";
+  if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent="1H Liquidity Sweep: loading";
+  if(els.lowerTfReactionSummary) els.lowerTfReactionSummary.textContent="Lower TF Reaction: loading";
   if(els.right4hFvgType) els.right4hFvgType.textContent='loading';
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
   if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
@@ -686,4 +738,5 @@ setupCollapsibleSections();
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
+  if(ltf4hChart) renderLowerTfReactionSummary();
 });
