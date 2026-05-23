@@ -12,7 +12,7 @@
 .value{margin:0;font-size:1.08rem;font-weight:700}.compact-value{font-size:.92rem}.meta{margin:.18rem 0 0;color:var(--muted);font-size:.75rem;line-height:1.2}
 .chart-wrap{width:100%;min-height:210px;position:relative}.chart-wrap.compact{min-height:215px;margin-top:.38rem}
 #priceChart{width:100%;height:300px;min-height:260px} #rsiChart{width:100%;height:230px;min-height:205px}
-#ltf4hChart,#ltf1hChart{width:100%;height:270px;min-height:245px}
+.lower-chart{width:100%;height:280px;min-height:260px}
 .interpretation-box{margin-top:.4rem;padding:.45rem .58rem;border-radius:.55rem;border:1px solid var(--border);background:rgba(111,140,255,.1);font-size:.8rem;color:#d5ddf7}
 .analytics-strip{margin-top:.35rem;padding:.42rem .55rem;border:1px solid var(--border);border-radius:.55rem;font-size:.76rem;color:#c4d0f2;background:rgba(18,26,48,.7)}
 .dual-metrics{margin:.2rem 0 0;font-size:.78rem;color:#c4d0f2}

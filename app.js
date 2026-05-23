@@ -17,7 +17,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  ltf4hChart: document.getElementById("ltf4hChart"), ltf1hChart: document.getElementById("ltf1hChart"), ltf4hError: document.getElementById("ltf4hError"), ltf1hError: document.getElementById("ltf1hError"),
+  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"),
 };
 
 let priceChart = null;
@@ -317,7 +317,7 @@ function renderFvgOverlay(activeFvgs){
 
 
 function setToggleState(name, open){
-  if(name==='ltf'){ ltfVisible=open; els.ltfContent.hidden=!open; els.ltfToggleBtn.textContent=open?'Hide':'Show'; els.ctxLtfState.textContent=`Lower TF: ${open?'Open':'Hidden'}`; }
+  if(name==='ltf'){ ltfVisible=open; els.ltfContent.hidden=!open; els.ltfToggleBtn.textContent=open?'Hide':'Show'; }
   if(name==='fvg'){ fvgOpen=open; els.fvgContent.hidden=!open; els.fvgToggleBtn.textContent=open?'Hide':'Show'; }
   if(name==='bias'){ biasOpen=open; els.biasContent.hidden=!open; els.biasToggleBtn.textContent=open?'Hide':'Show'; }
   try { sessionStorage.setItem(`pl_${name}_open`, open?'1':'0'); } catch(_){}
@@ -329,7 +329,7 @@ function restoreToggleState(){
   setToggleState('bias', read('pl_bias_open'));
 }
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible) await loadLowerTimeframeDetail(false); else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ loadLowerTimeframeDetail(false); }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
   restoreToggleState();
@@ -359,11 +359,14 @@ function renderSingleLtfChart(container, candles, height){
   s.setData(candles); chart.timeScale().fitContent(); return chart;
 }
 async function loadLowerTimeframeDetail(useRange=false){
+  console.log("Lower TF visible:", ltfVisible);
+  console.log("4H container:", document.getElementById("lower4hChart"));
+  console.log("1H container:", document.getElementById("lower1hChart"));
   if(!ltfVisible) return;
-  toggleLtfError(els.ltf4hError,''); toggleLtfError(els.ltf1hError,'');
+  toggleLtfError(els.lower4hError,''); toggleLtfError(els.lower1hError,'');
   destroyLtfCharts();
-  if(els.ltf4hChart) els.ltf4hChart.innerHTML='';
-  if(els.ltf1hChart) els.ltf1hChart.innerHTML='';
+  if(els.lower4hChart) els.lower4hChart.innerHTML='';
+  if(els.lower1hChart) els.lower1hChart.innerHTML='';
   let st=null, et=null;
   const hasRange = useRange && els.ltfStartDate.value && els.ltfEndDate.value;
   if(hasRange){
@@ -376,21 +379,21 @@ async function loadLowerTimeframeDetail(useRange=false){
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : 48);
       console.log('4H candles length:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.ltf4hError,'No 4H candles found for selected range.'); }
-      else { ltf4hChart=renderSingleLtfChart(els.ltf4hChart,candles,280); }
+      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); }
+      else { ltf4hChart=renderSingleLtfChart(els.lower4hChart,candles,280); ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight); }
     }
-    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
-  } else { toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
+    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); }
+  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); }
   if(h1.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : 48);
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.ltf1hError,'No 1H candles found for selected range.'); }
-      else { ltf1hChart=renderSingleLtfChart(els.ltf1hChart,candles,280); }
+      if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
+      else { ltf1hChart=renderSingleLtfChart(els.lower1hChart,candles,280); ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight); }
     }
-    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
-  } else { toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
+    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
+  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
 }
 function setLoading(){
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
@@ -480,3 +483,8 @@ els.refreshBtn.addEventListener("click", loadDashboard);
 loadDashboard();
 
 setupCollapsibleSections();
+
+window.addEventListener("resize", ()=>{
+  if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
+  if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
+});
