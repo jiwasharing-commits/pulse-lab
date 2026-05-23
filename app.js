@@ -23,7 +23,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"),
+  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -35,6 +35,10 @@ let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
 let ltf4hChart = null;
 let ltf1hChart = null;
+let ltf4hSeries = null;
+let ltf4hFvgLines = [];
+let ltf4hFvgLayer = null;
+let active4hFvgs = [];
 let ltfVisible = false;
 let ltfPreset = "1w";
 let lowerTimeframeLoaded = false;
@@ -359,7 +363,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; clear4hFvgOverlay(); }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
@@ -381,7 +385,7 @@ async function fetchLtfKlines(interval, startTime, endTime, limitOverride){
 function renderSingleLtfChart(container, candles, height){
   const chart = LightweightCharts.createChart(container, { width: Math.max(container.clientWidth||0,320), height, layout:{background:{type:'solid',color:'transparent'},textColor:'#cbd5e1'}, grid:{vertLines:{color:'rgba(148,163,184,0.12)'},horzLines:{color:'rgba(148,163,184,0.12)'}}, rightPriceScale:{borderColor:'rgba(148,163,184,0.2)'}, timeScale:{borderColor:'rgba(148,163,184,0.2)',timeVisible:true} });
   const s=chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
-  s.setData(candles); chart.timeScale().fitContent(); return chart;
+  s.setData(candles); chart.timeScale().fitContent(); return { chart, series: s };
 }
 async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   console.log("Lower TF visible:", ltfVisible);
@@ -410,11 +414,11 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
       console.log('4H candles length:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); }
-      else { ltf4hChart=renderSingleLtfChart(els.lower4hChart,candles,280); ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight); }
+      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; }
+      else { const r=renderSingleLtfChart(els.lower4hChart,candles,280); ltf4hChart=r.chart; ltf4hSeries=r.series; ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight); render4hFvgSummaryAndOverlay(candles); }
     }
-    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); }
-  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); }
+    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
+  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; }
   if(h1.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
@@ -467,6 +471,74 @@ function render4hVsWeeklyFvgSummary(){
   } catch (e) { console.error('4H vs Weekly FVG summary failed', e); }
 }
 
+
+function scan4hFvg(candles){
+  const fvgs=[];
+  for(let i=2;i<candles.length;i++){
+    const a=candles[i-2], c=candles[i];
+    if(c.low>a.high){
+      const lower=a.high, upper=c.low;
+      fvgs.push({type:'Bullish 4H FVG', index:i, startTime:a.time, endTime:c.time, lower, upper, midpoint:(lower+upper)/2, sizePercent:((upper-lower)/((lower+upper)/2))*100});
+    }
+    if(c.high<a.low){
+      const lower=c.high, upper=a.low;
+      fvgs.push({type:'Bearish 4H FVG', index:i, startTime:a.time, endTime:c.time, lower, upper, midpoint:(lower+upper)/2, sizePercent:((upper-lower)/((lower+upper)/2))*100});
+    }
+  }
+  return fvgs.map(f=>({ ...f, status:get4hFvgStatus(f,candles) }));
+}
+function get4hFvgStatus(fvg,candles){
+  const after=candles.slice(fvg.index+1);
+  if(fvg.type==='Bullish 4H FVG'){
+    if(after.some(c=>c.low<=fvg.lower)) return 'Filled';
+    if(after.some(c=>c.low<fvg.upper && c.low>fvg.lower)) return 'Partially Filled';
+    return 'Unfilled';
+  }
+  if(after.some(c=>c.high>=fvg.upper)) return 'Filled';
+  if(after.some(c=>c.high>fvg.lower && c.high<fvg.upper)) return 'Partially Filled';
+  return 'Unfilled';
+}
+function ensure4hFvgLayer(){
+  if(!els.lower4hChart) return null;
+  if(!ltf4hFvgLayer){ ltf4hFvgLayer=document.createElement('div'); ltf4hFvgLayer.className='fvg-overlay-layer'; els.lower4hChart.appendChild(ltf4hFvgLayer); }
+  return ltf4hFvgLayer;
+}
+function clear4hFvgOverlay(){
+  ltf4hFvgLines.forEach(l=>{ try { ltf4hSeries?.removePriceLine(l); } catch(_){} });
+  ltf4hFvgLines=[];
+  if(ltf4hFvgLayer) ltf4hFvgLayer.innerHTML='';
+}
+function render4hFvgSummaryAndOverlay(candles){
+  try {
+    if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; return; }
+    clear4hFvgOverlay();
+    const current=candles[candles.length-1]?.close;
+    active4hFvgs = scan4hFvg(candles).filter(f=>f.status!=='Filled').map(f=>{
+      const inside = current>=f.lower && current<=f.upper;
+      const nearest = current>f.upper?f.upper:f.lower;
+      const distance = inside?0:Math.abs(current-nearest)/current*100;
+      return { ...f, distance };
+    }).sort((a,b)=>Math.abs(a.distance)-Math.abs(b.distance) || b.index-a.index || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1))).slice(0,5);
+    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; return; }
+    const nearest = active4hFvgs[0];
+    if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status}`;
+    const layer=ensure4hFvgLayer();
+    const rightEdge=els.lower4hChart.clientWidth;
+    active4hFvgs.forEach(f=>{
+      const bull=f.type==='Bullish 4H FVG';
+      const col=bull?'rgba(34,197,94,0.38)':'rgba(239,68,68,0.38)';
+      ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.upper,color:col,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
+      ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.lower,color:col,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
+      const xStart=ltf4hChart.timeScale().timeToCoordinate(f.endTime);
+      const yTop=ltf4hSeries.priceToCoordinate(f.upper); const yBottom=ltf4hSeries.priceToCoordinate(f.lower);
+      if(layer && xStart!=null && yTop!=null && yBottom!=null){
+        const r=document.createElement('div'); r.className=`fvg-zone ${bull?'bullish':'bearish'}`;
+        r.style.left=`${Math.max(0,xStart)}px`; r.style.top=`${Math.min(yTop,yBottom)}px`; r.style.width=`${Math.max(1,rightEdge-xStart)}px`; r.style.height=`${Math.max(1,Math.abs(yBottom-yTop))}px`; layer.appendChild(r);
+      }
+    });
+  } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
+}
+
 function setLoading(){
   if(els.appLastUpdated) els.appLastUpdated.textContent = `Last Updated: ${APP_LAST_UPDATED}`;
   if(els.dataRefreshed) els.dataRefreshed.textContent = "Data Refreshed: loading...";
@@ -487,6 +559,7 @@ function setLoading(){
   if(els.leftPhase) els.leftPhase.textContent="loading";
   if(els.leftChanges) els.leftChanges.textContent="loading";
   if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: loading";
+  if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent="4H FVG: loading";
   if(els.right4hFvgType) els.right4hFvgType.textContent='loading';
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
   if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
