@@ -358,11 +358,13 @@ function mapKlinesToCandles(klines, limit){
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
     .filter((c)=>Number.isFinite(c.time) && Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close));
 }
-async function fetchLtfKlines(interval, startTime, endTime){
+async function fetchLtfKlines(interval, startTime, endTime, limitOverride){
   const u=new URL('https://data-api.binance.vision/api/v3/klines');
   u.searchParams.set('symbol','BTCUSDT');
   u.searchParams.set('interval', interval);
-  u.searchParams.set('limit', startTime && endTime ? '1000' : String(interval==='4h'?42:168));
+  const fallbackLimit = interval==='4h' ? 42 : 168;
+  const finalLimit = startTime && endTime ? 1000 : (limitOverride || fallbackLimit);
+  u.searchParams.set('limit', String(finalLimit));
   if(startTime) u.searchParams.set('startTime', String(startTime));
   if(endTime) u.searchParams.set('endTime', String(endTime));
   const data=await fetchJson(u.toString());
@@ -389,11 +391,15 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
     st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
     et = new Date(`${els.ltfEndDate.value}T23:59:59`).getTime();
   }
-  const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et), fetchLtfKlines('1h', st, et)]);
+  const limit4h = hasRange ? 1000 : (preset==="2w" ? 84 : 42);
+  const limit1h = hasRange ? 1000 : (preset==="2w" ? 336 : 168);
+  console.log("Active lower TF preset:", preset);
+  console.log("4H requested limit:", limit4h);
+  console.log("1H requested limit:", limit1h);
+  const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
   if(h4.status==='fulfilled'){
     try {
-      const default4h = preset==="2w" ? 84 : 42;
-      const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : default4h);
+      const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
       console.log('4H candles length:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); }
@@ -403,8 +409,7 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); }
   if(h1.status==='fulfilled'){
     try {
-      const default1h = preset==="2w" ? 336 : 168;
-      const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : default1h);
+      const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
