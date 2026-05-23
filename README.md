@@ -112,3 +112,12 @@ Then open `http://localhost:8000`.
 - 1W Detail: 4H shows latest 42 candles, 1H shows latest 168 candles.
 - 2W Detail: 4H shows latest 84 candles, 1H shows latest 336 candles.
 - Custom Date allows selected-range inspection with Binance `startTime` and `endTime`.
+
+
+## 1H Structure Scanner
+
+- Added 1H CHoCH/BOS scanner for lower-timeframe timing detail.
+- Uses confirmed swing highs/lows with 2-left / 2-right candles.
+- 1H structure output is shown near the 1H chart and inside Lower TF Reaction.
+- Last Updated is fixed app/code timestamp, Data Refreshed is dynamic API refresh time.
+- This tool is for monitoring context and does not provide financial advice.

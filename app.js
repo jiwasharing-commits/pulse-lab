@@ -4,7 +4,7 @@ const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
 const RSI_PERIOD = 14;
 const RSI_WINDOW = 49;
 // Update this timestamp whenever deploying a new app version.
-const APP_LAST_UPDATED = "2026-05-23 22:45";
+const APP_LAST_UPDATED = "2026-05-23 23:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -25,7 +25,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
-  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -43,6 +43,7 @@ let ltf4hFvgLayer = null;
 let active4hFvgs = [];
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
+let latest1hStructureStatus = "No clear 1H structure shift";
 let ltfVisible = false;
 let ltfPreset = "1w";
 let lowerTimeframeLoaded = false;
@@ -398,7 +399,7 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   console.log("4H container size:", els.lower4hChart?.clientWidth, els.lower4hChart?.clientHeight);
   console.log("1H container size:", els.lower1hChart?.clientWidth, els.lower1hChart?.clientHeight);
   if(!ltfVisible) return;
-  if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0){
+  if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0 || els.lower4hChart.clientHeight===0 || els.lower1hChart.clientHeight===0){
     requestAnimationFrame(()=>loadLowerTimeframeDetail(useRange,preset));
     return;
   }
@@ -425,7 +426,13 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
       console.log('4H candles length:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; }
-      else { const r=renderSingleLtfChart(els.lower4hChart,candles,280); ltf4hChart=r.chart; ltf4hSeries=r.series; ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight); render4hFvgSummaryAndOverlay(candles); }
+      else {
+        const r=renderSingleLtfChart(els.lower4hChart,candles,280);
+        ltf4hChart=r.chart; ltf4hSeries=r.series;
+        ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
+        ltf4hChart.timeScale().fitContent();
+        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG overlay render failed:", err); }
+      }
     }
     catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
   } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: 4H data unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: 4H data unavailable.'; }
@@ -435,10 +442,18 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
-      else { ltf1hChart=renderSingleLtfChart(els.lower1hChart,candles,280); ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight); render1hSweepSummary(candles); renderLowerTfReactionSummary(); }
+      else {
+        const r1=renderSingleLtfChart(els.lower1hChart,candles,280);
+        ltf1hChart=r1.chart;
+        ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
+        ltf1hChart.timeScale().fitContent();
+        try { render1hSweepSummary(candles); } catch(err){ console.error("1H sweep render failed:", err); }
+        try { render1hStructureSummary(candles); } catch(err){ console.error("1H structure render failed:", err); }
+        renderLowerTfReactionSummary();
+      }
     }
-    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
-  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; }
+    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
+  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
   render4hVsWeeklyFvgSummary();
 }
 
@@ -579,6 +594,30 @@ function render4hFvgSummaryAndOverlay(candles){
 }
 
 
+
+function detect1hStructure(candles){
+  const {highs,lows}=find4hSwings(candles);
+  const latest=candles[candles.length-1];
+  const sh=highs[highs.length-1], sl=lows[lows.length-1];
+  const bearishTrend = lows.length>=2 && lows[lows.length-1].price<lows[lows.length-2].price;
+  const bullishTrend = highs.length>=2 && highs[highs.length-1].price>highs[highs.length-2].price;
+  let status='No clear 1H structure shift', broken=null, ref='—';
+  if(sh && latest.close>sh.price){ status=bearishTrend?'Bullish CHoCH':'Bullish BOS'; broken=sh.price; ref=String(sh.time); }
+  else if(sl && latest.close<sl.price){ status=bullishTrend?'Bearish CHoCH':'Bearish BOS'; broken=sl.price; ref=String(sl.time); }
+  return {status, broken, ref, latestClose: latest.close};
+}
+function render1hStructureSummary(candles){
+  try {
+    const st=detect1hStructure(candles);
+    latest1hStructureStatus = st.status;
+    if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent=`1H Structure | Status: ${st.status} | Broken Level: ${st.broken?usd(st.broken):'—'} | Reference Swing: ${st.ref} | Latest Close: ${usd(st.latestClose)}`;
+  } catch(e){
+    console.error('1H structure scanner failed', e);
+    latest1hStructureStatus = '1H structure unavailable';
+    if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable';
+  }
+}
+
 function detect1hLiquiditySweep(candles){
   const swingsH=[], swingsL=[];
   for(let i=2;i<candles.length-2;i++){
@@ -613,7 +652,7 @@ function renderLowerTfReactionSummary(){
   if(!els.lowerTfReactionSummary) return;
   const nearest = active4hFvgs[0];
   const fvgTxt = nearest ? `${nearest.type} (${nearest.status})` : 'No active 4H FVG';
-  els.lowerTfReactionSummary.textContent = `Lower TF Reaction | 4H Structure: ${latest4hStructureStatus} | 4H FVG: ${fvgTxt} | 1H Sweep: ${latest1hSweepStatus}`;
+  els.lowerTfReactionSummary.textContent = `Lower TF Reaction | 4H Structure: ${latest4hStructureStatus} | 4H FVG: ${fvgTxt} | 1H Sweep: ${latest1hSweepStatus} | 1H Structure: ${latest1hStructureStatus}`;
 }
 
 function setLoading(){
@@ -640,6 +679,7 @@ function setLoading(){
   if(els.lower4hStructure) els.lower4hStructure.textContent="4H Structure: loading";
   if(els.lower4hReaction) els.lower4hReaction.textContent="4H Reaction: loading";
   if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent="1H Liquidity Sweep: loading";
+  if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent="1H Structure: loading";
   if(els.lowerTfReactionSummary) els.lowerTfReactionSummary.textContent="Lower TF Reaction: loading";
   if(els.right4hFvgType) els.right4hFvgType.textContent='loading';
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
