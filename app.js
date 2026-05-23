@@ -296,14 +296,15 @@ function renderFvgOverlay(activeFvgs){
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
 function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } }
 function mapKlinesToCandles(klines, limit){
-  return klines.slice(-limit).map((k)=>({ time:new Date(Number(k[0])).toISOString().slice(0,10), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
-    .filter((c)=>c.time && Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close));
+  const src = typeof limit === "number" ? klines.slice(-limit) : klines;
+  return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
+    .filter((c)=>Number.isFinite(c.time) && Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close));
 }
 async function fetchLtfKlines(interval, startTime, endTime){
   const u=new URL('https://data-api.binance.vision/api/v3/klines');
   u.searchParams.set('symbol','BTCUSDT');
   u.searchParams.set('interval', interval);
-  u.searchParams.set('limit', interval==='4h'?'300':'500');
+  u.searchParams.set('limit', startTime && endTime ? '1000' : '48');
   if(startTime) u.searchParams.set('startTime', String(startTime));
   if(endTime) u.searchParams.set('endTime', String(endTime));
   const data=await fetchJson(u.toString());
@@ -322,17 +323,30 @@ async function loadLowerTimeframeDetail(useRange=false){
   if(els.ltf4hChart) els.ltf4hChart.innerHTML='';
   if(els.ltf1hChart) els.ltf1hChart.innerHTML='';
   let st=null, et=null;
-  if(useRange && els.ltfStartDate.value && els.ltfEndDate.value){
-    st = new Date(els.ltfStartDate.value).getTime();
-    et = new Date(els.ltfEndDate.value).getTime() + 86399999;
+  const hasRange = useRange && els.ltfStartDate.value && els.ltfEndDate.value;
+  if(hasRange){
+    st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
+    et = new Date(`${els.ltfEndDate.value}T23:59:59`).getTime();
   }
   const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et), fetchLtfKlines('1h', st, et)]);
   if(h4.status==='fulfilled'){
-    try { const candles=mapKlinesToCandles(h4.value,48); ltf4hChart=renderSingleLtfChart(els.ltf4hChart,candles,280); }
+    try {
+      const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : 48);
+      console.log('4H candles length:', candles.length);
+      console.log('Sample 4H candle:', candles[0]);
+      if(!candles.length) { toggleLtfError(els.ltf4hError,'No 4H candles found for selected range.'); }
+      else { ltf4hChart=renderSingleLtfChart(els.ltf4hChart,candles,280); }
+    }
     catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
   } else { toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
   if(h1.status==='fulfilled'){
-    try { const candles=mapKlinesToCandles(h1.value,48); ltf1hChart=renderSingleLtfChart(els.ltf1hChart,candles,280); }
+    try {
+      const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : 48);
+      console.log('1H candles length:', candles.length);
+      console.log('Sample 1H candle:', candles[0]);
+      if(!candles.length) { toggleLtfError(els.ltf1hError,'No 1H candles found for selected range.'); }
+      else { ltf1hChart=renderSingleLtfChart(els.ltf1hChart,candles,280); }
+    }
     catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
   } else { toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
 }
