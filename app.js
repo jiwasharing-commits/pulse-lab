@@ -13,6 +13,9 @@ const els = {
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
   fgValue: document.getElementById("fgValue"), fgText: document.getElementById("fgText"), fgTime: document.getElementById("fgTime"), biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
+  ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
+  ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
+  ltf4hChart: document.getElementById("ltf4hChart"), ltf1hChart: document.getElementById("ltf1hChart"), ltf4hError: document.getElementById("ltf4hError"), ltf1hError: document.getElementById("ltf1hError"),
 };
 
 let priceChart = null;
@@ -21,6 +24,9 @@ let rsiChart = null;
 let fvgOverlayLines = [];
 let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
+let ltf4hChart = null;
+let ltf1hChart = null;
+let ltfVisible = false;
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -286,6 +292,62 @@ function renderFvgOverlay(activeFvgs){
   }
 }
 
+
+function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } }
+function mapKlinesToCandles(klines, limit){
+  return klines.slice(-limit).map((k)=>({ time:new Date(Number(k[0])).toISOString().slice(0,10), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
+    .filter((c)=>c.time && Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close));
+}
+async function fetchLtfKlines(interval, startTime, endTime){
+  const u=new URL('https://data-api.binance.vision/api/v3/klines');
+  u.searchParams.set('symbol','BTCUSDT');
+  u.searchParams.set('interval', interval);
+  u.searchParams.set('limit', interval==='4h'?'300':'500');
+  if(startTime) u.searchParams.set('startTime', String(startTime));
+  if(endTime) u.searchParams.set('endTime', String(endTime));
+  const data=await fetchJson(u.toString());
+  if(!Array.isArray(data)) throw new Error(`${interval} data unavailable`);
+  return data;
+}
+function renderSingleLtfChart(container, candles, height){
+  const chart = LightweightCharts.createChart(container, { width: Math.max(container.clientWidth||0,320), height, layout:{background:{type:'solid',color:'transparent'},textColor:'#cbd5e1'}, grid:{vertLines:{color:'rgba(148,163,184,0.12)'},horzLines:{color:'rgba(148,163,184,0.12)'}}, rightPriceScale:{borderColor:'rgba(148,163,184,0.2)'}, timeScale:{borderColor:'rgba(148,163,184,0.2)',timeVisible:true} });
+  const s=chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
+  s.setData(candles); chart.timeScale().fitContent(); return chart;
+}
+async function loadLowerTimeframeDetail(useRange=false){
+  if(!ltfVisible) return;
+  toggleLtfError(els.ltf4hError,''); toggleLtfError(els.ltf1hError,'');
+  destroyLtfCharts();
+  if(els.ltf4hChart) els.ltf4hChart.innerHTML='';
+  if(els.ltf1hChart) els.ltf1hChart.innerHTML='';
+  let st=null, et=null;
+  if(useRange && els.ltfStartDate.value && els.ltfEndDate.value){
+    st = new Date(els.ltfStartDate.value).getTime();
+    et = new Date(els.ltfEndDate.value).getTime() + 86399999;
+  }
+  const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et), fetchLtfKlines('1h', st, et)]);
+  if(h4.status==='fulfilled'){
+    try { const candles=mapKlinesToCandles(h4.value,48); ltf4hChart=renderSingleLtfChart(els.ltf4hChart,candles,280); }
+    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
+  } else { toggleLtfError(els.ltf4hError,'4H chart unavailable.'); }
+  if(h1.status==='fulfilled'){
+    try { const candles=mapKlinesToCandles(h1.value,48); ltf1hChart=renderSingleLtfChart(els.ltf1hChart,candles,280); }
+    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
+  } else { toggleLtfError(els.ltf1hError,'1H chart unavailable.'); }
+}
+function setupLtfControls(){
+  if(!els.ltfToggleBtn) return;
+  els.ltfToggleBtn.addEventListener('click', async ()=>{
+    ltfVisible = !ltfVisible;
+    els.ltfContent.hidden = !ltfVisible;
+    els.ltfToggleBtn.textContent = ltfVisible ? 'Hide Lower Timeframe Detail' : 'Show Lower Timeframe Detail';
+    if(ltfVisible) await loadLowerTimeframeDetail(false); else destroyLtfCharts();
+  });
+  els.ltfApplyBtn?.addEventListener('click', ()=>loadLowerTimeframeDetail(true));
+  els.ltfResetBtn?.addEventListener('click', ()=>{ els.ltfStartDate.value=''; els.ltfEndDate.value=''; loadLowerTimeframeDetail(false); });
+}
+
 function setLoading(){
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
   els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
@@ -370,3 +432,5 @@ async function loadDashboard(){
 
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadDashboard();
+
+setupLtfControls();

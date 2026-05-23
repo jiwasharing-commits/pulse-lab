@@ -57,6 +57,27 @@
           </div>
         </section>
 
+        
+        <section class="panel" id="ltfPanel">
+          <div class="panel-header">
+            <h2>Lower Timeframe Detail</h2>
+            <button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show Lower Timeframe Detail</button>
+          </div>
+          <div id="ltfContent" hidden>
+            <p class="panel-note">Use 4H and 1H charts to inspect price behavior inside a selected weekly range.</p>
+            <div class="ltf-controls">
+              <label>Start Date <input id="ltfStartDate" type="date" /></label>
+              <label>End Date <input id="ltfEndDate" type="date" /></label>
+              <button id="ltfApplyBtn" class="refresh-btn" type="button">Apply</button>
+              <button id="ltfResetBtn" class="refresh-btn secondary" type="button">Reset</button>
+            </div>
+            <div class="ltf-grid">
+              <div class="chart-wrap compact"><div id="ltf4hChart" role="img" aria-label="BTC 4H Candlestick Chart"></div><div id="ltf4hError" class="chart-error" hidden>4H chart unavailable.</div></div>
+              <div class="chart-wrap compact"><div id="ltf1hChart" role="img" aria-label="BTC 1H Candlestick Chart"></div><div id="ltf1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
+            </div>
+          </div>
+        </section>
+
         <section class="panel sentiment">
           <div class="panel-header"><h2>Fear &amp; Greed Index</h2><p>Supporting market context</p></div>
           <div class="sentiment-grid">

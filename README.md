@@ -78,3 +78,12 @@ Then open `http://localhost:8000`.
 - Bearish FVG: current candle high is below the low from two candles back.
 - Only active zones (Unfilled or Partially Filled) are shown by default.
 - This feature is for monitoring weekly imbalance zones, not financial advice.
+
+
+## Lower Timeframe Detail (Optional)
+
+- Weekly view remains the main analysis view.
+- Lower Timeframe Detail is optional and collapsed by default.
+- You can inspect selected ranges with BTCUSDT 4H and 1H candlestick charts.
+- Date range requests use Binance `startTime` and `endTime` parameters.
+- No API key, backend, database, or paid API is required.
