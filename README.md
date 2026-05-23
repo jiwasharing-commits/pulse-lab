@@ -95,3 +95,12 @@ Then open `http://localhost:8000`.
 - Fear & Greed is shown as a compact quick-context chip instead of a large panel.
 - Lower Timeframe Detail is collapsed by default.
 - Active Weekly FVG Zones and Potential Bias Scanner are collapsible detail panels.
+
+
+## Full-Width 3-Column Layout
+
+- Desktop uses a full-width 3-column layout: Left Quick Panel, Main Chart Area, Right Quick Panel.
+- Left panel contains RSI and momentum summaries plus compact Fear & Greed context.
+- Main area contains summary cards, weekly chart, and collapsible lower timeframe detail.
+- Right panel contains compact FVG, divergence, and potential bias summaries with collapsible detail lists.
+- Mobile layout automatically stacks into one column.

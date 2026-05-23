@@ -12,7 +12,6 @@ const els = {
   direction: document.getElementById("direction"), momentumPhase: document.getElementById("momentumPhase"), analyticsStrip: document.getElementById("analyticsStrip"),
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
   biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
-  ctxFearGreed: document.getElementById("ctxFearGreed"), ctxFvgCount: document.getElementById("ctxFvgCount"), ctxBiasCount: document.getElementById("ctxBiasCount"), ctxLtfState: document.getElementById("ctxLtfState"),
   fvgTitle: document.getElementById("fvgTitle"), biasTitle: document.getElementById("biasTitle"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
@@ -111,6 +110,13 @@ function renderSummaryCards(dataset){
   els.rsiSlope.textContent=`RSI Slope 48W: ${signed2(slope48)} / week`;
   els.direction.textContent=direction; els.momentumPhase.textContent=phase;
   els.analyticsStrip.textContent=`RSI Slope 12W: ${signed2(slope12)}/week · RSI Slope 24W: ${signed2(slope24)}/week · RSI Slope 48W: ${signed2(slope48)}/week · Consistency 12W: ${rises12}/12 · Consistency 24W: ${rises24}/24 · Distance to 50: ${signed1(distance50)} (${midlineStatus(distance50)}) · Regime: ${regime}`;
+  if(els.leftRsiValue) els.leftRsiValue.textContent=f1(w0);
+  if(els.leftRsiRegime) els.leftRsiRegime.textContent=regime;
+  if(els.leftDistance50) els.leftDistance50.textContent=`${signed1(distance50)} (${midlineStatus(distance50)})`;
+  if(els.leftSlopes) els.leftSlopes.textContent=`${signed2(slope12)} / ${signed2(slope24)} / ${signed2(slope48)}`;
+  if(els.leftDirection) els.leftDirection.textContent=direction;
+  if(els.leftPhase) els.leftPhase.textContent=phase;
+  if(els.leftChanges) els.leftChanges.textContent=`4W ${signed1(d4)} | 12W ${signed1(d12)} | 24W ${signed1(d24)} | 48W ${signed1(d48)}`;
   return { d4,d12,d24,d48, w0,w4,w12,w24,w48, direction, phase, regime, rsiValues: v };
 }
 
@@ -122,13 +128,17 @@ function renderDivergenceStatus(dataset, metrics){
   els.priceMetrics.textContent=`12W Price: ${signed1(pc12)}% | 12W RSI: ${signed1(metrics.d12)} | 24W Price: ${signed1(pc24)}% | 24W RSI: ${signed1(metrics.d24)} | 48W Price: ${signed1(pc48)}% | 48W RSI: ${signed1(metrics.d48)}`;
   els.divergenceStatus.textContent=`Divergence Status: ${divergence.status}`;
   els.divergenceText.textContent=`4W context: Price ${signed1(pc4)}%, RSI ${signed1(metrics.d4)}. ${divergence.note}`;
+  if(els.rightDivergence) els.rightDivergence.textContent=divergence.status;
+  if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent=`12W ${signed1(pc12)}%/${signed1(metrics.d12)} | 24W ${signed1(pc24)}% | 48W ${signed1(pc48)}%`;
 }
 
 function renderPotentialBiasScanner(dataset, metrics){
   if(!metrics) return;
   const prices=dataset.map(x=>x.close), rsis=metrics.rsiValues;
   const items = runBiasScanner(prices, rsis);
-  if(els.ctxBiasCount) els.ctxBiasCount.textContent=`Bias: ${items.length}`;
+  if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
+  if(els.rightBiasTop) els.rightBiasTop.textContent = items[0] ? items[0].bias : "Top Bias: -";
+  if(els.rightBiasMeta) els.rightBiasMeta.textContent = items[0] ? `${items[0].range} | ${signed2(items[0].priceChangePercent)}% | RSI ${signed1(items[0].rsiChange)} | ${items[0].confidence}` : "Confidence: -";
   if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
   if(!items.length){ els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
   els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
@@ -166,7 +176,7 @@ function renderRsiChart(dataset){
   // TODO: re-enable time-scale sync after data pipeline stability is fully verified.
 }
 
-function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ els.ctxFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; els.ctxFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.ctxFearGreed.title=`Updated: ${t}`; }
+function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; if(els.leftFearGreed){ els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.leftFearGreed.title=`Updated: ${t}`; } }
 
 
 function scanWeeklyFvg(dataset){
@@ -205,7 +215,10 @@ function renderFvgPanel(dataset){
   try {
     const active=getActiveFvgs(dataset);
     if(els.fvgTitle) els.fvgTitle.textContent=`Active Weekly FVG Zones (${active.length})`;
-    if(els.ctxFvgCount) els.ctxFvgCount.textContent=`Active FVG: ${active.length}`;
+    if(els.rightFvgCount) els.rightFvgCount.textContent=`Active FVG: ${active.length}`;
+    if(els.rightNearestFvg) els.rightNearestFvg.textContent=active[0]?`Nearest: ${active[0].type} ${active[0].startLabel}->${active[0].endLabel}`:"Nearest: -";
+    if(els.rightFvgStatus) els.rightFvgStatus.textContent=active[0]?`Status: ${active[0].status}`:"Status: -";
+    if(els.rightFvgCount) els.rightFvgCount.textContent=`Active FVG: ${active.length}`;
     if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
     els.fvgList.innerHTML=active.map(f=>{
       const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
@@ -389,9 +402,7 @@ function setLoading(){
   els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context...";
   els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
   if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
-  if(els.ctxFearGreed) els.ctxFearGreed.textContent="Fear & Greed: loading";
-  if(els.ctxFvgCount) els.ctxFvgCount.textContent="Active FVG: —";
-  if(els.ctxBiasCount) els.ctxBiasCount.textContent="Bias: —";
+  if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: loading";
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -441,10 +452,8 @@ async function loadDashboard(){
       els.divergenceStatus.textContent = "Divergence Status: unavailable";
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
       els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
-    if(els.ctxBiasCount) els.ctxBiasCount.textContent='Bias: unavailable';
-    if(els.ctxBiasCount) els.ctxBiasCount.textContent='Bias: unavailable';
-    if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
-    if(els.ctxFvgCount) els.ctxFvgCount.textContent='Active FVG: unavailable';
+            if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    if(els.rightFvgCount) els.rightFvgCount.textContent='Active FVG: unavailable';
     clearFvgOverlay();
     }
   } else {
@@ -456,7 +465,7 @@ async function loadDashboard(){
   }
 
   if(fgRes.status === "fulfilled") renderFearGreed(fgRes.value);
-  else { if(els.ctxFearGreed) els.ctxFearGreed.textContent="Fear & Greed: unavailable"; }
+  else { if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; }
 
   els.statusText.textContent = tickerOk && weeklyOk
     ? `Monitoring BTC weekly momentum and direction. Last update: ${new Date().toLocaleTimeString()}`
