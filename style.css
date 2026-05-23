@@ -26,3 +26,6 @@
 @media (max-width:560px){.topbar{flex-direction:column;align-items:flex-start}.refresh-btn{width:100%}.overview{grid-template-columns:1fr}.app-shell{padding:10px}}
 
 .ltf-presets{display:flex;flex-wrap:wrap;gap:.4rem;margin:.3rem 0 .35rem}.ltf-preset.active{outline:2px solid rgba(111,140,255,.55)}
+
+.header-meta{margin-left:auto;margin-right:.5rem;text-align:right}.meta-line{font-size:.72rem;color:var(--muted)}
+@media (max-width:560px){.header-meta{margin:0;width:100%;text-align:left}}

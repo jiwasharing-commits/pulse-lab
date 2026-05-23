@@ -3,9 +3,10 @@ const BTC_WEEKLY_KLINE_URL = "https://data-api.binance.vision/api/v3/klines?symb
 const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
 const RSI_PERIOD = 14;
 const RSI_WINDOW = 49;
+const APP_LAST_UPDATED = "2026-05-23 21:30";
 
 const els = {
-  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"),
+  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
   btcPrice: document.getElementById("btcPrice"), btc24hInline: document.getElementById("btc24hInline"), btcPriceMeta: document.getElementById("btcPriceMeta"),
   rsiCurrent: document.getElementById("rsiCurrent"), rsiStatus: document.getElementById("rsiStatus"), rsiRegime: document.getElementById("rsiRegime"),
   rsiChangeLines: document.getElementById("rsiChangeLines"), rsiRefs: document.getElementById("rsiRefs"), rsiSlope: document.getElementById("rsiSlope"),
@@ -31,6 +32,7 @@ let ltf4hChart = null;
 let ltf1hChart = null;
 let ltfVisible = false;
 let ltfPreset = "1w";
+let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
 
@@ -339,16 +341,17 @@ function setLtfPresetUI(preset){
 }
 
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ loadLowerTimeframeDetail(false, ltfPreset); }); } else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1w'); loadLowerTimeframeDetail(false,'1w'); } else { loadLowerTimeframeDetail(false, ltfPreset); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
-  els.ltfPreset1w?.addEventListener('click', ()=>{ setLtfPresetUI('1w'); if(ltfVisible) loadLowerTimeframeDetail(false,'1w'); });
-  els.ltfPreset2w?.addEventListener('click', ()=>{ setLtfPresetUI('2w'); if(ltfVisible) loadLowerTimeframeDetail(false,'2w'); });
+  els.ltfPreset1w?.addEventListener('click', ()=>{ setLtfPresetUI('1w'); if(ltfVisible) { lowerTimeframeLoaded=true; loadLowerTimeframeDetail(false,'1w'); } });
+  els.ltfPreset2w?.addEventListener('click', ()=>{ setLtfPresetUI('2w'); if(ltfVisible) { lowerTimeframeLoaded=true; loadLowerTimeframeDetail(false,'2w'); } });
   els.ltfPresetCustom?.addEventListener('click', ()=>{ setLtfPresetUI('custom'); });
-  els.ltfApplyBtn?.addEventListener('click', ()=>loadLowerTimeframeDetail(true,'custom'));
-  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1w'); if(ltfVisible) loadLowerTimeframeDetail(false,'1w'); });
+  els.ltfApplyBtn?.addEventListener('click', ()=>{ lowerTimeframeLoaded=true; loadLowerTimeframeDetail(true,'custom'); });
+  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1w'); lowerTimeframeLoaded=true; if(ltfVisible) loadLowerTimeframeDetail(false,'1w'); });
   setLtfPresetUI('1w');
   restoreToggleState();
+  if(ltfVisible){ requestAnimationFrame(()=>{ loadLowerTimeframeDetail(false,'1w'); lowerTimeframeLoaded=true; }); }
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
@@ -381,6 +384,7 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   console.log("4H container:", document.getElementById("lower4hChart"));
   console.log("1H container:", document.getElementById("lower1hChart"));
   if(!ltfVisible) return;
+  lowerTimeframeLoaded = true;
   toggleLtfError(els.lower4hError,''); toggleLtfError(els.lower1hError,'');
   destroyLtfCharts();
   if(els.lower4hChart) els.lower4hChart.innerHTML='';
@@ -419,6 +423,8 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
 }
 function setLoading(){
+  if(els.appLastUpdated) els.appLastUpdated.textContent = `Last Updated: ${APP_LAST_UPDATED}`;
+  if(els.dataRefreshed) els.dataRefreshed.textContent = "Data Refreshed: loading...";
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
   els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
   els.rsiCurrent.textContent="—"; els.rsiStatus.textContent="Loading..."; els.rsiRegime.textContent="Regime: —";
@@ -492,6 +498,8 @@ async function loadDashboard(){
 
   if(fgRes.status === "fulfilled") renderFearGreed(fgRes.value);
   else { if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; }
+
+  if(els.dataRefreshed) els.dataRefreshed.textContent = `Data Refreshed: ${new Date().toLocaleString()}`;
 
   els.statusText.textContent = tickerOk && weeklyOk
     ? `Monitoring BTC weekly momentum and direction. Last update: ${new Date().toLocaleTimeString()}`
