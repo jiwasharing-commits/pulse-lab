@@ -18,6 +18,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -312,6 +313,7 @@ function renderFvgOverlay(activeFvgs){
       fvgOverlayLines.push(upperLine, lowerLine);
     });
     renderFvgFilledOverlay();
+    render4hVsWeeklyFvgSummary();
 
     priceChart.timeScale().subscribeVisibleTimeRangeChange(() => renderFvgFilledOverlay());
     priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderFvgFilledOverlay());
@@ -423,7 +425,48 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
     }
     catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
   } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); }
+  render4hVsWeeklyFvgSummary();
 }
+
+function render4hVsWeeklyFvgSummary(){
+  if(!els.right4hFvgType) return;
+  try {
+    if(!activeFvgZonesForOverlay.length){
+      els.right4hFvgType.textContent='No active Weekly FVG zone detected.';
+      els.right4hFvgZone.textContent='Zone: —';
+      els.right4hFvgRelation.textContent='Relation: —';
+      els.right4hFvgDistance.textContent='Distance: —';
+      els.right4hFvgStatus.textContent='—';
+      return;
+    }
+    if(!ltf4hChart){
+      els.right4hFvgType.textContent='4H data unavailable.';
+      return;
+    }
+    // reuse last loaded 4H candles via chart series data snapshot isn't accessible; fetch latest 4H quick
+    fetchLtfKlines('4h', null, null, 1).then((rows)=>{
+      const c = mapKlinesToCandles(rows, 1)[0];
+      if(!c){ els.right4hFvgType.textContent='4H data unavailable.'; return; }
+      const price = c.close;
+      const nearest = activeFvgZonesForOverlay
+        .map((f)=>{
+          const inside = price >= f.lower && price <= f.upper;
+          const nearestBoundary = price > f.upper ? f.upper : f.lower;
+          const dist = inside ? 0 : Math.abs(price-nearestBoundary)/price*100;
+          return { f, inside, dist };
+        })
+        .sort((a,b)=>a.dist-b.dist)[0];
+      const rel = nearest.inside ? 'Inside Weekly FVG' : (price > nearest.f.upper ? 'Above Weekly FVG' : 'Below Weekly FVG');
+      const prox = nearest.dist===0 ? 'Inside Zone' : nearest.dist<=1 ? 'Very Near' : nearest.dist<=3 ? 'Near' : 'Far';
+      els.right4hFvgType.textContent = nearest.f.type;
+      els.right4hFvgZone.textContent = `Zone: ${usd(nearest.f.lower)}–${usd(nearest.f.upper)}`;
+      els.right4hFvgRelation.textContent = `Relation: ${rel}`;
+      els.right4hFvgDistance.textContent = `Distance: ${nearest.dist===0?'0%':f1(nearest.dist)+'%'}`;
+      els.right4hFvgStatus.textContent = nearest.inside ? '4H price is inside an active Weekly FVG zone.' : (prox==='Far' ? '4H price is far from active Weekly FVG zones.' : '4H price is near an active Weekly FVG zone.');
+    }).catch(()=>{ els.right4hFvgType.textContent='4H data unavailable.'; });
+  } catch (e) { console.error('4H vs Weekly FVG summary failed', e); }
+}
+
 function setLoading(){
   if(els.appLastUpdated) els.appLastUpdated.textContent = `Last Updated: ${APP_LAST_UPDATED}`;
   if(els.dataRefreshed) els.dataRefreshed.textContent = "Data Refreshed: loading...";
@@ -444,6 +487,7 @@ function setLoading(){
   if(els.leftPhase) els.leftPhase.textContent="loading";
   if(els.leftChanges) els.leftChanges.textContent="loading";
   if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: loading";
+  if(els.right4hFvgType) els.right4hFvgType.textContent='loading';
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
   if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
   if(els.rightFvgStatus) els.rightFvgStatus.textContent="Status: loading";
