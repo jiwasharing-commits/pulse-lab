@@ -14,6 +14,10 @@ const els = {
   priceMetrics: document.getElementById("priceMetrics"), divergenceStatus: document.getElementById("divergenceStatus"), divergenceText: document.getElementById("divergenceText"),
   biasScannerList: document.getElementById("biasScannerList"), fvgList: document.getElementById("fvgList"),
   fvgTitle: document.getElementById("fvgTitle"), biasTitle: document.getElementById("biasTitle"),
+  leftRsiValue: document.getElementById("leftRsiValue"), leftRsiRegime: document.getElementById("leftRsiRegime"), leftDistance50: document.getElementById("leftDistance50"), leftSlopes: document.getElementById("leftSlopes"),
+  leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
+  rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
+  rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -142,8 +146,7 @@ function renderPotentialBiasScanner(dataset, metrics){
   const items = runBiasScanner(prices, rsis);
   if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
   if(els.rightBiasTop) els.rightBiasTop.textContent = items[0] ? items[0].bias : "Top Bias: -";
-  if(els.rightBiasMeta) els.rightBiasMeta.textContent = items[0] ? `${items[0].range} | ${signed2(items[0].priceChangePercent)}% | RSI ${signed1(items[0].rsiChange)} | ${items[0].confidence}` : "Confidence: -";
-  if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
+  if(els.rightBiasMeta) els.rightBiasMeta.textContent = items[0] ? `${items[0].range} | ${items[0].confidence}` : "Confidence: unavailable";
   if(!items.length){ els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
   els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
 }
@@ -222,7 +225,6 @@ function renderFvgPanel(dataset){
     if(els.rightFvgCount) els.rightFvgCount.textContent=`Active FVG: ${active.length}`;
     if(els.rightNearestFvg) els.rightNearestFvg.textContent=active[0]?`Nearest: ${active[0].type} ${active[0].startLabel}->${active[0].endLabel}`:"Nearest: -";
     if(els.rightFvgStatus) els.rightFvgStatus.textContent=active[0]?`Status: ${active[0].status}`:"Status: -";
-    if(els.rightFvgCount) els.rightFvgCount.textContent=`Active FVG: ${active.length}`;
     if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
     els.fvgList.innerHTML=active.map(f=>{
       const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
@@ -434,7 +436,21 @@ function setLoading(){
   els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context...";
   els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
   if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
+  if(els.leftRsiValue) els.leftRsiValue.textContent="loading";
+  if(els.leftRsiRegime) els.leftRsiRegime.textContent="loading";
+  if(els.leftDistance50) els.leftDistance50.textContent="loading";
+  if(els.leftSlopes) els.leftSlopes.textContent="loading";
+  if(els.leftDirection) els.leftDirection.textContent="loading";
+  if(els.leftPhase) els.leftPhase.textContent="loading";
+  if(els.leftChanges) els.leftChanges.textContent="loading";
   if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: loading";
+  if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
+  if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
+  if(els.rightFvgStatus) els.rightFvgStatus.textContent="Status: loading";
+  if(els.rightBiasTop) els.rightBiasTop.textContent="Top Bias: loading";
+  if(els.rightBiasMeta) els.rightBiasMeta.textContent="Confidence: loading";
+  if(els.rightDivergence) els.rightDivergence.textContent="loading";
+  if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent="loading";
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -484,8 +500,14 @@ async function loadDashboard(){
       els.divergenceStatus.textContent = "Divergence Status: unavailable";
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
       els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
-            if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
     if(els.rightFvgCount) els.rightFvgCount.textContent='Active FVG: unavailable';
+    if(els.rightNearestFvg) els.rightNearestFvg.textContent='Nearest: unavailable';
+    if(els.rightFvgStatus) els.rightFvgStatus.textContent='Status: unavailable';
+    if(els.rightBiasTop) els.rightBiasTop.textContent='Top Bias: unavailable';
+    if(els.rightBiasMeta) els.rightBiasMeta.textContent='Confidence: unavailable';
+    if(els.rightDivergence) els.rightDivergence.textContent='unavailable';
+    if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent='unavailable';
     clearFvgOverlay();
     }
   } else {
