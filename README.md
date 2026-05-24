@@ -132,3 +132,6 @@ Then open `http://localhost:8000`.
 - Lower timeframe summaries are aligned beside their related charts for compact review.
 
 - Whenever modifying Pulse Lab, update `APP_LAST_UPDATED` in `app.js` to the current update date/time.
+
+- Lower timeframe chart overlay draws a maximum 3 active 4H FVG zones for cleaner readability.
+- Thin 4H FVG overlays use a minimum visual height so zones remain visible in dense lower-timeframe ranges.
