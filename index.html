@@ -86,13 +86,13 @@
                 <div class="ltf-row">
                   <div class="chart-wrap compact lower-chart-wrapper" id="lower4hChartWrapper"><div id="lower4hChart" class="lower-chart" role="img"></div><div id="lower4hFvgOverlay" class="fvg-overlay-layer"></div><div id="lower4hError" class="chart-error" hidden>4H chart unavailable.</div></div>
                   <div class="ltf-summary">
-                    <div id="lower4hFvgSummary" class="mini-line lower-fvg-summary">4H FVG: loading</div><div id="lower4hStructure" class="mini-line lower-fvg-summary">4H Structure: loading</div><div id="lower4hReaction" class="mini-line lower-fvg-summary">4H Reaction: loading</div>
+                    <div id="lower4hFvgSummary" class="mini-line lower-fvg-summary">4H FVG: loading</div><div id="lower4hStructure" class="mini-line lower-fvg-summary" title="CHoCH = Change of Character, BOS = Break of Structure">4H Structure: loading</div><div id="lower4hReaction" class="mini-line lower-fvg-summary">4H Reaction: loading</div>
                   </div>
                 </div>
                 <div class="ltf-row">
                   <div class="chart-wrap compact"><div id="lower1hChart" class="lower-chart" role="img"></div><div id="lower1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
                   <div class="ltf-summary">
-                    <div id="lower1hSweepSummary" class="mini-line lower-fvg-summary">1H Liquidity Sweep: loading</div><div id="lower1hStructureSummary" class="mini-line lower-fvg-summary">1H Structure: loading</div>
+                    <div id="lower1hSweepSummary" class="mini-line lower-fvg-summary" title="Liquidity Sweep = price takes liquidity above/below swing then returns">1H Liquidity Sweep: loading</div><div id="lower1hStructureSummary" class="mini-line lower-fvg-summary" title="CHoCH = Change of Character, BOS = Break of Structure">1H Structure: loading</div>
                   </div>
                 </div>
               </div>
@@ -103,15 +103,15 @@
 
         <aside class="side-col right-col">
           <section class="panel mini-panel">
-            <h3>MTF Summary</h3>
+            <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">MTF Summary</h3>
             <p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p>
             <p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p>
             <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
-            <p class="mini-line" id="mtfFinalStatus">Final Status: waiting</p>
+            <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
           </section>
 
           <section class="panel mini-panel">
-            <h3>Active Weekly FVG Summary</h3>
+            <h3 title="FVG = Fair Value Gap (imbalance zone)">Active Weekly FVG Summary</h3>
             <p class="mini-line" id="rightFvgCount">Active FVG: —</p>
             <p class="mini-line" id="rightNearestFvg">Nearest: —</p>
             <p class="mini-line" id="rightFvgStatus">Status: —</p>
@@ -131,7 +131,7 @@
 
           
           <section class="panel mini-panel">
-            <h3>4H vs Weekly FVG</h3>
+            <h3 title="FVG = Fair Value Gap (imbalance zone)">4H vs Weekly FVG</h3>
             <p class="mini-line" id="right4hFvgType">—</p>
             <p class="mini-line" id="right4hFvgZone">Zone: —</p>
             <p class="mini-line" id="right4hFvgRelation">Relation: —</p>

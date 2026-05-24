@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 19:10";
+const APP_LAST_UPDATED = "2026-05-24 20:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -436,7 +436,7 @@ async function renderLowerTimeframeMode(mode="1W"){
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
       console.log('4H candles:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; }
+      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; }
       else {
         const r=renderSingleLtfChart(els.lower4hChart,candles,280);
         ltf4hChart=r.chart; ltf4hSeries=r.series;
@@ -684,7 +684,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -789,7 +789,7 @@ function render1hSweepSummary(candles){
     latest1hSweepStatus = sweep.status;
     mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
-    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No recent 1H liquidity sweep.'; return; }
+    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No signal detected (1H liquidity sweep).'; return; }
     els.lower1hSweepSummary.textContent=`1H Liquidity Sweep | Status: ${sweep.status} | Swept Level: ${usd(sweep.level)} | Candle Time: ${sweep.time} | Distance: ${f1(sweep.distance)}%`;
   }catch(e){ console.error('1H sweep scanner failed',e); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
 }
@@ -797,7 +797,19 @@ function renderLowerTfReactionSummary(){
   if(!els.lowerTfReactionSummary) return;
   const nearest = active4hFvgs[0];
   const fvgTxt = nearest ? `${nearest.type} (${nearest.status})` : 'No active 4H FVG';
-  els.lowerTfReactionSummary.textContent = `Lower TF Reaction | 4H Structure: ${latest4hStructureStatus} | 4H FVG: ${fvgTxt} | 1H Sweep: ${latest1hSweepStatus} | 1H Structure: ${latest1hStructureStatus}`;
+  els.lowerTfReactionSummary.textContent = `Lower TF: 4H ${latest4hStructureStatus} · FVG ${fvgTxt} · 1H Sweep ${latest1hSweepStatus} · 1H ${latest1hStructureStatus}`;
+}
+
+
+function getStatusBadgeClass(status){
+  const s=(status||'').toLowerCase();
+  if(s.includes('aligned')) return 'status-aligned';
+  if(s.includes('constructive')) return 'status-constructive';
+  if(s.includes('mixed')) return 'status-mixed';
+  if(s.includes('conflicting')) return 'status-conflicting';
+  if(s.includes('waiting')) return 'status-waiting';
+  if(s.includes('unavailable')) return 'status-unavailable';
+  return 'status-waiting';
 }
 
 function renderMtfSummary(){
@@ -824,9 +836,9 @@ function renderMtfSummary(){
     els.mtfWeeklyBias.textContent = `Weekly Bias: ${wb}`;
     els.mtf4hReaction.textContent = `4H Reaction: ${h4}`;
     els.mtf1hTiming.textContent = `1H Timing: ${h1}`;
-    els.mtfFinalStatus.textContent = `Final Status: ${finalStatus}`;
+    els.mtfFinalStatus.innerHTML = `Final Status: <span class="status-badge ${getStatusBadgeClass(finalStatus)}">${finalStatus}</span>`;
   } catch (e){
-    if(els.mtfFinalStatus) els.mtfFinalStatus.textContent = 'MTF Summary unavailable';
+    if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML = 'Final Status: <span class="status-badge status-unavailable">Unavailable</span>'; 
   }
 }
 
@@ -867,7 +879,7 @@ function setLoading(){
   if(els.mtfWeeklyBias) els.mtfWeeklyBias.textContent="Weekly Bias: waiting";
   if(els.mtf4hReaction) els.mtf4hReaction.textContent="4H Reaction: waiting";
   if(els.mtf1hTiming) els.mtf1hTiming.textContent="1H Timing: waiting";
-  if(els.mtfFinalStatus) els.mtfFinalStatus.textContent="Final Status: waiting";
+  if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>';
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -926,7 +938,7 @@ async function loadDashboard(){
     if(els.rightBiasMeta) els.rightBiasMeta.textContent='Confidence: unavailable';
     if(els.rightDivergence) els.rightDivergence.textContent='unavailable';
     if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent='unavailable';
-    if(els.mtfFinalStatus) els.mtfFinalStatus.textContent='MTF Summary: Waiting for complete data';
+    if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>'; 
     clearFvgOverlay();
     }
   } else {
