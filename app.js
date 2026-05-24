@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 23:05";
+const APP_LAST_UPDATED = "2026-05-24 23:30";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -361,7 +361,7 @@ function setToggleState(name, open){
 }
 function restoreToggleState(){
   const read=(k)=>{ try { return sessionStorage.getItem(k)==='1'; } catch(_) { return false; } };
-  setToggleState('ltf', read('pl_ltf_open'));
+  setToggleState('ltf', true);
   setToggleState('fvg', read('pl_fvg_open'));
   setToggleState('bias', read('pl_bias_open'));
 }

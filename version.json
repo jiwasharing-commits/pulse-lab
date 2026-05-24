@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-24 23:05",
-  "version": "v0.1.17",
+  "lastUpdated": "2026-05-24 23:30",
+  "version": "v0.1.18",
   "commitLabel": "manual",
-  "note": "Recovery: guard weekly FVG panel/overlay missing detail DOM"
+  "note": "LTF always opens by default on page load"
 }
