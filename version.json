@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-24 22:10",
-  "version": "v0.1.15",
+  "lastUpdated": "2026-05-24 22:35",
+  "version": "v0.1.16",
   "commitLabel": "manual",
-  "note": "Patch: remove visible potential bias detail card"
+  "note": "Urgent recovery: guard missing potential bias detail DOM refs"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 22:10";
+const APP_LAST_UPDATED = "2026-05-24 22:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -169,8 +169,8 @@ function renderPotentialBiasScanner(dataset, metrics){
   if(els.biasTitle) els.biasTitle.textContent=`Potential Bias Scanner (${items.length})`;
   if(els.rightBiasTop) els.rightBiasTop.textContent = items[0] ? items[0].bias : "Top Bias: -";
   if(els.rightBiasMeta) els.rightBiasMeta.textContent = items[0] ? `${items[0].range} | ${items[0].confidence}` : "Confidence: unavailable";
-  if(!items.length){ els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
-  els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
+  if(!items.length){ if(els.biasScannerList) els.biasScannerList.innerHTML='<div class="scanner-row">No clear potential bias detected across the weekly comparison ranges.</div>'; return; }
+  if(els.biasScannerList) els.biasScannerList.innerHTML=items.map(it=>`<div class="scanner-row"><span class="scanner-title">${it.bias}</span>Range: ${it.range} · Price: ${signed2(it.priceChangePercent)}% · RSI: ${signed1(it.rsiChange)} · Confidence: ${it.confidence}<br>${it.bias==='Potential Upward Bias'?'Price weakened or consolidated while weekly RSI improved.':'Price improved or consolidated while weekly RSI weakened.'}</div>`).join('');
 }
 
 function renderPriceChart(dataset){
@@ -883,7 +883,7 @@ function setLoading(){
   els.rsiSlope.textContent="RSI Slope 48W: — / week"; els.direction.textContent="—"; els.momentumPhase.textContent="—";
   els.analyticsStrip.textContent="RSI analytics loading..."; els.priceMetrics.textContent="Price/RSI comparison loading...";
   els.divergenceStatus.textContent="Divergence Status: —"; els.divergenceText.textContent="Loading divergence context...";
-  els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
+  if(els.biasScannerList) els.biasScannerList.innerHTML='<div class="scanner-row">Loading scanner results...</div>';
   if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">Loading weekly FVG zones...</div>';
   if(els.leftRsiValue) els.leftRsiValue.textContent="loading";
   if(els.leftRsiRegime) els.leftRsiRegime.textContent="loading";
@@ -960,7 +960,7 @@ async function loadDashboard(){
       els.analyticsStrip.textContent = "Weekly Binance data unavailable.";
       els.divergenceStatus.textContent = "Divergence Status: unavailable";
       els.divergenceText.textContent = "Weekly Binance data unavailable.";
-      els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
+      if(els.biasScannerList) els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
     if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
     if(els.rightFvgCount) els.rightFvgCount.textContent='Active FVG: unavailable';
     if(els.rightNearestFvg) els.rightNearestFvg.textContent='Nearest: unavailable';
@@ -977,7 +977,7 @@ async function loadDashboard(){
     els.analyticsStrip.textContent = "Weekly Binance data unavailable.";
     els.divergenceStatus.textContent = "Divergence Status: unavailable";
     els.divergenceText.textContent = "Weekly Binance data unavailable.";
-    els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
+    if(els.biasScannerList) els.biasScannerList.innerHTML='<div class="scanner-row">Scanner unavailable until weekly data loads.</div>';
   }
 
   if(fgRes.status === "fulfilled") renderFearGreed(fgRes.value);
