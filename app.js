@@ -37,6 +37,7 @@ let rsiChart = null;
 let fvgOverlayLines = [];
 let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
+let weeklyOverlayRightTime = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
 let ltf4hSeries = null;
@@ -280,20 +281,25 @@ function renderFvgFilledOverlay(){
     const layer = ensureFvgOverlayLayer();
     if(!layer) return;
     layer.innerHTML = "";
-    const rightEdge = els.priceChart.clientWidth;
+    const rightBoundary = weeklyOverlayRightTime != null
+      ? priceChart.timeScale().timeToCoordinate(weeklyOverlayRightTime)
+      : null;
 
     activeFvgZonesForOverlay.forEach((f)=>{
       const xStart = priceChart.timeScale().timeToCoordinate(f.endTime);
       const yTop = candleSeries.priceToCoordinate(f.upper);
       const yBottom = candleSeries.priceToCoordinate(f.lower);
-      if(xStart == null || yTop == null || yBottom == null) return;
+      const xEnd = rightBoundary != null ? rightBoundary - 4 : null;
+      if(xStart == null || xEnd == null || yTop == null || yBottom == null) return;
 
       const rect = document.createElement("div");
       const bullish = f.type === "Bullish FVG";
+      const left = Math.max(0, Math.min(xStart, xEnd));
+      const width = Math.max(1, Math.abs(xEnd - xStart));
       rect.className = `fvg-zone ${bullish ? "bullish" : "bearish"}`;
-      rect.style.left = `${Math.max(0, xStart)}px`;
+      rect.style.left = `${left}px`;
       rect.style.top = `${Math.min(yTop, yBottom)}px`;
-      rect.style.width = `${Math.max(1, rightEdge - xStart)}px`;
+      rect.style.width = `${width}px`;
       rect.style.height = `${Math.max(1, Math.abs(yBottom - yTop))}px`;
       rect.title = `${f.type} | ${f.startLabel} → ${f.endLabel}`;
       layer.appendChild(rect);
@@ -321,8 +327,10 @@ function clearFvgOverlay(){
   fvgOverlayLines = [];
   clearFvgFilledOverlay();
 }
-function renderFvgOverlay(activeFvgs){
+function renderFvgOverlay(activeFvgs, dataset){
   activeFvgZonesForOverlay = activeFvgs || [];
+  const latest = Array.isArray(dataset) && dataset.length ? dataset[dataset.length-1] : null;
+  weeklyOverlayRightTime = latest?.time ?? null;
   try {
     if(!candleSeries) return;
     clearFvgOverlay();
@@ -920,7 +928,7 @@ async function loadDashboard(){
       renderMtfSummary();
       weeklyOk = true;
 
-      try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs); }
+      try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs, dataset); }
       catch (error) { console.error("Price chart render failed:", error); togglePriceChartError("Chart unavailable, but data is still loaded."); }
 
       try { renderRsiChart(dataset); toggleRsiChartError(""); }
