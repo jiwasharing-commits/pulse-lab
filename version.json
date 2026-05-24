@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-24 21:55",
-  "version": "v0.1.14",
+  "lastUpdated": "2026-05-24 22:10",
+  "version": "v0.1.15",
   "commitLabel": "manual",
-  "note": "Patch: remove visible right-panel weekly FVG detail card"
+  "note": "Patch: remove visible potential bias detail card"
 }
