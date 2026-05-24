@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 14:35";
+const APP_LAST_UPDATED = "2026-05-24 16:20";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
-  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -47,6 +47,7 @@ let latest4hCandles = [];
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
+let activeLowerTfMode = "1W";
 let ltfVisible = false;
 let ltfPreset = "1w";
 let lowerTimeframeLoaded = false;
@@ -357,21 +358,21 @@ function setLtfPresetUI(preset){
 }
 
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1w'); loadLowerTimeframeDetail(false,'1w'); } else { loadLowerTimeframeDetail(false, ltfPreset); } }); } else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1w'); renderLowerTimeframeMode('1W'); } else { renderLowerTimeframeMode(ltfPreset==='2w'?'2W':'1W'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
-  els.ltfPreset1w?.addEventListener('click', ()=>{ setLtfPresetUI('1w'); if(ltfVisible) { lowerTimeframeLoaded=true; loadLowerTimeframeDetail(false,'1w'); } });
-  els.ltfPreset2w?.addEventListener('click', ()=>{ setLtfPresetUI('2w'); if(ltfVisible) { lowerTimeframeLoaded=true; loadLowerTimeframeDetail(false,'2w'); } });
+  els.ltfPreset1w?.addEventListener('click', ()=>{ setLtfPresetUI('1w'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('1W'); } });
+  els.ltfPreset2w?.addEventListener('click', ()=>{ setLtfPresetUI('2w'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('2W'); } });
   els.ltfPresetCustom?.addEventListener('click', ()=>{ setLtfPresetUI('custom'); });
-  els.ltfApplyBtn?.addEventListener('click', ()=>{ lowerTimeframeLoaded=true; loadLowerTimeframeDetail(true,'custom'); });
-  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1w'); lowerTimeframeLoaded=true; if(ltfVisible) loadLowerTimeframeDetail(false,'1w'); });
+  els.ltfApplyBtn?.addEventListener('click', ()=>{ lowerTimeframeLoaded=true; renderLowerTimeframeMode('CUSTOM'); });
+  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1w'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
   setLtfPresetUI('1w');
   restoreToggleState();
-  if(ltfVisible){ requestAnimationFrame(()=>{ loadLowerTimeframeDetail(false,'1w'); lowerTimeframeLoaded=true; }); }
+  if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('1W'); lowerTimeframeLoaded=true; }); }
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; clear4hFvgOverlay(); }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; clear4hFvgOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
@@ -395,15 +396,12 @@ function renderSingleLtfChart(container, candles, height){
   const s=chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   s.setData(candles); chart.timeScale().fitContent(); return { chart, series: s };
 }
-async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
-  console.log("Lower TF visible:", ltfVisible);
-  console.log("4H container:", document.getElementById("lower4hChart"));
-  console.log("1H container:", document.getElementById("lower1hChart"));
-  console.log("4H container size:", els.lower4hChart?.clientWidth, els.lower4hChart?.clientHeight);
-  console.log("1H container size:", els.lower1hChart?.clientWidth, els.lower1hChart?.clientHeight);
+async function renderLowerTimeframeMode(mode="1W"){
+  activeLowerTfMode = mode;
+  console.log("Lower TF mode:", activeLowerTfMode);
   if(!ltfVisible) return;
   if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0 || els.lower4hChart.clientHeight===0 || els.lower1hChart.clientHeight===0){
-    requestAnimationFrame(()=>loadLowerTimeframeDetail(useRange,preset));
+    requestAnimationFrame(()=>renderLowerTimeframeMode(mode));
     return;
   }
   lowerTimeframeLoaded = true;
@@ -411,22 +409,25 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
   destroyLtfCharts();
   if(els.lower4hChart) els.lower4hChart.innerHTML='';
   if(els.lower1hChart) els.lower1hChart.innerHTML='';
-  let st=null, et=null;
-  const hasRange = useRange && preset==="custom" && els.ltfStartDate.value && els.ltfEndDate.value;
+  if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML='';
+
+  let st=null, et=null, preset='1w';
+  if(mode==='2W') preset='2w';
+  if(mode==='CUSTOM') preset='custom';
+  if(mode==='RESET') preset='1w';
+  const hasRange = preset==='custom' && els.ltfStartDate.value && els.ltfEndDate.value;
   if(hasRange){
     st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
     et = new Date(`${els.ltfEndDate.value}T23:59:59`).getTime();
   }
-  const limit4h = hasRange ? 1000 : (preset==="2w" ? 84 : 42);
-  const limit1h = hasRange ? 1000 : (preset==="2w" ? 336 : 168);
-  console.log("Active lower TF preset:", preset);
-  console.log("4H requested limit:", limit4h);
-  console.log("1H requested limit:", limit1h);
+  const limit4h = hasRange ? 1000 : (preset==='2w' ? 84 : 42);
+  const limit1h = hasRange ? 1000 : (preset==='2w' ? 336 : 168);
+  console.log('4H chart size:', els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
   if(h4.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
-      console.log('4H candles length:', candles.length);
+      console.log('4H candles:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
       if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; }
       else {
@@ -436,10 +437,13 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
         ltf4hChart.timeScale().fitContent();
         ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error("4H FVG overlay failed:", err); } });
         requestAnimationFrame(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error("4H FVG overlay failed:", err); } });
-        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG filled overlay render failed:", err); }
+        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG overlay failed:", err); }
+        requestAnimationFrame(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error('4H FVG overlay failed:', err); } });
+        setTimeout(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error('4H FVG overlay failed:', err); } },50);
+        console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
       }
     }
-    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; }
+    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG filled overlay unavailable'; }
   } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: 4H data unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: 4H data unavailable.'; }
   if(h1.status==='fulfilled'){
     try {
@@ -551,9 +555,8 @@ function get4hFvgStatus(fvg,candles){
   return 'Unfilled';
 }
 function ensure4hFvgLayer(){
-  if(!els.lower4hChart) return null;
-  if(!ltf4hFvgLayer){ ltf4hFvgLayer=document.createElement('div'); ltf4hFvgLayer.className='fvg-overlay-layer'; els.lower4hChart.appendChild(ltf4hFvgLayer); }
-  return ltf4hFvgLayer;
+  if(els.lower4hFvgOverlay) { ltf4hFvgLayer = els.lower4hFvgOverlay; return ltf4hFvgLayer; }
+  return null;
 }
 function clear4hFvgOverlay(){
   ltf4hFvgLines.forEach(l=>{ try { ltf4hSeries?.removePriceLine(l); } catch(_){} });
@@ -564,6 +567,7 @@ function render4hFvgZonesOverlay({ chart, series, container, activeFvgs, candles
   if(!chart || !series || !container) return 0;
   const layer=ensure4hFvgLayer();
   const rightEdge=container.clientWidth;
+  const lastTime = candles?.[candles.length-1]?.time;
   const visible = activeFvgs.slice(0, maxZones);
   const MIN_ZONE_HEIGHT = 10;
   visible.forEach(f=>{
@@ -571,15 +575,18 @@ function render4hFvgZonesOverlay({ chart, series, container, activeFvgs, candles
     const lineCol=bull?'rgba(34,197,94,0.75)':'rgba(239,68,68,0.75)';
     ltf4hFvgLines.push(series.createPriceLine({price:f.upper,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
     ltf4hFvgLines.push(series.createPriceLine({price:f.lower,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
-    const xRaw=chart.timeScale().timeToCoordinate(f.endTime);
-    const xStart=(xRaw==null)?0:Math.max(0,xRaw);
+    const x1=chart.timeScale().timeToCoordinate(f.startTime);
+    const x2=chart.timeScale().timeToCoordinate(lastTime);
+    if(x1==null || x2==null){ console.log('4H FVG overlay coordinate skip:', {x1,x2}); return; }
+    const xStart=Math.max(0, Math.min(x1,x2));
+    const width=Math.max(1, Math.abs(x2-x1));
     const yTopRaw=series.priceToCoordinate(f.upper); const yBottomRaw=series.priceToCoordinate(f.lower);
     if(layer && yTopRaw!=null && yBottomRaw!=null){
       const center=(yTopRaw+yBottomRaw)/2;
       const zoneHeight=Math.max(MIN_ZONE_HEIGHT, Math.abs(yBottomRaw-yTopRaw));
       const yTop=center-(zoneHeight/2);
       const r=document.createElement('div'); r.className=`fvg-zone ${bull?'bullish':'bearish'}`;
-      r.style.left=`${xStart}px`; r.style.top=`${Math.max(0,yTop)}px`; r.style.width=`${Math.max(1,rightEdge-xStart)}px`; r.style.height=`${Math.max(1,zoneHeight)}px`; layer.appendChild(r);
+      r.style.left=`${xStart}px`; r.style.top=`${Math.max(0,yTop)}px`; r.style.width=`${Math.max(1, Math.min(width, rightEdge-xStart))}px`; r.style.height=`${Math.max(1,zoneHeight)}px`; layer.appendChild(r);
     }
   });
   return visible.length;
@@ -603,12 +610,16 @@ function render4hFvgSummaryAndOverlay(candles){
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
     if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); return; }
     const nearest = active4hFvgs[0];
+    const selected4hFvgs = active4hFvgs.slice(0,3);
     const drawnCount = render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 });
+    console.log("4H FVG active:", active4hFvgs.length);
+    console.log("4H FVG shown:", selected4hFvgs.length);
+    console.log("Sample FVG:", selected4hFvgs[0]);
     if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Shown: ${drawnCount} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status}`;
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     renderLowerTfReactionSummary();
-  } catch(e){ console.error('4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
+  } catch(e){ console.error('4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG filled overlay unavailable'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
 
