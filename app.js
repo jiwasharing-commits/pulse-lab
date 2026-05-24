@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 21:35";
+const APP_LAST_UPDATED = "2026-05-24 21:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -355,7 +355,7 @@ function renderFvgOverlay(activeFvgs, dataset){
 
 function setToggleState(name, open){
   if(name==='ltf'){ ltfVisible=open; els.ltfContent.hidden=!open; els.ltfToggleBtn.textContent=open?'Hide':'Show'; }
-  if(name==='fvg'){ fvgOpen=open; els.fvgContent.hidden=!open; els.fvgToggleBtn.textContent=open?'Hide':'Show'; }
+  if(name==='fvg'){ fvgOpen=open; if(els.fvgContent) els.fvgContent.hidden=!open; if(els.fvgToggleBtn) els.fvgToggleBtn.textContent=open?'Hide':'Show'; }
   if(name==='bias'){ biasOpen=open; els.biasContent.hidden=!open; els.biasToggleBtn.textContent=open?'Hide':'Show'; }
   try { sessionStorage.setItem(`pl_${name}_open`, open?'1':'0'); } catch(_){}
 }
