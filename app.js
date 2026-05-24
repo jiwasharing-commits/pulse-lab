@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 18:05";
+const APP_LAST_UPDATED = "2026-05-24 18:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -40,6 +40,7 @@ let activeFvgZonesForOverlay = [];
 let ltf4hChart = null;
 let ltf1hChart = null;
 let ltf4hSeries = null;
+let ltf1hSeries = null;
 let current4hFvgPriceLines = [];
 let current4hFvgOverlays = [];
 let ltf4hFvgLayer = null;
@@ -374,7 +375,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; clear4hFvgOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
@@ -454,11 +455,12 @@ async function renderLowerTimeframeMode(mode="1W"){
       if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
       else {
         const r1=renderSingleLtfChart(els.lower1hChart,candles,280);
-        ltf1hChart=r1.chart;
+        ltf1hChart=r1.chart; ltf1hSeries=r1.series;
         ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
         ltf1hChart.timeScale().fitContent();
         try { render1hSweepSummary(candles); } catch(err){ console.error("1H sweep render failed:", err); }
         try { render1hStructureSummary(candles); } catch(err){ console.error("1H structure render failed:", err); }
+        try { render1hEventMarkers(candles); } catch(err){ console.error("1H event marker render failed:", err); }
         renderLowerTfReactionSummary();
       }
     }
@@ -700,6 +702,45 @@ function detect1hStructure(candles){
   if(sh && latest.close>sh.price){ status=bearishTrend?'Bullish CHoCH':'Bullish BOS'; broken=sh.price; ref=String(sh.time); }
   else if(sl && latest.close<sl.price){ status=bullishTrend?'Bearish CHoCH':'Bearish BOS'; broken=sl.price; ref=String(sl.time); }
   return {status, broken, ref, latestClose: latest.close};
+}
+
+function render1hEventMarkers(candles){
+  if(!ltf1hSeries || !Array.isArray(candles) || !candles.length) return;
+  const markers=[];
+  const sweep=detect1hLiquiditySweep(candles);
+  if(sweep && sweep.status && sweep.status!=='No recent sweep'){
+    if(sweep.time==null){
+      console.warn('1H sweep marker skipped: missing time');
+    } else {
+      const bullish=sweep.status.includes('Bullish');
+      markers.push({
+        time: sweep.time,
+        position: bullish ? 'belowBar' : 'aboveBar',
+        color: bullish ? '#22c55e' : '#ef4444',
+        shape: bullish ? 'arrowUp' : 'arrowDown',
+        text: sweep.status,
+      });
+    }
+  }
+
+  const st=detect1hStructure(candles);
+  if(st && st.status && st.status!=='No clear 1H structure shift'){
+    const latestCandle=candles[candles.length-1];
+    const bullish=st.status.includes('Bullish');
+    markers.push({
+      time: latestCandle.time,
+      position: bullish ? 'belowBar' : 'aboveBar',
+      color: bullish ? '#22c55e' : '#ef4444',
+      shape: bullish ? 'arrowUp' : 'arrowDown',
+      text: st.status,
+    });
+  }
+
+  if(typeof ltf1hSeries.setMarkers==='function'){
+    ltf1hSeries.setMarkers(markers);
+  } else if(typeof ltf1hSeries.createSeriesMarkers==='function') {
+    ltf1hSeries.createSeriesMarkers(markers);
+  }
 }
 function render1hStructureSummary(candles){
   try {
