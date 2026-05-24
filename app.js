@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 17:45";
+const APP_LAST_UPDATED = "2026-05-24 18:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -437,11 +437,10 @@ async function renderLowerTimeframeMode(mode="1W"){
         ltf4hChart=r.chart; ltf4hSeries=r.series;
         ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
         ltf4hChart.timeScale().fitContent();
-        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error("4H FVG overlay failed:", err); } });
-        requestAnimationFrame(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error("4H FVG overlay failed:", err); } });
-        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG overlay failed:", err); }
-        requestAnimationFrame(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error('Clean 4H FVG overlay failed:', err); } });
-        setTimeout(()=>{ try { render4hFvgZonesOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, activeFvgs: active4hFvgs, candles, maxZones: 3 }); } catch(err){ console.error('Clean 4H FVG overlay failed:', err); } },50);
+        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } });
+        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); }
+        requestAnimationFrame(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } });
+        setTimeout(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } },50);
         console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
       }
     }
@@ -874,5 +873,5 @@ setupCollapsibleSections();
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
-  if(ltf4hChart) renderLowerTfReactionSummary();
+  if(ltf4hChart) { schedule4hFvgOverlayRedraw(latest4hCandles); renderLowerTfReactionSummary(); }
 });
