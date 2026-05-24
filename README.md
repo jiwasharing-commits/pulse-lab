@@ -130,3 +130,5 @@ Then open `http://localhost:8000`.
 - Modes differ only by candle range (1W: 42/168, 2W: 84/336, Custom Date: selected range).
 - Active 4H FVG zones are rendered as filled colored overlays across all modes, with overlays reset and redrawn on mode changes.
 - Lower timeframe summaries are aligned beside their related charts for compact review.
+
+- Whenever modifying Pulse Lab, update `APP_LAST_UPDATED` in `app.js` to the current update date/time.

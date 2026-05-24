@@ -3,8 +3,10 @@ const BTC_WEEKLY_KLINE_URL = "https://data-api.binance.vision/api/v3/klines?symb
 const FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1";
 const RSI_PERIOD = 14;
 const RSI_WINDOW = 49;
-// Update this timestamp whenever deploying a new app version.
-const APP_LAST_UPDATED = "2026-05-23 23:15";
+// IMPORTANT:
+// Update APP_LAST_UPDATED every time the app code is modified or deployed.
+// This value represents app/code update time, not live API refresh time.
+const APP_LAST_UPDATED = "2026-05-24 14:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -432,7 +434,9 @@ async function loadLowerTimeframeDetail(useRange=false, preset=ltfPreset){
         ltf4hChart=r.chart; ltf4hSeries=r.series;
         ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
         ltf4hChart.timeScale().fitContent();
-        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG overlay render failed:", err); }
+        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { render4hFvgOverlays(active4hFvgs); } catch(err){ console.error("4H FVG filled overlay render failed:", err); } });
+        requestAnimationFrame(()=>{ try { render4hFvgOverlays(active4hFvgs); } catch(err){ console.error("4H FVG filled overlay render failed:", err); } });
+        try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error("4H FVG filled overlay render failed:", err); }
       }
     }
     catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; }
@@ -562,7 +566,7 @@ function render4hFvgOverlays(activeFvgs){
   const rightEdge=els.lower4hChart.clientWidth;
   activeFvgs.forEach(f=>{
     const bull=f.type==='Bullish 4H FVG';
-    const lineCol=bull?'rgba(34,197,94,0.65)':'rgba(239,68,68,0.65)';
+    const lineCol=bull?'rgba(34,197,94,0.75)':'rgba(239,68,68,0.75)';
     ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.upper,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
     ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.lower,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
     const xRaw=ltf4hChart.timeScale().timeToCoordinate(f.endTime);
@@ -597,7 +601,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     renderLowerTfReactionSummary();
-  } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
+  } catch(e){ console.error('4H FVG filled overlay render failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
 
