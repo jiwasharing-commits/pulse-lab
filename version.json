@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-24 22:35",
-  "version": "v0.1.16",
+  "lastUpdated": "2026-05-24 23:05",
+  "version": "v0.1.17",
   "commitLabel": "manual",
-  "note": "Urgent recovery: guard missing potential bias detail DOM refs"
+  "note": "Recovery: guard weekly FVG panel/overlay missing detail DOM"
 }

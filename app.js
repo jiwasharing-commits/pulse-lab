@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 22:35";
+const APP_LAST_UPDATED = "2026-05-24 23:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -240,7 +240,6 @@ function fvgDistancePct(fvg,currentPrice){
   return 0;
 }
 function renderFvgPanel(dataset){
-  if(!els.fvgList) return;
   try {
     const active=getActiveFvgs(dataset);
     if(els.fvgTitle) els.fvgTitle.textContent=`Active Weekly FVG Zones (${active.length})`;
@@ -248,15 +247,15 @@ function renderFvgPanel(dataset){
     if(els.rightFvgCount) els.rightFvgCount.textContent=`Active: ${active.length} | Shown: ${shown}`;
     if(els.rightNearestFvg) els.rightNearestFvg.textContent=active[0]?`Nearest: ${active[0].type} ${active[0].startLabel}->${active[0].endLabel}`:"Nearest: -";
     if(els.rightFvgStatus) els.rightFvgStatus.textContent=active[0]?`Status: ${active[0].status}`:"Status: -";
-    if(!active.length){ els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
-    els.fvgList.innerHTML=active.map(f=>{
+    if(!active.length){ if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">No active weekly FVG detected in the current W-48 to W0 range.</div>'; return []; }
+    if(els.fvgList) els.fvgList.innerHTML=active.map(f=>{
       const distLabel=f.distance===0?"Inside Zone":`${signed1(f.distance)}%`;
       return `<div class="scanner-row"><span class="scanner-title">${f.type}</span> | ${f.startLabel} → ${f.endLabel} | ${usd(f.lower)} - ${usd(f.upper)} | ${f.status} | Distance: ${distLabel} | Size: ${f1(f.sizePercent)}%</div>`;
     }).join('');
     return active;
   } catch (e) {
     console.error("FVG scan failed:", e);
-    els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
+    if(els.fvgList) els.fvgList.innerHTML='<div class="scanner-row">FVG section unavailable.</div>';
     return [];
   }
 }
@@ -328,13 +327,14 @@ function clearFvgOverlay(){
   clearFvgFilledOverlay();
 }
 function renderFvgOverlay(activeFvgs, dataset){
-  activeFvgZonesForOverlay = activeFvgs || [];
+  const safeFvgs = Array.isArray(activeFvgs) ? activeFvgs : [];
+  activeFvgZonesForOverlay = safeFvgs;
   const latest = Array.isArray(dataset) && dataset.length ? dataset[dataset.length-1] : null;
   weeklyOverlayRightTime = latest?.time ?? null;
   try {
     if(!candleSeries) return;
     clearFvgOverlay();
-    activeFvgs.forEach((f)=>{
+    safeFvgs.forEach((f)=>{
       const bull = f.type === "Bullish FVG";
       const color = bull ? "rgba(34,197,94,0.38)" : "rgba(239,68,68,0.38)";
       const upperLine = candleSeries.createPriceLine({ price:f.upper, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} upper` });
