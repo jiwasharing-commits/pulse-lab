@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 18:35";
+const APP_LAST_UPDATED = "2026-05-24 19:10";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -21,7 +21,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
-  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -56,6 +56,7 @@ let ltfPreset = "1w";
 let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
+const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -142,6 +143,8 @@ function renderSummaryCards(dataset){
   if(els.leftDirection) els.leftDirection.textContent=direction;
   if(els.leftPhase) els.leftPhase.textContent=phase;
   if(els.leftChanges) els.leftChanges.textContent=`4W ${signed1(d4)} | 12W ${signed1(d12)} | 24W ${signed1(d24)} | 48W ${signed1(d48)}`;
+  mtfState.weeklyDirection = direction;
+  mtfState.weeklyPhase = phase;
   return { d4,d12,d24,d48, w0,w4,w12,w24,w48, direction, phase, regime, rsiValues: v };
 }
 
@@ -155,6 +158,7 @@ function renderDivergenceStatus(dataset, metrics){
   els.divergenceText.textContent=`4W context: Price ${signed1(pc4)}%, RSI ${signed1(metrics.d4)}. ${divergence.note}`;
   if(els.rightDivergence) els.rightDivergence.textContent=divergence.status;
   if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent=`12W ${signed1(pc12)}%/${signed1(metrics.d12)} | 24W ${signed1(pc24)}% | 48W ${signed1(pc48)}%`;
+  mtfState.weeklyDivergence = divergence.status;
 }
 
 function renderPotentialBiasScanner(dataset, metrics){
@@ -462,6 +466,7 @@ async function renderLowerTimeframeMode(mode="1W"){
         try { render1hStructureSummary(candles); } catch(err){ console.error("1H structure render failed:", err); }
         try { render1hEventMarkers(candles); } catch(err){ console.error("1H event marker render failed:", err); }
         renderLowerTfReactionSummary();
+        renderMtfSummary();
       }
     }
     catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
@@ -679,8 +684,10 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
+    mtfState.h4Structure = structure.status;
+    mtfState.h4FvgNearest = nearest ? nearest.type : null;
     const layer=ensure4hFvgLayer();
     const visual = layer ? renderClean4hFvgOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, overlayLayer: layer, candles, activeFvgs: active4hFvgs, maxZones: 2 }) : { selected: [], visualMode: "Failed" };
     if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Shown: ${visual.selected.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status} | Visual: ${visual.visualMode}`;
@@ -746,6 +753,7 @@ function render1hStructureSummary(candles){
   try {
     const st=detect1hStructure(candles);
     latest1hStructureStatus = st.status;
+    mtfState.h1Structure = st.status;
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent=`1H Structure | Status: ${st.status} | Broken Level: ${st.broken?usd(st.broken):'—'} | Reference Swing: ${st.ref} | Latest Close: ${usd(st.latestClose)}`;
   } catch(e){
     console.error('1H structure scanner failed', e);
@@ -779,6 +787,7 @@ function render1hSweepSummary(candles){
   try{
     const sweep=detect1hLiquiditySweep(candles);
     latest1hSweepStatus = sweep.status;
+    mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
     if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No recent 1H liquidity sweep.'; return; }
     els.lower1hSweepSummary.textContent=`1H Liquidity Sweep | Status: ${sweep.status} | Swept Level: ${usd(sweep.level)} | Candle Time: ${sweep.time} | Distance: ${f1(sweep.distance)}%`;
@@ -789,6 +798,36 @@ function renderLowerTfReactionSummary(){
   const nearest = active4hFvgs[0];
   const fvgTxt = nearest ? `${nearest.type} (${nearest.status})` : 'No active 4H FVG';
   els.lowerTfReactionSummary.textContent = `Lower TF Reaction | 4H Structure: ${latest4hStructureStatus} | 4H FVG: ${fvgTxt} | 1H Sweep: ${latest1hSweepStatus} | 1H Structure: ${latest1hStructureStatus}`;
+}
+
+function renderMtfSummary(){
+  try {
+    if(!els.mtfWeeklyBias || !els.mtf4hReaction || !els.mtf1hTiming || !els.mtfFinalStatus) return;
+    const wb = mtfState.weeklyDirection || 'Waiting for complete data';
+    const h4 = mtfState.h4Structure ? `${mtfState.h4Structure}${mtfState.h4FvgNearest ? ` · ${mtfState.h4FvgNearest}` : ''}` : 'Waiting for complete data';
+    const h1 = mtfState.h1Structure ? `${mtfState.h1Structure}${mtfState.h1Sweep ? ` · ${mtfState.h1Sweep}` : ''}` : 'Waiting for complete data';
+
+    const weeklyBull = /Rising|Improving|Strength|Aligned|Bullish/.test(`${mtfState.weeklyDirection||''} ${mtfState.weeklyPhase||''} ${mtfState.weeklyDivergence||''}`);
+    const weeklyBear = /Weakening|Cooling|Bearish/.test(`${mtfState.weeklyDirection||''} ${mtfState.weeklyPhase||''} ${mtfState.weeklyDivergence||''}`);
+    const h4Bull = /Bullish|Rising|Near|Inside/.test(`${mtfState.h4Structure||''} ${mtfState.h4FvgNearest||''}`);
+    const h4Bear = /Bearish|Weakening/.test(`${mtfState.h4Structure||''}`);
+    const h1Bull = /Bullish/.test(`${mtfState.h1Structure||''} ${mtfState.h1Sweep||''}`);
+    const h1Bear = /Bearish/.test(`${mtfState.h1Structure||''} ${mtfState.h1Sweep||''}`);
+
+    let finalStatus = 'Mixed';
+    if((weeklyBull && h4Bull && h1Bull) || (weeklyBear && h4Bear && h1Bear)) finalStatus = 'Aligned';
+    else if((weeklyBull||!weeklyBear) && (h4Bull||h1Bull)) finalStatus = 'Constructive';
+    else if((weeklyBull && (h4Bear||h1Bear)) || (weeklyBear && (h4Bull||h1Bull))) finalStatus = 'Conflicting';
+
+    if(wb==='Waiting for complete data' || h4==='Waiting for complete data' || h1==='Waiting for complete data') finalStatus='Waiting for complete data';
+
+    els.mtfWeeklyBias.textContent = `Weekly Bias: ${wb}`;
+    els.mtf4hReaction.textContent = `4H Reaction: ${h4}`;
+    els.mtf1hTiming.textContent = `1H Timing: ${h1}`;
+    els.mtfFinalStatus.textContent = `Final Status: ${finalStatus}`;
+  } catch (e){
+    if(els.mtfFinalStatus) els.mtfFinalStatus.textContent = 'MTF Summary unavailable';
+  }
 }
 
 function setLoading(){
@@ -825,6 +864,10 @@ function setLoading(){
   if(els.rightBiasMeta) els.rightBiasMeta.textContent="Confidence: loading";
   if(els.rightDivergence) els.rightDivergence.textContent="loading";
   if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent="loading";
+  if(els.mtfWeeklyBias) els.mtfWeeklyBias.textContent="Weekly Bias: waiting";
+  if(els.mtf4hReaction) els.mtf4hReaction.textContent="4H Reaction: waiting";
+  if(els.mtf1hTiming) els.mtf1hTiming.textContent="1H Timing: waiting";
+  if(els.mtfFinalStatus) els.mtfFinalStatus.textContent="Final Status: waiting";
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -859,6 +902,7 @@ async function loadDashboard(){
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);
       const activeFvgs = renderFvgPanel(dataset);
+      renderMtfSummary();
       weeklyOk = true;
 
       try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs); }
@@ -882,6 +926,7 @@ async function loadDashboard(){
     if(els.rightBiasMeta) els.rightBiasMeta.textContent='Confidence: unavailable';
     if(els.rightDivergence) els.rightDivergence.textContent='unavailable';
     if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent='unavailable';
+    if(els.mtfFinalStatus) els.mtfFinalStatus.textContent='MTF Summary: Waiting for complete data';
     clearFvgOverlay();
     }
   } else {
