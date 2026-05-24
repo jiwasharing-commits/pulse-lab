@@ -121,3 +121,12 @@ Then open `http://localhost:8000`.
 - 1H structure output is shown near the 1H chart and inside Lower TF Reaction.
 - Last Updated is fixed app/code timestamp, Data Refreshed is dynamic API refresh time.
 - This tool is for monitoring context and does not provide financial advice.
+
+
+## Lower Timeframe Mode Consistency
+
+- Lower Timeframe Detail supports 1W, 2W, and Custom Date with one shared analysis stack.
+- All modes run the same chart/scanner flow (4H/1H charts, 4H FVG, 4H structure, 1H sweep, 1H structure, and Lower TF Reaction).
+- Modes differ only by candle range (1W: 42/168, 2W: 84/336, Custom Date: selected range).
+- Active 4H FVG zones are rendered as filled colored overlays across all modes, with overlays reset and redrawn on mode changes.
+- Lower timeframe summaries are aligned beside their related charts for compact review.

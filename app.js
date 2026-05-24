@@ -41,6 +41,7 @@ let ltf4hSeries = null;
 let ltf4hFvgLines = [];
 let ltf4hFvgLayer = null;
 let active4hFvgs = [];
+let latest4hCandles = [];
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
@@ -555,8 +556,28 @@ function clear4hFvgOverlay(){
   ltf4hFvgLines=[];
   if(ltf4hFvgLayer) ltf4hFvgLayer.innerHTML='';
 }
+function render4hFvgOverlays(activeFvgs){
+  if(!ltf4hChart || !ltf4hSeries) return;
+  const layer=ensure4hFvgLayer();
+  const rightEdge=els.lower4hChart.clientWidth;
+  activeFvgs.forEach(f=>{
+    const bull=f.type==='Bullish 4H FVG';
+    const lineCol=bull?'rgba(34,197,94,0.65)':'rgba(239,68,68,0.65)';
+    ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.upper,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
+    ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.lower,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
+    const xRaw=ltf4hChart.timeScale().timeToCoordinate(f.endTime);
+    const xStart=(xRaw==null)?0:Math.max(0,xRaw);
+    const yTop=ltf4hSeries.priceToCoordinate(f.upper); const yBottom=ltf4hSeries.priceToCoordinate(f.lower);
+    if(layer && yTop!=null && yBottom!=null){
+      const r=document.createElement('div'); r.className=`fvg-zone ${bull?'bullish':'bearish'}`;
+      r.style.left=`${xStart}px`; r.style.top=`${Math.min(yTop,yBottom)}px`; r.style.width=`${Math.max(1,rightEdge-xStart)}px`; r.style.height=`${Math.max(1,Math.abs(yBottom-yTop))}px`; layer.appendChild(r);
+    }
+  });
+}
+
 function render4hFvgSummaryAndOverlay(candles){
   try {
+    latest4hCandles = candles;
     if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; return; }
     clear4hFvgOverlay();
     const current=candles[candles.length-1]?.close;
@@ -569,27 +590,13 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; return; }
+    if(!active4hFvgs.length){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No active 4H FVG detected.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); return; }
     const nearest = active4hFvgs[0];
     if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status}`;
-    const layer=ensure4hFvgLayer();
-    const rightEdge=els.lower4hChart.clientWidth;
-    active4hFvgs.forEach(f=>{
-      const bull=f.type==='Bullish 4H FVG';
-      const col=bull?'rgba(34,197,94,0.38)':'rgba(239,68,68,0.38)';
-      ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.upper,color:col,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
-      ltf4hFvgLines.push(ltf4hSeries.createPriceLine({price:f.lower,color:col,lineWidth:1,lineStyle:2,axisLabelVisible:false}));
-      const xStart=ltf4hChart.timeScale().timeToCoordinate(f.endTime);
-      const yTop=ltf4hSeries.priceToCoordinate(f.upper); const yBottom=ltf4hSeries.priceToCoordinate(f.lower);
-      if(layer && xStart!=null && yTop!=null && yBottom!=null){
-        const r=document.createElement('div'); r.className=`fvg-zone ${bull?'bullish':'bearish'}`;
-        r.style.left=`${Math.max(0,xStart)}px`; r.style.top=`${Math.min(yTop,yBottom)}px`; r.style.width=`${Math.max(1,rightEdge-xStart)}px`; r.style.height=`${Math.max(1,Math.abs(yBottom-yTop))}px`; layer.appendChild(r);
-      }
-    });
+    render4hFvgOverlays(active4hFvgs);
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     renderLowerTfReactionSummary();
-    ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>render4hFvgSummaryAndOverlay(candles));
   } catch(e){ console.error('4H FVG overlay render failed', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG summary unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
