@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-24 20:40";
+const APP_LAST_UPDATED = "2026-05-24 21:10";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -853,8 +853,28 @@ function renderMtfSummary(){
   }
 }
 
+
+async function loadVersionMeta(){
+  try {
+    const res = await fetch(`version.json?ts=${Date.now()}`, { cache: "no-store" });
+    if(!res.ok) throw new Error(`Version metadata request failed: ${res.status}`);
+    const meta = await res.json();
+    const v = typeof meta?.lastUpdated === 'string' ? meta.lastUpdated.trim() : '';
+    if(els.appLastUpdated){
+      els.appLastUpdated.textContent = v ? `Last Updated: ${v}` : `Last Updated: ${APP_LAST_UPDATED || 'unavailable'}`;
+    }
+  } catch (error) {
+    console.error('Version metadata load failed:', error);
+    if(els.appLastUpdated){
+      els.appLastUpdated.textContent = APP_LAST_UPDATED
+        ? `Last Updated: ${APP_LAST_UPDATED}`
+        : 'Last Updated: unavailable';
+    }
+  }
+}
+
 function setLoading(){
-  if(els.appLastUpdated) els.appLastUpdated.textContent = `Last Updated: ${APP_LAST_UPDATED}`;
+  if(els.appLastUpdated) els.appLastUpdated.textContent = "Last Updated: loading...";
   if(els.dataRefreshed) els.dataRefreshed.textContent = "Data Refreshed: loading...";
   els.statusText.textContent="Loading BTC ticker, weekly RSI, and market context...";
   els.btcPrice.textContent="—"; els.btc24hInline.textContent="24h: —"; els.btc24hInline.className="meta"; els.btcPriceMeta.textContent="Loading...";
@@ -975,6 +995,7 @@ async function loadDashboard(){
 }
 
 els.refreshBtn.addEventListener("click", loadDashboard);
+loadVersionMeta();
 loadDashboard();
 
 setupCollapsibleSections();

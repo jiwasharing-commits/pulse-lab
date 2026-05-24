@@ -119,7 +119,7 @@ Then open `http://localhost:8000`.
 - Added 1H CHoCH/BOS scanner for lower-timeframe timing detail.
 - Uses confirmed swing highs/lows with 2-left / 2-right candles.
 - 1H structure output is shown near the 1H chart and inside Lower TF Reaction.
-- Last Updated is fixed app/code timestamp, Data Refreshed is dynamic API refresh time.
+- Last Updated is loaded from `version.json` (app/code metadata), while Data Refreshed is dynamic API refresh time.
 - This tool is for monitoring context and does not provide financial advice.
 
 
@@ -131,7 +131,7 @@ Then open `http://localhost:8000`.
 - Active 4H FVG zones are rendered as filled colored overlays across all modes, with overlays reset and redrawn on mode changes.
 - Lower timeframe summaries are aligned beside their related charts for compact review.
 
-- Whenever modifying Pulse Lab, update `APP_LAST_UPDATED` in `app.js` to the current update date/time.
+- Whenever modifying Pulse Lab, update both `version.json` (`lastUpdated`) and `APP_LAST_UPDATED` in `app.js` (fallback) to the current update date/time.
 
 - Lower timeframe chart overlay draws a maximum 3 active 4H FVG zones for cleaner readability.
 - Thin 4H FVG overlays use a minimum visual height so zones remain visible in dense lower-timeframe ranges.
