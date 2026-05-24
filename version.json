@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-24 21:35",
-  "version": "v0.1.13",
+  "lastUpdated": "2026-05-24 21:55",
+  "version": "v0.1.14",
   "commitLabel": "manual",
-  "note": "Patch: right panel detail control dedupe"
+  "note": "Patch: remove visible right-panel weekly FVG detail card"
 }
