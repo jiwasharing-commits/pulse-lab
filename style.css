@@ -87,3 +87,14 @@
 .weekly-chart-card{border:1px solid var(--border);background:linear-gradient(145deg,var(--panel),var(--panel-alt));border-radius:.75rem;padding:.58rem .65rem}
 .weekly-candle-card #priceChart{height:380px;min-height:340px}
 .weekly-rsi-card #rsiChart{height:220px;min-height:190px}
+
+.ltf-control-header{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.2rem 0 .35rem}
+.ltf-control-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.22rem 0}
+.ltf-control-label{font-size:.74rem;color:var(--muted);min-width:52px}
+.ltf-control-group{display:flex;align-items:end;gap:.55rem;flex-wrap:wrap}
+.ltf-control-actions{margin:.1rem 0 0}
+@media (max-width:700px){
+  .ltf-control-header{align-items:flex-start}
+  .ltf-control-row{align-items:flex-start}
+  .ltf-control-label{min-width:auto}
+}

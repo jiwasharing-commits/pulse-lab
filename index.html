@@ -139,19 +139,30 @@
           <section class="panel ltf-control-card">
             <div class="panel-header compact-header"><h2>Lower Timeframe Detail</h2><button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button></div>
             <div id="ltfContent" hidden>
-              <p class="panel-note">Use 4H and 1H charts to inspect price behavior inside a selected weekly range.</p>
-              <div class="ltf-presets" id="ltfPresets">
-                <button id="ltfPreset1w" class="refresh-btn ltf-preset active" type="button">1W Detail</button>
-                <button id="ltfPreset2w" class="refresh-btn ltf-preset" type="button">2W Detail</button>
-                <button id="ltfPresetCustom" class="refresh-btn ltf-preset" type="button">Custom Date</button>
+              <div class="ltf-control-header">
+                <p class="panel-note">Use 4H and 1H charts to inspect price behavior inside a selected weekly range.</p>
+                <p class="panel-note">4H &amp; 1H selected range detail</p>
               </div>
-              <div class="ltf-controls" id="ltfDateControls" hidden>
-                <label>Start Date <input id="ltfStartDate" type="date" /></label>
-                <label>End Date <input id="ltfEndDate" type="date" /></label>
-                <button id="ltfApplyBtn" class="refresh-btn" type="button">Apply</button>
+              <div class="ltf-control-row">
+                <span class="ltf-control-label">Preset:</span>
+                <div class="ltf-presets ltf-control-group" id="ltfPresets">
+                  <button id="ltfPreset1w" class="refresh-btn ltf-preset active" type="button">1W Detail</button>
+                  <button id="ltfPreset2w" class="refresh-btn ltf-preset" type="button">2W Detail</button>
+                  <button id="ltfPresetCustom" class="refresh-btn ltf-preset" type="button">Custom Date</button>
+                </div>
               </div>
-              <div class="ltf-controls">
-                <button id="ltfResetBtn" class="refresh-btn secondary" type="button">Reset</button>
+              <div class="ltf-control-row">
+                <span class="ltf-control-label">Range:</span>
+                <div class="ltf-control-group">
+                  <div class="ltf-controls" id="ltfDateControls" hidden>
+                    <label>Start Date <input id="ltfStartDate" type="date" /></label>
+                    <label>End Date <input id="ltfEndDate" type="date" /></label>
+                    <button id="ltfApplyBtn" class="refresh-btn" type="button">Apply</button>
+                  </div>
+                  <div class="ltf-controls ltf-control-actions">
+                    <button id="ltfResetBtn" class="refresh-btn secondary" type="button">Reset</button>
+                  </div>
+                </div>
               </div>
 
               <div class="ltf-macro-grid">
