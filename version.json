@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 03:20",
-  "version": "v0.1.26",
+  "lastUpdated": "2026-05-25 04:40",
+  "version": "v0.1.27",
   "commitLabel": "manual",
-  "note": "Polish Section 2 center into separate candlestick and RSI cards"
+  "note": "Add Weekly Candle Character card in Section 2"
 }

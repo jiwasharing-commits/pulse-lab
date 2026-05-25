@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-25 03:20";
+const APP_LAST_UPDATED = "2026-05-25 04:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -21,7 +21,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
-  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -203,6 +203,99 @@ function renderRsiChart(dataset){
   line.createPriceLine({ price:70, color:'rgba(34,197,94,.65)', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'70' });
   rsiChart.timeScale().fitContent();
   // TODO: re-enable time-scale sync after data pipeline stability is fully verified.
+}
+
+
+function classifyWeeklyCandleCharacter(candle, previousCandles=[]){
+  const range = candle.high - candle.low;
+  if(!Number.isFinite(range) || range <= 0) return "Neutral Candle";
+  const body = Math.abs(candle.close - candle.open);
+  const upperWick = candle.high - Math.max(candle.open, candle.close);
+  const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+  const closePosition = (candle.close - candle.low) / range;
+  const bodyRatio = body / range;
+  const upperWickRatio = upperWick / range;
+  const lowerWickRatio = lowerWick / range;
+
+  const prevRanges = previousCandles
+    .map(c=>c.high-c.low)
+    .filter(v=>Number.isFinite(v) && v>0)
+    .slice(-5);
+  const avgRange = prevRanges.length ? prevRanges.reduce((a,b)=>a+b,0)/prevRanges.length : null;
+  const isWideRange = avgRange && range > avgRange * 1.25;
+  const isNarrowRange = avgRange && range < avgRange * 0.75;
+
+  if(lowerWickRatio >= 0.40 && closePosition >= 0.55) return "Bullish Rejection";
+  if(upperWickRatio >= 0.40 && closePosition <= 0.45) return "Bearish Rejection";
+  if(candle.close > candle.open && bodyRatio >= 0.55 && closePosition >= 0.70) return "Strong Bullish";
+  if(candle.close < candle.open && bodyRatio >= 0.55 && closePosition <= 0.30) return "Strong Bearish";
+  if(bodyRatio <= 0.25 && upperWickRatio >= 0.20 && lowerWickRatio >= 0.20) return "Indecision";
+  if(isWideRange && candle.close > candle.open) return "Wide Range Bullish";
+  if(isWideRange && candle.close < candle.open) return "Wide Range Bearish";
+  if(isNarrowRange) return "Narrow Range";
+  return "Neutral Candle";
+}
+
+function getWeeklyCandleCharacterSummary(dataset){
+  if(!Array.isArray(dataset) || dataset.length < 4) return null;
+  const now = Date.now();
+  const closed = dataset.filter(d=>{
+    const openTs = Date.parse(`${d.time}T00:00:00Z`);
+    if(!Number.isFinite(openTs)) return false;
+    const closeTs = openTs + (7 * 24 * 60 * 60 * 1000);
+    return closeTs <= now;
+  });
+  if(closed.length < 3) return null;
+
+  const w1 = closed[closed.length-1];
+  const w2 = closed[closed.length-2];
+  const w3 = closed[closed.length-3];
+
+  const c3 = classifyWeeklyCandleCharacter(w3, closed.slice(0, Math.max(0, closed.length-3)));
+  const c2 = classifyWeeklyCandleCharacter(w2, closed.slice(0, Math.max(0, closed.length-2)));
+  const c1 = classifyWeeklyCandleCharacter(w1, closed.slice(0, Math.max(0, closed.length-1)));
+
+  const bearishTypes = new Set(["Strong Bearish","Bearish Rejection","Wide Range Bearish"]);
+  const bullishTypes = new Set(["Strong Bullish","Bullish Rejection","Wide Range Bullish"]);
+
+  let reading = "Mixed weekly candle character";
+  if(bearishTypes.has(c3) && bearishTypes.has(c2) && c1 === "Bullish Rejection") reading = "Bearish pressure weakening";
+  else if(bullishTypes.has(c3) && bullishTypes.has(c2) && c1 === "Bearish Rejection") reading = "Bullish pressure weakening";
+  else if(c3 === "Indecision" && c2 === "Bullish Rejection" && c1 === "Strong Bullish") reading = "Bullish reaction strengthening";
+  else if(c3 === "Indecision" && c2 === "Bearish Rejection" && c1 === "Strong Bearish") reading = "Bearish reaction strengthening";
+  else if(c3 === "Narrow Range" && c2 === "Narrow Range" && c1 === "Wide Range Bullish") reading = "Bullish volatility expansion";
+  else if(c3 === "Narrow Range" && c2 === "Narrow Range" && c1 === "Wide Range Bearish") reading = "Bearish volatility expansion";
+  else if(c3 === "Strong Bullish" && c2 === "Strong Bullish" && c1 === "Strong Bullish") reading = "Bullish continuation";
+  else if(c3 === "Strong Bearish" && c2 === "Strong Bearish" && c1 === "Strong Bearish") reading = "Bearish continuation";
+
+  let condition = "No clear 3W candle signal";
+  if(reading.includes("pressure weakening")) condition = "Needs 4H validation";
+  else if(reading.includes("continuation")) condition = "Weekly pressure continues";
+  else if(reading.includes("volatility expansion")) condition = "Watch reaction around key zones";
+
+  return { w1:c1, w2:c2, w3:c3, reading, condition };
+}
+
+function renderWeeklyCandleCharacter(dataset){
+  try {
+    const summary = getWeeklyCandleCharacterSummary(dataset);
+    if(!summary){
+      if(els.weeklyCandleW1) els.weeklyCandleW1.textContent = "Weekly Candle Character unavailable";
+      if(els.weeklyCandleW2) els.weeklyCandleW2.textContent = "W-2: —";
+      if(els.weeklyCandleW3) els.weeklyCandleW3.textContent = "W-3: —";
+      if(els.weeklyCandleReading) els.weeklyCandleReading.textContent = "3W Reading: —";
+      if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent = "Condition: —";
+      return;
+    }
+    if(els.weeklyCandleW1) els.weeklyCandleW1.textContent = `W-1: ${summary.w1}`;
+    if(els.weeklyCandleW2) els.weeklyCandleW2.textContent = `W-2: ${summary.w2}`;
+    if(els.weeklyCandleW3) els.weeklyCandleW3.textContent = `W-3: ${summary.w3}`;
+    if(els.weeklyCandleReading) els.weeklyCandleReading.textContent = `3W Reading: ${summary.reading}`;
+    if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent = `Condition: ${summary.condition}`;
+  } catch (e) {
+    console.error("Weekly candle character render failed", e);
+    if(els.weeklyCandleW1) els.weeklyCandleW1.textContent = "Candle character unavailable";
+  }
 }
 
 function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; if(els.leftFearGreed){ els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.leftFearGreed.title=`Updated: ${t}`; } }
@@ -911,6 +1004,11 @@ function setLoading(){
   if(els.mtf4hReaction) els.mtf4hReaction.textContent="4H Reaction: waiting";
   if(els.mtf1hTiming) els.mtf1hTiming.textContent="1H Timing: waiting";
   if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>';
+  if(els.weeklyCandleW1) els.weeklyCandleW1.textContent='W-1: loading';
+  if(els.weeklyCandleW2) els.weeklyCandleW2.textContent='W-2: loading';
+  if(els.weeklyCandleW3) els.weeklyCandleW3.textContent='W-3: loading';
+  if(els.weeklyCandleReading) els.weeklyCandleReading.textContent='3W Reading: loading';
+  if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent='Condition: loading';
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -945,6 +1043,7 @@ async function loadDashboard(){
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);
       const activeFvgs = renderFvgPanel(dataset);
+      renderWeeklyCandleCharacter(dataset);
       renderMtfSummary();
       weeklyOk = true;
 
@@ -969,7 +1068,12 @@ async function loadDashboard(){
     if(els.rightBiasMeta) els.rightBiasMeta.textContent='Confidence: unavailable';
     if(els.rightDivergence) els.rightDivergence.textContent='unavailable';
     if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent='unavailable';
-    if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>'; 
+    if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>';
+  if(els.weeklyCandleW1) els.weeklyCandleW1.textContent='W-1: loading';
+  if(els.weeklyCandleW2) els.weeklyCandleW2.textContent='W-2: loading';
+  if(els.weeklyCandleW3) els.weeklyCandleW3.textContent='W-3: loading';
+  if(els.weeklyCandleReading) els.weeklyCandleReading.textContent='3W Reading: loading';
+  if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent='Condition: loading'; 
     clearFvgOverlay();
     }
   } else {
