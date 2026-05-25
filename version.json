@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 02:00",
-  "version": "v0.1.23",
+  "lastUpdated": "2026-05-25 02:25",
+  "version": "v0.1.24",
   "commitLabel": "manual",
-  "note": "Remove weekly metrics row from Section 2"
+  "note": "Remove selected weekly side-panel cards"
 }

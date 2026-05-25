@@ -77,20 +77,15 @@
           </div>
           <div class="weekly-grid">
             <div class="weekly-left-col">
-              <section class="panel mini-panel">
-                <h3>RSI Summary</h3>
-                <p class="mini-line">Weekly RSI: <strong id="leftRsiValue">—</strong></p>
-                <p class="mini-line">RSI Regime: <span id="leftRsiRegime">—</span></p>
-                <p class="mini-line">Distance to 50: <span id="leftDistance50">—</span></p>
-                <p class="mini-line">Slope 12W/24W/48W: <span id="leftSlopes">—</span></p>
-              </section>
-
-              <section class="panel mini-panel">
-                <h3>Momentum Summary</h3>
-                <p class="mini-line">Direction: <span id="leftDirection">—</span></p>
-                <p class="mini-line">Momentum Phase: <span id="leftPhase">—</span></p>
-                <p class="mini-line">RSI Change: <span id="leftChanges">—</span></p>
-              </section>
+              <div class="hidden-weekly-side" aria-hidden="true">
+                <span id="leftRsiValue">—</span>
+                <span id="leftRsiRegime">—</span>
+                <span id="leftDistance50">—</span>
+                <span id="leftSlopes">—</span>
+                <span id="leftDirection">—</span>
+                <span id="leftPhase">—</span>
+                <span id="leftChanges">—</span>
+              </div>
 
             </div>
 
@@ -107,34 +102,24 @@
             </div>
 
             <div class="weekly-right-col">
+              <div class="hidden-weekly-side" aria-hidden="true">
+                <span id="rightBiasTop">Top Bias: —</span>
+                <span id="rightBiasMeta">Confidence: —</span>
+                <span id="rightDivergence">—</span>
+                <span id="rightDivergenceMeta">—</span>
+                <span id="right4hFvgType">—</span>
+                <span id="right4hFvgZone">Zone: —</span>
+                <span id="right4hFvgRelation">Relation: —</span>
+                <span id="right4hFvgDistance">Distance: —</span>
+                <span id="right4hFvgStatus">—</span>
+                <button id="biasViewDetailsBtn" type="button">View Details</button>
+              </div>
               <section class="panel mini-panel">
                 <h3 title="FVG = Fair Value Gap (imbalance zone)">Active Weekly FVG Summary</h3>
                 <p class="mini-line" id="rightFvgCount">Active FVG: —</p>
                 <p class="mini-line" id="rightNearestFvg">Nearest: —</p>
                 <p class="mini-line" id="rightFvgStatus">Status: —</p>
                 <button id="fvgViewDetailsBtn" class="refresh-btn ltf-toggle detail-link" type="button">View Details</button>
-              </section>
-
-              <section class="panel mini-panel">
-                <h3>Potential Bias Summary</h3>
-                <p class="mini-line" id="rightBiasTop">Top Bias: —</p>
-                <p class="mini-line" id="rightBiasMeta">Confidence: —</p>
-                <button id="biasViewDetailsBtn" class="refresh-btn ltf-toggle detail-link" type="button">View Details</button>
-              </section>
-
-              <section class="panel mini-panel">
-                <h3>Divergence Status</h3>
-                <p class="mini-line" id="rightDivergence">—</p>
-                <p class="mini-line" id="rightDivergenceMeta">—</p>
-              </section>
-
-              <section class="panel mini-panel">
-                <h3 title="FVG = Fair Value Gap (imbalance zone)">4H vs Weekly FVG</h3>
-                <p class="mini-line" id="right4hFvgType">—</p>
-                <p class="mini-line" id="right4hFvgZone">Zone: —</p>
-                <p class="mini-line" id="right4hFvgRelation">Relation: —</p>
-                <p class="mini-line" id="right4hFvgDistance">Distance: —</p>
-                <p class="mini-line" id="right4hFvgStatus">—</p>
               </section>
             </div>
           </div>
