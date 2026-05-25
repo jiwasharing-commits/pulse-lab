@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 00:40",
-  "version": "v0.1.20",
+  "lastUpdated": "2026-05-25 01:10",
+  "version": "v0.1.21",
   "commitLabel": "manual",
-  "note": "3-section layout: top MTF conclusion + weekly + LTF"
+  "note": "Section 1 now includes BTC Price + Fear & Greed + MTF conclusion"
 }

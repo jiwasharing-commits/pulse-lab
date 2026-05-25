@@ -29,14 +29,25 @@
             <h2>Multi-Timeframe Conclusion</h2>
             <p>Final weekly + 4H + 1H conclusion</p>
           </div>
-              <section class="panel mini-panel">
-                <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">MTF Summary</h3>
-                <p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p>
-                <p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p>
-                <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
-                <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
-              </section>
-
+          <div class="conclusion-grid">
+            <article class="card compact-card">
+              <h3>BTC Price</h3>
+              <p id="btcPrice" class="value">—</p>
+              <p id="btc24hInline" class="meta">24h: —</p>
+              <p id="btcPriceMeta" class="meta submeta">Loading...</p>
+            </article>
+            <section class="panel mini-panel">
+              <h3>Fear &amp; Greed</h3>
+              <p class="mini-line" id="leftFearGreed">Fear &amp; Greed: —</p>
+            </section>
+            <section class="panel mini-panel">
+              <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">Final Status</h3>
+              <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
+            </section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p></section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p></section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p></section>
+          </div>
         </section>
 
         <section class="panel macro-card weekly-analysis-card">
@@ -46,7 +57,6 @@
           </div>
 
           <section class="overview compact-overview">
-            <article class="card compact-card"><h2>BTC Price</h2><p id="btcPrice" class="value">—</p><p id="btc24hInline" class="meta">24h: —</p><p id="btcPriceMeta" class="meta submeta">Loading...</p></article>
             <article class="card compact-card"><h2>Weekly RSI</h2><p id="rsiCurrent" class="value">—</p><p id="rsiStatus" class="meta">Loading...</p><p id="rsiRegime" class="meta submeta">Regime: —</p></article>
             <article class="card compact-card"><h2>RSI Change</h2><p id="rsiChangeLines" class="meta">4W: — · 12W: —</p><p id="rsiRefs" class="meta submeta">W0: — | W-4: — | W-12: —</p><p id="rsiSlope" class="meta submeta">RSI Slope: — / week</p></article>
             <article class="card compact-card"><h2>Direction</h2><p id="direction" class="value compact-value">—</p><p class="meta">Weekly momentum direction</p></article>
@@ -70,10 +80,6 @@
                 <p class="mini-line">RSI Change: <span id="leftChanges">—</span></p>
               </section>
 
-              <section class="panel mini-panel">
-                <h3>Fear &amp; Greed</h3>
-                <p class="mini-line" id="leftFearGreed">Fear &amp; Greed: —</p>
-              </section>
             </div>
 
             <div class="weekly-center-col">
