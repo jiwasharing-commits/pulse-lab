@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 02:25",
-  "version": "v0.1.24",
+  "lastUpdated": "2026-05-25 02:50",
+  "version": "v0.1.25",
   "commitLabel": "manual",
-  "note": "Remove selected weekly side-panel cards"
+  "note": "Section 2 cleanup: remove visible removed side blocks completely"
 }

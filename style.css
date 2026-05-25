@@ -79,3 +79,6 @@
 .hidden-metrics{display:none !important}
 
 .hidden-weekly-side{display:none !important}
+
+.weekly-grid{grid-template-columns:minmax(0,78%) minmax(220px,22%);}
+@media (max-width:1100px){.weekly-grid{grid-template-columns:1fr}}
