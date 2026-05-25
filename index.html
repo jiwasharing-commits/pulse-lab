@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse Lab</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Pulse Lab</h1>
+          <p>Bitcoin Weekly RSI Monitor</p>
+        </div>
+        <div class="header-meta">
+          <div id="appLastUpdated" class="meta-line">Last Updated: —</div>
+          <div id="dataRefreshed" class="meta-line">Data Refreshed: —</div>
+        </div>
+        <button id="refreshBtn" class="refresh-btn" type="button">Refresh</button>
+      </header>
+
+      <section class="status-strip" aria-live="polite"><span id="statusText">Loading BTC weekly monitor...</span></section>
+
+      <main class="dashboard-flow">
+        <section class="panel macro-card conclusion-card">
+          <div class="macro-card-header">
+            <h2>Multi-Timeframe Conclusion</h2>
+            <p>Final weekly + 4H + 1H conclusion</p>
+          </div>
+          <div class="conclusion-grid">
+            <article class="card compact-card">
+              <h3>BTC Price</h3>
+              <p id="btcPrice" class="value">—</p>
+              <p id="btc24hInline" class="meta">24h: —</p>
+              <p id="btcPriceMeta" class="meta submeta">Loading...</p>
+            </article>
+            <section class="panel mini-panel">
+              <h3>Fear &amp; Greed</h3>
+              <p class="mini-line" id="leftFearGreed">Fear &amp; Greed: —</p>
+            </section>
+            <section class="panel mini-panel">
+              <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">Final Status</h3>
+              <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
+            </section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p></section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p></section>
+            <section class="panel mini-panel"><p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p></section>
+          </div>
+        </section>
+
+        <section class="panel macro-card weekly-analysis-card">
+          <div class="macro-card-header">
+            <h2>Weekly Analysis</h2>
+            <p>Weekly bias and momentum context</p>
+          </div>
+
+          <section class="overview compact-overview">
+            <article class="card compact-card"><h2>Weekly RSI</h2><p id="rsiCurrent" class="value">—</p><p id="rsiStatus" class="meta">Loading...</p><p id="rsiRegime" class="meta submeta">Regime: —</p></article>
+            <article class="card compact-card"><h2>RSI Change</h2><p id="rsiChangeLines" class="meta">4W: — · 12W: —</p><p id="rsiRefs" class="meta submeta">W0: — | W-4: — | W-12: —</p><p id="rsiSlope" class="meta submeta">RSI Slope: — / week</p></article>
+            <article class="card compact-card"><h2>Direction</h2><p id="direction" class="value compact-value">—</p><p class="meta">Weekly momentum direction</p></article>
+            <article class="card compact-card"><h2>Momentum Phase</h2><p id="momentumPhase" class="value compact-value">—</p><p id="momentumPhaseMeta" class="meta">Weekly phase status</p></article>
+          </section>
+
+          <div class="weekly-grid">
+            <div class="weekly-left-col">
+              <section class="panel mini-panel">
+                <h3>RSI Summary</h3>
+                <p class="mini-line">Weekly RSI: <strong id="leftRsiValue">—</strong></p>
+                <p class="mini-line">RSI Regime: <span id="leftRsiRegime">—</span></p>
+                <p class="mini-line">Distance to 50: <span id="leftDistance50">—</span></p>
+                <p class="mini-line">Slope 12W/24W/48W: <span id="leftSlopes">—</span></p>
+              </section>
+
+              <section class="panel mini-panel">
+                <h3>Momentum Summary</h3>
+                <p class="mini-line">Direction: <span id="leftDirection">—</span></p>
+                <p class="mini-line">Momentum Phase: <span id="leftPhase">—</span></p>
+                <p class="mini-line">RSI Change: <span id="leftChanges">—</span></p>
+              </section>
+
+            </div>
+
+            <div class="weekly-center-col">
+              <section class="panel dual-panel">
+                <div class="panel-header"><h2>BTC Weekly Candlestick vs RSI</h2><p>Main weekly divergence monitoring section</p></div>
+                <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
+                <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
+                <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
+                <div class="chart-wrap compact"><div id="priceChart" role="img"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
+                <div class="chart-wrap compact"><div id="rsiChart" role="img"></div><div id="rsiChartError" class="chart-error" hidden>RSI chart unavailable.</div></div>
+                <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
+              </section>
+            </div>
+
+            <div class="weekly-right-col">
+              <section class="panel mini-panel">
+                <h3 title="FVG = Fair Value Gap (imbalance zone)">Active Weekly FVG Summary</h3>
+                <p class="mini-line" id="rightFvgCount">Active FVG: —</p>
+                <p class="mini-line" id="rightNearestFvg">Nearest: —</p>
+                <p class="mini-line" id="rightFvgStatus">Status: —</p>
+                <button id="fvgViewDetailsBtn" class="refresh-btn ltf-toggle detail-link" type="button">View Details</button>
+              </section>
+
+              <section class="panel mini-panel">
+                <h3>Potential Bias Summary</h3>
+                <p class="mini-line" id="rightBiasTop">Top Bias: —</p>
+                <p class="mini-line" id="rightBiasMeta">Confidence: —</p>
+                <button id="biasViewDetailsBtn" class="refresh-btn ltf-toggle detail-link" type="button">View Details</button>
+              </section>
+
+              <section class="panel mini-panel">
+                <h3>Divergence Status</h3>
+                <p class="mini-line" id="rightDivergence">—</p>
+                <p class="mini-line" id="rightDivergenceMeta">—</p>
+              </section>
+
+              <section class="panel mini-panel">
+                <h3 title="FVG = Fair Value Gap (imbalance zone)">4H vs Weekly FVG</h3>
+                <p class="mini-line" id="right4hFvgType">—</p>
+                <p class="mini-line" id="right4hFvgZone">Zone: —</p>
+                <p class="mini-line" id="right4hFvgRelation">Relation: —</p>
+                <p class="mini-line" id="right4hFvgDistance">Distance: —</p>
+                <p class="mini-line" id="right4hFvgStatus">—</p>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel macro-card ltf-analysis-card" id="ltfPanel">
+          <div class="macro-card-header">
+            <h2>Lower Timeframe Analysis</h2>
+            <p>4H and 1H reaction detail</p>
+          </div>
+
+          <section class="panel ltf-control-card">
+            <div class="panel-header compact-header"><h2>Lower Timeframe Detail</h2><button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button></div>
+            <div id="ltfContent" hidden>
+              <p class="panel-note">Use 4H and 1H charts to inspect price behavior inside a selected weekly range.</p>
+              <div class="ltf-presets" id="ltfPresets">
+                <button id="ltfPreset1w" class="refresh-btn ltf-preset active" type="button">1W Detail</button>
+                <button id="ltfPreset2w" class="refresh-btn ltf-preset" type="button">2W Detail</button>
+                <button id="ltfPresetCustom" class="refresh-btn ltf-preset" type="button">Custom Date</button>
+              </div>
+              <div class="ltf-controls" id="ltfDateControls" hidden>
+                <label>Start Date <input id="ltfStartDate" type="date" /></label>
+                <label>End Date <input id="ltfEndDate" type="date" /></label>
+                <button id="ltfApplyBtn" class="refresh-btn" type="button">Apply</button>
+              </div>
+              <div class="ltf-controls">
+                <button id="ltfResetBtn" class="refresh-btn secondary" type="button">Reset</button>
+              </div>
+
+              <div class="ltf-macro-grid">
+                <div class="ltf-left-col">
+                  <div id="lowerTfReactionSummary" class="mini-line lower-fvg-summary">Lower TF Reaction: loading</div>
+                  <div class="mini-line lower-fvg-summary">4H Summary</div>
+                  <div class="mini-line lower-fvg-summary" id="lower4hReaction">4H Reaction: loading</div>
+                  <div class="mini-line lower-fvg-summary">1H Summary</div>
+                  <div class="mini-line lower-fvg-summary" id="lower1hSweepSummary" title="Liquidity Sweep = price takes liquidity above/below swing then returns">1H Liquidity Sweep: loading</div>
+                  <div class="mini-line lower-fvg-summary" id="lower1hStructureSummary" title="CHoCH = Change of Character, BOS = Break of Structure">1H Structure: loading</div>
+                </div>
+
+                <div class="ltf-center-col">
+                  <div class="chart-wrap compact lower-chart-wrapper" id="lower4hChartWrapper"><div id="lower4hChart" class="lower-chart" role="img"></div><div id="lower4hFvgOverlay" class="fvg-overlay-layer"></div><div id="lower4hError" class="chart-error" hidden>4H chart unavailable.</div></div>
+                  <div class="chart-wrap compact"><div id="lower1hChart" class="lower-chart" role="img"></div><div id="lower1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
+                </div>
+
+                <div class="ltf-right-col">
+                  <div id="lower4hFvgSummary" class="mini-line lower-fvg-summary">4H FVG: loading</div>
+                  <div id="lower4hStructure" class="mini-line lower-fvg-summary" title="CHoCH = Change of Character, BOS = Break of Structure">4H Structure: loading</div>
+                  <div class="mini-line lower-fvg-summary" id="lower4hVsWeekly">4H vs Weekly FVG: see right panel summary</div>
+                  <div class="mini-line lower-fvg-summary" id="lower1hTiming">1H Timing: use sweep + structure context</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
