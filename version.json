@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 02:50",
-  "version": "v0.1.25",
+  "lastUpdated": "2026-05-25 03:20",
+  "version": "v0.1.26",
   "commitLabel": "manual",
-  "note": "Section 2 cleanup: remove visible removed side blocks completely"
+  "note": "Polish Section 2 center into separate candlestick and RSI cards"
 }

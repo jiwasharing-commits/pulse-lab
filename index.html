@@ -94,15 +94,20 @@
           <div class="weekly-grid">
 
             <div class="weekly-center-col">
-              <section class="panel dual-panel">
-                <div class="panel-header"><h2>BTC Weekly Candlestick vs RSI</h2><p>Main weekly divergence monitoring section</p></div>
-                <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
-                <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
-                <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
-                <div class="chart-wrap compact"><div id="priceChart" role="img"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
-                <div class="chart-wrap compact"><div id="rsiChart" role="img"></div><div id="rsiChartError" class="chart-error" hidden>RSI chart unavailable.</div></div>
-                <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
-              </section>
+              <div class="weekly-chart-stack">
+                <section class="panel weekly-chart-card weekly-candle-card">
+                  <div class="panel-header"><h2>BTC Weekly Candlestick</h2><p>Main weekly divergence monitoring section</p></div>
+                  <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
+                  <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
+                  <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
+                  <div class="chart-wrap compact"><div id="priceChart" role="img"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
+                </section>
+                <section class="panel weekly-chart-card weekly-rsi-card">
+                  <div class="panel-header"><h2>Weekly RSI</h2></div>
+                  <div class="chart-wrap compact"><div id="rsiChart" role="img"></div><div id="rsiChartError" class="chart-error" hidden>RSI chart unavailable.</div></div>
+                  <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
+                </section>
+              </div>
             </div>
 
             <div class="weekly-right-col">
