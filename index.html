@@ -64,14 +64,17 @@
             <h2>Weekly Analysis</h2>
             <p>Weekly bias and momentum context</p>
           </div>
-
-          <section class="overview compact-overview">
-            <article class="card compact-card"><h2>Weekly RSI</h2><p id="rsiCurrent" class="value">—</p><p id="rsiStatus" class="meta">Loading...</p><p id="rsiRegime" class="meta submeta">Regime: —</p></article>
-            <article class="card compact-card"><h2>RSI Change</h2><p id="rsiChangeLines" class="meta">4W: — · 12W: —</p><p id="rsiRefs" class="meta submeta">W0: — | W-4: — | W-12: —</p><p id="rsiSlope" class="meta submeta">RSI Slope: — / week</p></article>
-            <article class="card compact-card"><h2>Direction</h2><p id="direction" class="value compact-value">—</p><p class="meta">Weekly momentum direction</p></article>
-            <article class="card compact-card"><h2>Momentum Phase</h2><p id="momentumPhase" class="value compact-value">—</p><p id="momentumPhaseMeta" class="meta">Weekly phase status</p></article>
-          </section>
-
+          <div class="hidden-metrics" aria-hidden="true">
+            <span id="rsiCurrent">—</span>
+            <span id="rsiStatus">Loading...</span>
+            <span id="rsiRegime">Regime: —</span>
+            <span id="rsiChangeLines">4W: — · 12W: —</span>
+            <span id="rsiRefs">W0: — | W-4: — | W-12: —</span>
+            <span id="rsiSlope">RSI Slope: — / week</span>
+            <span id="direction">—</span>
+            <span id="momentumPhase">—</span>
+            <span id="momentumPhaseMeta">Weekly phase status</span>
+          </div>
           <div class="weekly-grid">
             <div class="weekly-left-col">
               <section class="panel mini-panel">

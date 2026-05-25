@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 01:35",
-  "version": "v0.1.22",
+  "lastUpdated": "2026-05-25 02:00",
+  "version": "v0.1.23",
   "commitLabel": "manual",
-  "note": "Polish Section 1 into compact 6-card desktop row"
+  "note": "Remove weekly metrics row from Section 2"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-25 01:35";
+const APP_LAST_UPDATED = "2026-05-25 02:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
