@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 05:05",
-  "version": "v0.1.28",
+  "lastUpdated": "2026-05-25 06:00",
+  "version": "v0.1.29",
   "commitLabel": "manual",
-  "note": "Polish Section 3 lower timeframe control bar layout"
+  "note": "Polish Section 3 with carded LTF panels and compact horizontal controls"
 }

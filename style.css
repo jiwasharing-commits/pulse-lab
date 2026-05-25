@@ -98,3 +98,15 @@
   .ltf-control-row{align-items:flex-start}
   .ltf-control-label{min-width:auto}
 }
+
+
+/* Section 3 polished layout */
+.ltf-macro-grid{grid-template-columns:minmax(180px,16%) minmax(0,66%) minmax(200px,18%);gap:14px}
+.ltf-control-inline{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin:.25rem 0 .45rem}
+.ltf-inline-group{display:flex;align-items:end;gap:.55rem;flex-wrap:wrap}
+.ltf-chart-card{padding:.58rem .65rem;border-radius:.75rem}
+.ltf-mini-card{padding:.5rem .55rem}
+.ltf-mini-card h3{margin:0 0 .2rem;font-size:.8rem}
+.ltf-mini-card .mini-line{font-size:.72rem}
+@media (max-width:1100px){.ltf-macro-grid{grid-template-columns:1fr}}
+@media (max-width:700px){.ltf-control-inline{align-items:flex-start}.ltf-inline-group{width:100%}}
