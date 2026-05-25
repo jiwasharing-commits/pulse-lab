@@ -110,3 +110,10 @@
 .ltf-mini-card .mini-line{font-size:.72rem}
 @media (max-width:1100px){.ltf-macro-grid{grid-template-columns:1fr}}
 @media (max-width:700px){.ltf-control-inline{align-items:flex-start}.ltf-inline-group{width:100%}}
+
+
+/* Section 3 direction: charts left, explanations right */
+.ltf-macro-grid{grid-template-columns:minmax(0,78%) minmax(240px,22%);gap:14px;align-items:start}
+.ltf-chart-area{display:grid;gap:.5rem}
+.ltf-explain-area{display:flex;flex-direction:column;gap:.35rem}
+@media (max-width:1100px){.ltf-macro-grid{grid-template-columns:1fr}.ltf-chart-area{order:1}.ltf-explain-area{order:2}}
