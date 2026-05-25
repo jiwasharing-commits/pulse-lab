@@ -24,6 +24,21 @@
       <section class="status-strip" aria-live="polite"><span id="statusText">Loading BTC weekly monitor...</span></section>
 
       <main class="dashboard-flow">
+        <section class="panel macro-card conclusion-card">
+          <div class="macro-card-header">
+            <h2>Multi-Timeframe Conclusion</h2>
+            <p>Final weekly + 4H + 1H conclusion</p>
+          </div>
+              <section class="panel mini-panel">
+                <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">MTF Summary</h3>
+                <p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p>
+                <p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p>
+                <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
+                <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
+              </section>
+
+        </section>
+
         <section class="panel macro-card weekly-analysis-card">
           <div class="macro-card-header">
             <h2>Weekly Analysis</h2>
@@ -74,14 +89,6 @@
             </div>
 
             <div class="weekly-right-col">
-              <section class="panel mini-panel">
-                <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">MTF Summary</h3>
-                <p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p>
-                <p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p>
-                <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
-                <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
-              </section>
-
               <section class="panel mini-panel">
                 <h3 title="FVG = Fair Value Gap (imbalance zone)">Active Weekly FVG Summary</h3>
                 <p class="mini-line" id="rightFvgCount">Active FVG: —</p>
