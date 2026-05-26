@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-25 07:10",
-  "version": "v0.1.31",
+  "lastUpdated": "2026-05-26 00:00",
+  "version": "v0.1.32",
   "commitLabel": "manual",
-  "note": "Section 3 polish: combined analysis + per-chart right-side explanations"
+  "note": "Section 3 chart width alignment patch (CSS-only layout adjustment)"
 }
