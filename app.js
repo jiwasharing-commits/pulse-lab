@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-26 00:00";
+const APP_LAST_UPDATED = "2026-05-26 00:45";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -21,7 +21,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
-  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -38,6 +38,8 @@ let fvgOverlayLines = [];
 let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
+let weeklySrOverlayLayer = null;
+let weeklySrSummaryForOverlay = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
 let ltf4hSeries = null;
@@ -179,6 +181,7 @@ function renderPriceChart(dataset){
   if (!els.priceChart) throw new Error("priceChart container is null");
   if (priceChart) { priceChart.remove(); priceChart = null; candleSeries = null; }
   els.priceChart.innerHTML = "";
+  weeklySrOverlayLayer = null;
   const candles = dataset.map(d=>({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close }));
   if(!candles.length) throw new Error("No valid OHLC candle data.");
   priceChart = LightweightCharts.createChart(els.priceChart, { width: Math.max(els.priceChart.clientWidth||0,320), height: 300, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
@@ -299,6 +302,170 @@ function renderWeeklyCandleCharacter(dataset){
 }
 
 function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; if(els.leftFearGreed){ els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.leftFearGreed.title=`Updated: ${t}`; } }
+
+
+function getClosedWeeklyCandles(dataset){
+  if(!Array.isArray(dataset)) return [];
+  const nowSec = Math.floor(Date.now()/1000);
+  return dataset.filter((c, i)=>{
+    const next = dataset[i+1];
+    if(next) return c.time < next.time;
+    const openSec = Math.floor(new Date(`${c.time}T00:00:00Z`).getTime()/1000);
+    if(!Number.isFinite(openSec)) return false;
+    return (nowSec - openSec) >= (7*24*60*60);
+  });
+}
+
+function findWeeklySwings(candles48){
+  const highs=[], lows=[];
+  for(let i=2;i<candles48.length-2;i++){
+    const c=candles48[i];
+    if(c.high>candles48[i-1].high&&c.high>candles48[i-2].high&&c.high>candles48[i+1].high&&c.high>candles48[i+2].high) highs.push({index:i,time:c.time,price:c.high});
+    if(c.low<candles48[i-1].low&&c.low<candles48[i-2].low&&c.low<candles48[i+1].low&&c.low<candles48[i+2].low) lows.push({index:i,time:c.time,price:c.low});
+  }
+  return { highs, lows };
+}
+
+function clusterWeeklyLevelsToZones(levels, type, candles48){
+  if(!levels.length) return [];
+  const ranges = candles48.map(c=>c.high-c.low).filter(v=>Number.isFinite(v)&&v>0);
+  const avgRangeAbs = ranges.length ? ranges.reduce((a,b)=>a+b,0)/ranges.length : 0;
+  const avgRangePct = candles48.map(c=>(c.high-c.low)/c.close).filter(v=>Number.isFinite(v)&&v>0);
+  const meanRangePct = avgRangePct.length ? avgRangePct.reduce((a,b)=>a+b,0)/avgRangePct.length : 0.01;
+  const tolPct = Math.min(0.025, Math.max(0.01, meanRangePct * 0.35));
+  const tolAbs = (center)=>Math.max(center*tolPct, avgRangeAbs*0.18);
+  const sorted = [...levels].sort((a,b)=>a.price-b.price);
+  const clusters=[];
+  sorted.forEach((lv)=>{
+    const hit = clusters.find(cl=>Math.abs(lv.price-cl.center)<=tolAbs(cl.center));
+    if(hit){ hit.levels.push(lv); hit.center = hit.levels.reduce((a,b)=>a+b.price,0)/hit.levels.length; }
+    else clusters.push({ levels:[lv], center:lv.price });
+  });
+  return clusters.map((cl)=>{
+    const center = cl.levels.reduce((a,b)=>a+b.price,0)/cl.levels.length;
+    const halfWidth = Math.max(center*tolPct, avgRangeAbs*0.18);
+    const times = cl.levels.map(x=>x.time).sort();
+    return { type, center, lower:center-halfWidth, upper:center+halfWidth, sourceLevels:cl.levels, firstTime:times[0], lastTime:times[times.length-1], tolPct, avgRangeAbs };
+  });
+}
+
+function evaluateWeeklyZone(zone, candles48, type){
+  let touchCount=0, rejectionCount=0, broken=false, inTouch=false;
+  candles48.forEach((c)=>{
+    const touched = type==='support' ? (c.low>=zone.lower && c.low<=zone.upper) : (c.high>=zone.lower && c.high<=zone.upper);
+    if(touched && !inTouch) touchCount++;
+    if(touched){
+      const rejected = type==='support' ? c.close>zone.upper : c.close<zone.lower;
+      if(rejected) rejectionCount++;
+      inTouch=true;
+    } else {
+      inTouch=false;
+    }
+    if(type==='support' && c.close<zone.lower) broken=true;
+    if(type==='resistance' && c.close>zone.upper) broken=true;
+  });
+  const touchPts = touchCount>=4?4:touchCount;
+  const rejectionPts = rejectionCount>=3?3:rejectionCount;
+  const swingPts = zone.sourceLevels.length>=2?1:0;
+  const activePts = broken?0:1;
+  const score = touchPts + rejectionPts + swingPts + activePts;
+  const strength = score>=7?'Strong':score>=4?'Medium':'Weak';
+  return { ...zone, touchCount, rejectionCount, broken, status:broken?'Broken':'Active', score, strength };
+}
+
+function scanWeeklySupportResistance(dataset){
+  try {
+    const closed = getClosedWeeklyCandles(dataset);
+    const candles48 = closed.slice(-48);
+    if(candles48.length < 12) return { support:null, resistance:null, currentPrice:null, meaning:'Weekly Support & Resistance unavailable' };
+    const swings = findWeeklySwings(candles48);
+    const supportZones = clusterWeeklyLevelsToZones(swings.lows, 'support', candles48).map(z=>evaluateWeeklyZone(z, candles48, 'support'));
+    const resistanceZones = clusterWeeklyLevelsToZones(swings.highs, 'resistance', candles48).map(z=>evaluateWeeklyZone(z, candles48, 'resistance'));
+    const currentPrice = candles48[candles48.length-1]?.close ?? null;
+    const nearestActiveSupport = supportZones.filter(z=>z.status==='Active'&&currentPrice!=null&&z.upper<=currentPrice).sort((a,b)=>(currentPrice-a.upper)-(currentPrice-b.upper))[0];
+    const nearestActiveResistance = resistanceZones.filter(z=>z.status==='Active'&&currentPrice!=null&&z.lower>=currentPrice).sort((a,b)=>(a.lower-currentPrice)-(b.lower-currentPrice))[0];
+    const fallbackSupport = supportZones.sort((a,b)=>b.score-a.score)[0] || null;
+    const fallbackResistance = resistanceZones.sort((a,b)=>b.score-a.score)[0] || null;
+    const support = nearestActiveSupport || fallbackSupport || null;
+    const resistance = nearestActiveResistance || fallbackResistance || null;
+    let meaning = 'Weekly Support & Resistance unavailable';
+    if(support && resistance && currentPrice!=null){
+      if(currentPrice>resistance.upper) meaning='Price is trading above major resistance zone.';
+      else if(currentPrice<support.lower) meaning='Price is trading below major support zone.';
+      else meaning='Price is trading between major weekly zones.';
+    }
+    return { support, resistance, currentPrice, meaning, candles48 };
+  } catch (e) {
+    console.error('Weekly SR scan failed:', e);
+    return { support:null, resistance:null, currentPrice:null, meaning:'Weekly Support & Resistance unavailable' };
+  }
+}
+
+function renderWeeklySupportResistance(summary){
+  const missing = !summary || (!summary.support && !summary.resistance);
+  if(missing){
+    if(els.weeklySrResistanceZone) els.weeklySrResistanceZone.textContent='Weekly Support & Resistance unavailable';
+    if(els.weeklySrResistanceMeta) els.weeklySrResistanceMeta.textContent='Resistance: —';
+    if(els.weeklySrSupportZone) els.weeklySrSupportZone.textContent='Support: —';
+    if(els.weeklySrSupportMeta) els.weeklySrSupportMeta.textContent='—';
+    if(els.weeklySrMeaning) els.weeklySrMeaning.textContent='Meaning: —';
+    return;
+  }
+  const fmtZone = (z)=>`${usd(z.lower)} – ${usd(z.upper)}`;
+  if(els.weeklySrResistanceZone) els.weeklySrResistanceZone.textContent = summary.resistance ? fmtZone(summary.resistance) : 'Resistance: —';
+  if(els.weeklySrResistanceMeta) els.weeklySrResistanceMeta.textContent = summary.resistance ? `${summary.resistance.strength} | Touch ${summary.resistance.touchCount}x | Rejection ${summary.resistance.rejectionCount}x | ${summary.resistance.status}` : '—';
+  if(els.weeklySrSupportZone) els.weeklySrSupportZone.textContent = summary.support ? fmtZone(summary.support) : 'Support: —';
+  if(els.weeklySrSupportMeta) els.weeklySrSupportMeta.textContent = summary.support ? `${summary.support.strength} | Touch ${summary.support.touchCount}x | Rejection ${summary.support.rejectionCount}x | ${summary.support.status}` : '—';
+  if(els.weeklySrMeaning) els.weeklySrMeaning.textContent = `Meaning: ${summary.meaning || '—'}`;
+}
+
+function ensureWeeklySrOverlayLayer(){
+  if(!els.priceChart) return null;
+  let layer = document.getElementById('weeklySrOverlay');
+  if(!layer){
+    layer = document.createElement('div');
+    layer.id = 'weeklySrOverlay';
+    layer.className = 'fvg-overlay-layer';
+    els.priceChart.appendChild(layer);
+  }
+  weeklySrOverlayLayer = layer;
+  return layer;
+}
+
+function renderWeeklySrOverlay(summary, dataset){
+  try {
+    if(!priceChart || !candleSeries) return;
+    weeklySrSummaryForOverlay = summary;
+    const layer = ensureWeeklySrOverlayLayer();
+    if(!layer) return;
+    layer.innerHTML='';
+    const closed = getClosedWeeklyCandles(dataset);
+    const lastClosed = closed[closed.length-1];
+    const right = lastClosed ? priceChart.timeScale().timeToCoordinate(lastClosed.time) : null;
+    if(right==null) return;
+    const draw=(zone, cls)=>{
+      if(!zone) return;
+      const xStart = priceChart.timeScale().timeToCoordinate(zone.firstTime || dataset[0]?.time);
+      const yTop = candleSeries.priceToCoordinate(zone.upper);
+      const yBottom = candleSeries.priceToCoordinate(zone.lower);
+      const xEnd = right - 4;
+      if(xStart==null||yTop==null||yBottom==null||xEnd==null) return;
+      const el=document.createElement('div');
+      el.className=`fvg-zone ${cls}`;
+      el.style.left=`${Math.max(0,Math.min(xStart,xEnd))}px`;
+      el.style.width=`${Math.max(1,Math.abs(xEnd-xStart))}px`;
+      const top=Math.min(yTop,yBottom), h=Math.max(8,Math.abs(yBottom-yTop));
+      const cy=(yTop+yBottom)/2;
+      el.style.top=`${h===Math.abs(yBottom-yTop)?top:(cy-h/2)}px`;
+      el.style.height=`${h}px`;
+      layer.appendChild(el);
+    };
+    draw(summary.support, 'bullish');
+    draw(summary.resistance, 'bearish');
+  } catch (e) {
+    console.error('Weekly SR overlay failed:', e);
+  }
+}
 
 
 function scanWeeklyFvg(dataset){
@@ -437,8 +604,8 @@ function renderFvgOverlay(activeFvgs, dataset){
     renderFvgFilledOverlay();
     render4hVsWeeklyFvgSummary();
 
-    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => renderFvgFilledOverlay());
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderFvgFilledOverlay());
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); });
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); });
   } catch (e) {
     console.error("FVG overlay render failed", e);
   }
@@ -996,6 +1163,11 @@ function setLoading(){
   if(els.rightFvgCount) els.rightFvgCount.textContent="Active FVG: loading";
   if(els.rightNearestFvg) els.rightNearestFvg.textContent="Nearest: loading";
   if(els.rightFvgStatus) els.rightFvgStatus.textContent="Status: loading";
+  if(els.weeklySrResistanceZone) els.weeklySrResistanceZone.textContent="Resistance: loading";
+  if(els.weeklySrResistanceMeta) els.weeklySrResistanceMeta.textContent="—";
+  if(els.weeklySrSupportZone) els.weeklySrSupportZone.textContent="Support: loading";
+  if(els.weeklySrSupportMeta) els.weeklySrSupportMeta.textContent="—";
+  if(els.weeklySrMeaning) els.weeklySrMeaning.textContent="Meaning: loading";
   if(els.rightBiasTop) els.rightBiasTop.textContent="Top Bias: loading";
   if(els.rightBiasMeta) els.rightBiasMeta.textContent="Confidence: loading";
   if(els.rightDivergence) els.rightDivergence.textContent="loading";
@@ -1043,11 +1215,13 @@ async function loadDashboard(){
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);
       const activeFvgs = renderFvgPanel(dataset);
+      const weeklySrSummary = scanWeeklySupportResistance(dataset);
+      renderWeeklySupportResistance(weeklySrSummary);
       renderWeeklyCandleCharacter(dataset);
       renderMtfSummary();
       weeklyOk = true;
 
-      try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs, dataset); }
+      try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs, dataset); renderWeeklySrOverlay(weeklySrSummary, dataset); }
       catch (error) { console.error("Price chart render failed:", error); togglePriceChartError("Chart unavailable, but data is still loaded."); }
 
       try { renderRsiChart(dataset); toggleRsiChartError(""); }
@@ -1064,6 +1238,7 @@ async function loadDashboard(){
     if(els.rightFvgCount) els.rightFvgCount.textContent='Active FVG: unavailable';
     if(els.rightNearestFvg) els.rightNearestFvg.textContent='Nearest: unavailable';
     if(els.rightFvgStatus) els.rightFvgStatus.textContent='Status: unavailable';
+    renderWeeklySupportResistance(null);
     if(els.rightBiasTop) els.rightBiasTop.textContent='Top Bias: unavailable';
     if(els.rightBiasMeta) els.rightBiasMeta.textContent='Confidence: unavailable';
     if(els.rightDivergence) els.rightDivergence.textContent='unavailable';

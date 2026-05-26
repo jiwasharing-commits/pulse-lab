@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-26 00:00",
-  "version": "v0.1.32",
+  "lastUpdated": "2026-05-26 00:45",
+  "version": "v0.1.33",
   "commitLabel": "manual",
-  "note": "Section 3 chart width alignment patch (CSS-only layout adjustment)"
+  "note": "Weekly Support & Resistance scanner + overlay card"
 }
