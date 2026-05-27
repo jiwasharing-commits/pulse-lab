@@ -48,6 +48,14 @@
 #lower4hChart{width:100%;height:280px;min-height:260px}
 #lower4hFvgOverlay.fvg-overlay-layer{z-index:5}
 .fvg-zone{box-sizing:border-box}
+.ltf-sr-overlay-layer{position:absolute;inset:0;pointer-events:none;z-index:4}
+.ltf-sr-zone{position:absolute;border-radius:4px;box-sizing:border-box;border:1px solid}
+.ltf-sr-zone.support{background:rgba(56, 189, 248, 0.10);border-color:rgba(56, 189, 248, 0.75)}
+.ltf-sr-zone.resistance{background:rgba(251, 191, 36, 0.10);border-color:rgba(251, 191, 36, 0.75)}
+.ltf-sr-zone.strong.support{background:rgba(56, 189, 248, 0.10);border-color:rgba(56, 189, 248, 0.90);border-width:1.5px}
+.ltf-sr-zone.strong.resistance{background:rgba(251, 191, 36, 0.10);border-color:rgba(251, 191, 36, 0.90);border-width:1.5px}
+.ltf-sr-zone.weak.support{background:rgba(56, 189, 248, 0.06);border-color:rgba(56, 189, 248, 0.45)}
+.ltf-sr-zone.weak.resistance{background:rgba(251, 191, 36, 0.06);border-color:rgba(251, 191, 36, 0.45)}
 
 .status-badge{display:inline-block;padding:.14rem .42rem;border-radius:.45rem;font-weight:700;font-size:.72rem;border:1px solid transparent}
 .status-aligned{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.65);color:#b8f5d2}

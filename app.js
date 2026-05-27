@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-27 01:35";
+const APP_LAST_UPDATED = "2026-05-27 02:10";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
-  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -50,6 +50,8 @@ let ltf4hFvgLayer = null;
 let fvgRedrawPending = false;
 let active4hFvgs = [];
 let latest4hCandles = [];
+let srRedrawPending = false;
+let latest4hSrSummary = null;
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
@@ -650,7 +652,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
@@ -688,6 +690,7 @@ async function renderLowerTimeframeMode(mode="1W"){
   if(els.lower4hChart) els.lower4hChart.innerHTML='';
   if(els.lower1hChart) els.lower1hChart.innerHTML='';
   if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML='';
+  if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML='';
 
   let st=null, et=null, preset='1w';
   if(mode==='2W') preset='2w';
@@ -713,10 +716,11 @@ async function renderLowerTimeframeMode(mode="1W"){
         ltf4hChart=r.chart; ltf4hSeries=r.series;
         ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
         ltf4hChart.timeScale().fitContent();
-        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } });
+        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
+        ltf4hChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
         try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); }
-        requestAnimationFrame(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } });
-        setTimeout(()=>{ try { schedule4hFvgOverlayRedraw(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); } },50);
+        requestAnimationFrame(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
+        setTimeout(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } },50);
         console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
       }
     }
@@ -833,6 +837,80 @@ function get4hFvgStatus(fvg,candles){
   if(after.some(c=>c.high>fvg.lower && c.high<fvg.upper)) return 'Partially Filled';
   return 'Unfilled';
 }
+
+function clear4hSrOverlay(){
+  try { if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=''; } catch(_){}
+}
+
+function getSelected4hSrZones(srSummary){
+  if(!srSummary?.ok) return [];
+  const pool=[
+    srSummary.support?.nearest,
+    srSummary.support?.strongest,
+    srSummary.resistance?.nearest,
+    srSummary.resistance?.strongest,
+  ].filter(Boolean);
+  const uniq=[];
+  const seen=new Set();
+  for(const z of pool){
+    const key=`${z.type}|${Number(z.lower).toFixed(2)}|${Number(z.upper).toFixed(2)}`;
+    if(seen.has(key)) continue;
+    seen.add(key);
+    uniq.push(z);
+  }
+  const supports=uniq.filter(z=>z.type==='support').slice(0,2);
+  const resistances=uniq.filter(z=>z.type==='resistance').slice(0,2);
+  return [...supports,...resistances].slice(0,4);
+}
+
+function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
+  if(!chart || !series || !overlayLayer || !Array.isArray(candles) || !candles.length) return;
+  clear4hSrOverlay();
+  const zones=getSelected4hSrZones(srSummary);
+  if(!zones.length) return;
+  const lastTime=candles[candles.length-1]?.time;
+  if(lastTime==null) return;
+  const x2=chart.timeScale().timeToCoordinate(lastTime);
+  if(x2==null) return;
+  const rightLimit=Math.max(1, (els.lower4hChart?.clientWidth||0)-40);
+  zones.forEach((zone)=>{
+    try{
+      const x1=chart.timeScale().timeToCoordinate(zone.firstTime);
+      const yTop=series.priceToCoordinate(zone.upper);
+      const yBottom=series.priceToCoordinate(zone.lower);
+      if(x1==null || yTop==null || yBottom==null) return;
+      const left=Math.max(0, Math.min(x1,x2));
+      const width=Math.max(1, Math.min(Math.abs(x2-x1), rightLimit-left));
+      const center=(yTop+yBottom)/2;
+      const height=Math.max(8, Math.abs(yBottom-yTop));
+      const top=Math.max(0, center-(height/2));
+      const div=document.createElement('div');
+      const strength=(zone.strength||'').toLowerCase();
+      const strengthClass=strength==='strong' ? 'strong' : (strength==='weak' ? 'weak' : 'medium');
+      div.className=`ltf-sr-zone ${zone.type==='support'?'support':'resistance'} ${strengthClass}`;
+      div.style.left=`${left}px`;
+      div.style.top=`${top}px`;
+      div.style.width=`${width}px`;
+      div.style.height=`${height}px`;
+      overlayLayer.appendChild(div);
+    } catch(_){ }
+  });
+}
+
+function schedule4hSrOverlayRedraw(candles){
+  if(srRedrawPending) return;
+  srRedrawPending=true;
+  requestAnimationFrame(()=>{
+    srRedrawPending=false;
+    try{
+      render4hSrOverlay({ chart: ltf4hChart, series: ltf4hSeries, overlayLayer: els.lower4hSrOverlay, candles: candles||latest4hCandles, srSummary: latest4hSrSummary });
+    } catch(err){
+      console.warn('4H SR overlay redraw skipped', err);
+      clear4hSrOverlay();
+    }
+  });
+}
+
 function ensure4hFvgLayer(){
   if(els.lower4hFvgOverlay) { ltf4hFvgLayer = els.lower4hFvgOverlay; return ltf4hFvgLayer; }
   return null;
@@ -955,7 +1033,7 @@ function schedule4hFvgOverlayRedraw(candles){
 function render4hFvgSummaryAndOverlay(candles){
   try {
     latest4hCandles = candles;
-    if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); return; }
+    if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); latest4hSrSummary={ok:false,reason:'not_enough_candles'}; clear4hSrOverlay(); return; }
     clear4hFvgOverlay();
     const current=candles[candles.length-1]?.close;
     active4hFvgs = scan4hFvg(candles).filter(f=>f.status!=='Filled').map(f=>{
@@ -967,7 +1045,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); render4hSupportResistanceSummary(srSummary); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -977,9 +1055,11 @@ function render4hFvgSummaryAndOverlay(candles){
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     const srSummary = scan4hSupportResistance(candles);
+    latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
+    schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
-  } catch(e){ console.error('Clean 4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
+  } catch(e){ console.error('Clean 4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; latest4hSrSummary={ok:false,reason:'scan_failed'}; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); clear4hSrOverlay(); if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
 
@@ -1438,5 +1518,5 @@ setupCollapsibleSections();
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
-  if(ltf4hChart) { schedule4hFvgOverlayRedraw(latest4hCandles); renderLowerTfReactionSummary(); }
+  if(ltf4hChart) { schedule4hFvgOverlayRedraw(latest4hCandles); schedule4hSrOverlayRedraw(latest4hCandles); renderLowerTfReactionSummary(); }
 });
