@@ -138,3 +138,6 @@
 #weeklySrOverlay{z-index:3}
 #weeklySrOverlay .fvg-zone.bullish{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.85)}
 #weeklySrOverlay .fvg-zone.bearish{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.85)}
+
+.ltf-analysis-card-compact{display:grid;gap:6px}
+.ltf-analysis-row{margin:.05rem 0;color:var(--muted);font-size:.7rem}
