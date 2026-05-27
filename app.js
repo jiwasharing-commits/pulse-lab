@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-27 01:00";
+const APP_LAST_UPDATED = "2026-05-27 01:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
-  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
@@ -707,7 +707,7 @@ async function renderLowerTimeframeMode(mode="1W"){
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
       console.log('4H candles:', candles.length);
       console.log('Sample 4H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; }
+      if(!candles.length) { toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
       else {
         const r=renderSingleLtfChart(els.lower4hChart,candles,280);
         ltf4hChart=r.chart; ltf4hSeries=r.series;
@@ -720,8 +720,8 @@ async function renderLowerTimeframeMode(mode="1W"){
         console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
       }
     }
-    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; }
-  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: 4H data unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: 4H data unavailable.'; }
+    catch(e){ console.error('4H chart render failed:', e); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); }
+  } else { toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H data unavailable.'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: 4H data unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
   if(h1.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
@@ -946,7 +946,7 @@ function schedule4hFvgOverlayRedraw(candles){
       renderClean4hFvgOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, overlayLayer: layer, candles, activeFvgs: active4hFvgs, maxBullish: 2, maxBearish: 2 });
     } catch(error){
       console.error('Clean 4H FVG overlay failed:', error);
-      if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable';
+      if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'});
     }
   });
 }
@@ -955,7 +955,7 @@ function schedule4hFvgOverlayRedraw(candles){
 function render4hFvgSummaryAndOverlay(candles){
   try {
     latest4hCandles = candles;
-    if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; return; }
+    if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); return; }
     clear4hFvgOverlay();
     const current=candles[candles.length-1]?.close;
     active4hFvgs = scan4hFvg(candles).filter(f=>f.status!=='Filled').map(f=>{
@@ -967,7 +967,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); render4hSupportResistanceSummary(srSummary); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -976,11 +976,150 @@ function render4hFvgSummaryAndOverlay(candles){
     if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Bullish: ${visual.selectedBullish.length} | Bearish: ${visual.selectedBearish.length} | Shown: ${visual.selected.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status} | Visual: ${visual.visualMode}`;
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
+    const srSummary = scan4hSupportResistance(candles);
+    render4hSupportResistanceSummary(srSummary);
     renderLowerTfReactionSummary();
-  } catch(e){ console.error('Clean 4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
+  } catch(e){ console.error('Clean 4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
 }
 
 
+
+
+function classify4hSrStrength(score){
+  return score>=7?'Strong':score>=4?'Medium':'Weak';
+}
+
+function find4hSwingsForSr(candles, left = 2, right = 2){
+  const highs=[], lows=[];
+  for(let i=left;i<candles.length-right;i++){
+    const c=candles[i];
+    let isHigh=true, isLow=true;
+    for(let j=1;j<=left;j++){ if(!(c.high>candles[i-j].high)) isHigh=false; if(!(c.low<candles[i-j].low)) isLow=false; }
+    for(let j=1;j<=right;j++){ if(!(c.high>candles[i+j].high)) isHigh=false; if(!(c.low<candles[i+j].low)) isLow=false; }
+    if(isHigh) highs.push({index:i,time:c.time,price:c.high});
+    if(isLow) lows.push({index:i,time:c.time,price:c.low});
+  }
+  return { highs, lows };
+}
+
+function cluster4hLevelsToZones(levels, type, candles){
+  if(!levels.length) return { zones:[], tolerancePct:0, avgRangeAbs:0 };
+  const ranges = candles.map(c=>c.high-c.low).filter(v=>Number.isFinite(v)&&v>0);
+  const avgRangeAbs = ranges.length ? ranges.reduce((a,b)=>a+b,0)/ranges.length : 0;
+  const rangePcts = candles.map(c=>(c.high-c.low)/(c.close||1)).filter(v=>Number.isFinite(v)&&v>0);
+  const avgRangePct = rangePcts.length ? rangePcts.reduce((a,b)=>a+b,0)/rangePcts.length : 0.005;
+  const tolerancePct = Math.min(0.012, Math.max(0.003, avgRangePct*0.30));
+  const tolAbs=(center)=>Math.max(center*tolerancePct, avgRangeAbs*0.20);
+  const sorted=[...levels].sort((a,b)=>a.price-b.price);
+  const clusters=[];
+  sorted.forEach((lv)=>{
+    const hit=clusters.find((cl)=>Math.abs(lv.price-cl.center)<=tolAbs(cl.center));
+    if(hit){ hit.levels.push(lv); hit.center = hit.levels.reduce((m,x)=>m+x.price,0)/hit.levels.length; }
+    else clusters.push({ center: lv.price, levels:[lv] });
+  });
+  const zones=clusters.map((cl)=>{
+    const center=cl.center;
+    const halfWidth=Math.max(center*tolerancePct, avgRangeAbs*0.20);
+    const ts=cl.levels.map(x=>x.time).sort();
+    return { type, lower:center-halfWidth, upper:center+halfWidth, center, sourceLevels:cl.levels, sourceLevelsCount:cl.levels.length, firstTime:ts[0], lastTime:ts[ts.length-1] };
+  });
+  return { zones, tolerancePct, avgRangeAbs };
+}
+
+function evaluate4hZone(zone, candles, type){
+  let touchCount=0,rejectionCount=0,broken=false,inTouch=false,rejectedThisEpisode=false;
+  candles.forEach((c)=>{
+    const touched = type==='support' ? (c.low>=zone.lower && c.low<=zone.upper) : (c.high>=zone.lower && c.high<=zone.upper);
+    if(touched && !inTouch){ touchCount++; inTouch=true; rejectedThisEpisode=false; }
+    if(touched){
+      const rejected = type==='support' ? c.close>zone.upper : c.close<zone.lower;
+      if(rejected && !rejectedThisEpisode){ rejectionCount++; rejectedThisEpisode=true; }
+    } else { inTouch=false; rejectedThisEpisode=false; }
+    if(type==='support' && c.close<zone.lower) broken=true;
+    if(type==='resistance' && c.close>zone.upper) broken=true;
+  });
+  const touchPts = touchCount>=4?4:touchCount;
+  const rejectionPts = rejectionCount>=3?3:rejectionCount;
+  const swingPts = zone.sourceLevelsCount>=2?1:0;
+  const activePts = broken?0:1;
+  const score = touchPts + rejectionPts + swingPts + activePts;
+  const strength = classify4hSrStrength(score);
+  return { ...zone, touchCount, rejectionCount, broken, status: broken?'Broken':'Active', score, strength };
+}
+
+function selectNearestAndStrongest4hZones(zones, currentPrice, type){
+  const active = zones.filter((z)=>z.status==='Active');
+  let nearest=null;
+  if(type==='resistance'){
+    const above=active.filter((z)=>z.lower>=currentPrice).map((z)=>({ ...z, distancePct: ((z.lower-currentPrice)/currentPrice)*100 }));
+    nearest=above.sort((a,b)=>a.distancePct-b.distancePct)[0]||null;
+  } else {
+    const below=active.filter((z)=>z.upper<=currentPrice).map((z)=>({ ...z, distancePct: ((currentPrice-z.upper)/currentPrice)*100 }));
+    nearest=below.sort((a,b)=>a.distancePct-b.distancePct)[0]||null;
+  }
+  const forStrongest = active.filter((z)=>z.strength!=='Weak');
+  const src = forStrongest.length?forStrongest:active;
+  const strongest = src.sort((a,b)=>b.score-a.score || b.rejectionCount-a.rejectionCount || b.touchCount-a.touchCount || b.lastTime-a.lastTime)[0] || null;
+  return { nearest, strongest };
+}
+
+function format4hSrZone(zone){
+  if(!zone) return 'Not found';
+  return `${usd(zone.lower)} – ${usd(zone.upper)}`;
+}
+
+function scan4hSupportResistance(candles){
+  try{
+    if(!Array.isArray(candles) || candles.length<20){
+      return { ok:false, reason:'not_enough_candles', currentPrice:candles?.[candles.length-1]?.close??null, candleCount:Array.isArray(candles)?candles.length:0, support:{nearest:null,strongest:null}, resistance:{nearest:null,strongest:null}, meta:{swingHighCount:0,swingLowCount:0,supportZoneCount:0,resistanceZoneCount:0,activeSupportCount:0,activeResistanceCount:0,tolerancePct:0,avgRangeAbs:0} };
+    }
+    const currentPrice=candles[candles.length-1].close;
+    const swings=find4hSwingsForSr(candles,2,2);
+    const supCluster=cluster4hLevelsToZones(swings.lows,'support',candles);
+    const resCluster=cluster4hLevelsToZones(swings.highs,'resistance',candles);
+    const supportZones=supCluster.zones.map((z)=>evaluate4hZone(z,candles,'support')).map((z)=>({ ...z, distancePct: z.upper<=currentPrice?((currentPrice-z.upper)/currentPrice)*100:((z.lower-currentPrice)/currentPrice)*100 }));
+    const resistanceZones=resCluster.zones.map((z)=>evaluate4hZone(z,candles,'resistance')).map((z)=>({ ...z, distancePct: z.lower>=currentPrice?((z.lower-currentPrice)/currentPrice)*100:((currentPrice-z.upper)/currentPrice)*100 }));
+    const supportSel=selectNearestAndStrongest4hZones(supportZones,currentPrice,'support');
+    const resistanceSel=selectNearestAndStrongest4hZones(resistanceZones,currentPrice,'resistance');
+    return {
+      ok:true, reason:null, currentPrice, candleCount:candles.length,
+      support:{ nearest:supportSel.nearest, strongest:supportSel.strongest },
+      resistance:{ nearest:resistanceSel.nearest, strongest:resistanceSel.strongest },
+      meta:{
+        swingHighCount:swings.highs.length, swingLowCount:swings.lows.length,
+        supportZoneCount:supportZones.length, resistanceZoneCount:resistanceZones.length,
+        activeSupportCount:supportZones.filter((z)=>z.status==='Active').length,
+        activeResistanceCount:resistanceZones.filter((z)=>z.status==='Active').length,
+        tolerancePct:Math.max(supCluster.tolerancePct||0,resCluster.tolerancePct||0),
+        avgRangeAbs:Math.max(supCluster.avgRangeAbs||0,resCluster.avgRangeAbs||0),
+      }
+    };
+  }catch(e){
+    console.error('4H SR scan failed:', e);
+    return { ok:false, reason:'scan_failed', currentPrice:candles?.[candles.length-1]?.close??null, candleCount:Array.isArray(candles)?candles.length:0, support:{nearest:null,strongest:null}, resistance:{nearest:null,strongest:null}, meta:{swingHighCount:0,swingLowCount:0,supportZoneCount:0,resistanceZoneCount:0,activeSupportCount:0,activeResistanceCount:0,tolerancePct:0,avgRangeAbs:0} };
+  }
+}
+
+function render4hSupportResistanceSummary(srSummary){
+  const set=(el,val)=>{ if(el) el.textContent=val; };
+  if(!srSummary || !srSummary.ok){
+    set(els.lower4hSrNearestResistance,'Nearest Resistance: Not found');
+    set(els.lower4hSrStrongestResistance,'Strongest Resistance: Not found');
+    set(els.lower4hSrNearestSupport,'Nearest Support: Not found');
+    set(els.lower4hSrStrongestSupport,'Strongest Support: Not found');
+    set(els.lower4hSrState, srSummary?.reason==='not_enough_candles' ? '4H S/R unavailable: not enough candles' : '4H S/R unavailable');
+    return;
+  }
+  const nr=srSummary.resistance.nearest, ns=srSummary.support.nearest, sr=srSummary.resistance.strongest, ss=srSummary.support.strongest;
+  set(els.lower4hSrNearestResistance, nr ? `Nearest Resistance: ${format4hSrZone(nr)} | ${nr.strength} | Distance ${f1(Math.abs(nr.distancePct))}%` : 'Nearest Resistance: Not found');
+  set(els.lower4hSrStrongestResistance, sr ? `Strongest Resistance: ${format4hSrZone(sr)} | ${sr.strength} | Touch ${sr.touchCount} | Rejection ${sr.rejectionCount}` : 'Strongest Resistance: Not found');
+  set(els.lower4hSrNearestSupport, ns ? `Nearest Support: ${format4hSrZone(ns)} | ${ns.strength} | Distance ${f1(Math.abs(ns.distancePct))}%` : 'Nearest Support: Not found');
+  set(els.lower4hSrStrongestSupport, ss ? `Strongest Support: ${format4hSrZone(ss)} | ${ss.strength} | Touch ${ss.touchCount} | Rejection ${ss.rejectionCount}` : 'Strongest Support: Not found');
+  const notes=[];
+  if(!nr) notes.push('No active resistance above current price in selected 4H range.');
+  if(!ns) notes.push('No active support below current price in selected 4H range.');
+  set(els.lower4hSrState, notes.length?notes.join(' '):'4H S/R available for current selected range.');
+}
 
 function detect1hStructure(candles){
   const {highs,lows}=find4hSwings(candles);
@@ -1168,6 +1307,11 @@ function setLoading(){
   if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent="4H FVG: loading";
   if(els.lower4hStructure) els.lower4hStructure.textContent="4H Structure: loading";
   if(els.lower4hReaction) els.lower4hReaction.textContent="4H Reaction: loading";
+  if(els.lower4hSrNearestResistance) els.lower4hSrNearestResistance.textContent="Nearest Resistance: loading";
+  if(els.lower4hSrStrongestResistance) els.lower4hSrStrongestResistance.textContent="Strongest Resistance: loading";
+  if(els.lower4hSrNearestSupport) els.lower4hSrNearestSupport.textContent="Nearest Support: loading";
+  if(els.lower4hSrStrongestSupport) els.lower4hSrStrongestSupport.textContent="Strongest Support: loading";
+  if(els.lower4hSrState) els.lower4hSrState.textContent="4H S/R: loading";
   if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent="1H Liquidity Sweep: loading";
   if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent="1H Structure: loading";
   if(els.lowerTfReactionSummary) els.lowerTfReactionSummary.textContent="Lower TF Reaction: loading";
