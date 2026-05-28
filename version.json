@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-05-28 14:30",
+  "version": "v0.1.48",
+  "commitLabel": "manual",
+  "note": "Fix trendline time normalization for weekly and 4H rendering"
+}
