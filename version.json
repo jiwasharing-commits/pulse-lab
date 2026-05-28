@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 12:20",
-  "version": "v0.1.44",
+  "lastUpdated": "2026-05-28 12:45",
+  "version": "v0.1.45",
   "commitLabel": "manual",
-  "note": "Add 1M/3M lower timeframe presets and set 1M default"
+  "note": "Add manual horizontal price lines for weekly and 4H charts"
 }
