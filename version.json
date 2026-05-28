@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 15:15",
-  "version": "v0.1.50",
+  "lastUpdated": "2026-05-28 15:40",
+  "version": "v0.1.51",
   "commitLabel": "manual",
-  "note": "Fix drawing manager modal hidden state on page load"
+  "note": "Add expandable Current Price detail panel in Market Preparation Map"
 }

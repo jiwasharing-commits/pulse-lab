@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 15:15";
+const APP_LAST_UPDATED = "2026-05-28 15:40";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -22,6 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -76,6 +77,7 @@ let weeklyPlacementHandler = null;
 let h4PlacementHandler = null;
 let trendlineDrawMode = { active: false, chartKey: null, startPoint: null };
 let drawingManagerChartKey = null;
+let prepCurrentDetailOpen = false;
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
 const marketPreparationState = {
   currentPrice: null,
@@ -622,11 +624,91 @@ function buildMarketPreparationMap(){
     return { upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" };
   }
 }
+function buildCurrentPriceDetailData(){
+  const price = marketPreparationState.currentPrice;
+  const h4Status = marketPreparationState.h4?.structureStatus || "Unavailable";
+  const h4Rsi = marketPreparationState.h4?.rsiStatus || { ok:false, value:null, regime:null, slope:null, label:"4H RSI unavailable" };
+  const h1Sweep = marketPreparationState.h1?.sweepStatus || "Unavailable";
+  const h1Structure = marketPreparationState.h1?.structureStatus || "Unavailable";
+  const contains = (txt, key)=>String(txt||"").toLowerCase().includes(String(key).toLowerCase());
+  const h4Meaning = (contains(h4Status,"Bearish BOS") || contains(h4Status,"Bearish CHoCH"))
+    ? "4H structure still reflects downside reaction pressure."
+    : (contains(h4Status,"Bullish BOS") || contains(h4Status,"Bullish CHoCH"))
+      ? "4H structure shows improving short-range reaction."
+      : "No clear strong 4H structure shift yet.";
+  let h4RsiMeaning = "4H momentum is mixed; monitor follow-through.";
+  if(contains(h4Rsi.label,"Oversold")) h4RsiMeaning = "Momentum is weak; short-range bounce risk can increase.";
+  else if(contains(h4Rsi.label,"Overbought")) h4RsiMeaning = "Momentum is elevated; rejection risk can increase.";
+  else if(h4Rsi.regime==="Below 50" && h4Rsi.slope==="rising") h4RsiMeaning = "Momentum is improving from below midline.";
+  else if(h4Rsi.regime==="Above 50" && h4Rsi.slope==="falling") h4RsiMeaning = "Momentum is cooling from above midline.";
+  const h1SweepMeaning = contains(h1Sweep,"Bullish Sweep")
+    ? "Short-term buyer reaction appeared near lower liquidity."
+    : contains(h1Sweep,"Bearish Sweep")
+      ? "Short-term seller reaction appeared near upper liquidity."
+      : (contains(h1Sweep,"No recent") || contains(h1Sweep,"No"))
+        ? "No strong recent sweep signal."
+        : "1H sweep context is unavailable.";
+  const h1StructureMeaning = (contains(h1Structure,"Bullish BOS") || contains(h1Structure,"Bullish CHoCH"))
+    ? "Short-term structure is improving."
+    : (contains(h1Structure,"Bearish BOS") || contains(h1Structure,"Bearish CHoCH"))
+      ? "Short-term structure still leans weaker."
+      : "No clear short-term structure confirmation yet.";
+  const prepNote = (contains(h4Rsi.label,"Oversold") && contains(h1Sweep,"Bullish Sweep"))
+    ? "Avoid chasing short. Watch whether 1H forms bullish CHoCH/BOS or price fails to reclaim."
+    : (contains(h4Status,"Bearish BOS") && contains(h1Structure,"No clear"))
+      ? "Downside pressure remains, but wait for confirmation near key zone."
+      : (contains(h4Rsi.label,"Overbought") && contains(h1Sweep,"Bearish Sweep"))
+        ? "Avoid chasing long. Watch rejection near upside reaction zone."
+        : "Keep preparation neutral and wait for multi-timeframe confirmation.";
+  return {
+    compactRowText: Number.isFinite(price)
+      ? `● ${usd(price)} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
+      : "● Price unavailable | Waiting for ticker/4H/1H context",
+    price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable" },
+    h4Structure: { status: h4Status, brokenLevel: null, latestClose: null, meaning: h4Meaning },
+    h4Rsi: { ok: !!h4Rsi.ok, value: Number.isFinite(h4Rsi.value) ? h4Rsi.value : null, regime: h4Rsi.regime || null, slope: h4Rsi.slope || null, label: h4Rsi.label || "4H RSI unavailable", meaning: h4RsiMeaning },
+    h1Sweep: { status: h1Sweep, sweptLevel: null, distancePct: null, meaning: h1SweepMeaning },
+    h1Structure: { status: h1Structure, brokenLevel: null, latestClose: null, meaning: h1StructureMeaning },
+    preparation: { note: prepNote }
+  };
+}
+function renderCurrentPriceDetail(detail){
+  if(!els.prepCurrentDetailContent) return;
+  const nUsd = (v)=>Number.isFinite(v) ? usd(v) : "—";
+  const nPct = (v)=>Number.isFinite(v) ? `${f1(v)}%` : "—";
+  els.prepCurrentDetailContent.innerHTML = `
+    <div class="prep-current-detail-block"><span class="prep-current-detail-label">Price:</span> ${detail.price.text}</div>
+    <div class="prep-current-detail-block"><span class="prep-current-detail-label">4H Structure:</span> ${detail.h4Structure.status}<br>Broken level: ${nUsd(detail.h4Structure.brokenLevel)}<br>Latest close: ${nUsd(detail.h4Structure.latestClose)}<br>Meaning: ${detail.h4Structure.meaning}</div>
+    <div class="prep-current-detail-block"><span class="prep-current-detail-label">4H RSI:</span> ${detail.h4Rsi.label}<br>RSI: ${detail.h4Rsi.value ?? "—"}<br>Regime: ${detail.h4Rsi.regime || "—"}<br>Slope: ${detail.h4Rsi.slope || "—"}<br>Meaning: ${detail.h4Rsi.meaning}</div>
+    <div class="prep-current-detail-block"><span class="prep-current-detail-label">1H Liquidity Sweep:</span> ${detail.h1Sweep.status}<br>Swept level: ${nUsd(detail.h1Sweep.sweptLevel)}<br>Distance: ${nPct(detail.h1Sweep.distancePct)}<br>Meaning: ${detail.h1Sweep.meaning}</div>
+    <div class="prep-current-detail-block"><span class="prep-current-detail-label">1H Structure:</span> ${detail.h1Structure.status}<br>Broken level: ${nUsd(detail.h1Structure.brokenLevel)}<br>Latest close: ${nUsd(detail.h1Structure.latestClose)}<br>Meaning: ${detail.h1Structure.meaning}</div>
+    <div class="prep-current-detail-note"><span class="prep-current-detail-label">Preparation:</span> ${detail.preparation.note}</div>
+  `;
+}
+function setCurrentPriceDetailState(isOpen){
+  prepCurrentDetailOpen = !!isOpen;
+  if(els.prepCurrentDetail){
+    els.prepCurrentDetail.hidden = !prepCurrentDetailOpen;
+    els.prepCurrentDetail.classList.toggle("open", prepCurrentDetailOpen);
+  }
+  if(els.prepCurrentDetailToggle) els.prepCurrentDetailToggle.textContent = prepCurrentDetailOpen ? "Hide Details" : "Details";
+}
+function toggleCurrentPriceDetail(force){
+  if(typeof force === "boolean") setCurrentPriceDetailState(force);
+  else setCurrentPriceDetailState(!prepCurrentDetailOpen);
+}
+function bindCurrentPriceDetailEvents(){
+  els.prepCurrentRow?.addEventListener("click", ()=>toggleCurrentPriceDetail());
+  els.prepCurrentDetailToggle?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleCurrentPriceDetail(); });
+}
 function renderMarketPreparationMap(mapData){
   const row = (r)=>`<div class="prep-map-row"><span class="prep-map-row-symbol">${r.symbol}</span><span class="prep-map-row-zone">${r.zoneText}</span><span class="prep-map-row-label">${r.label}</span><span class="prep-map-row-quality">${r.quality}</span><span class="prep-map-row-distance">${r.distanceText}</span></div>`;
   if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = mapData.upside.length ? mapData.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
   if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = mapData.downside.length ? mapData.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
-  if(els.prepCurrentRow) els.prepCurrentRow.textContent = mapData.currentRowText || "● Price unavailable";
+  const detail = buildCurrentPriceDetailData();
+  if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
+  renderCurrentPriceDetail(detail);
+  setCurrentPriceDetailState(prepCurrentDetailOpen);
 }
 
 function togglePriceChartError(msg=""){ if(!els.priceChartError) return; els.priceChartError.hidden = !msg; if(msg) els.priceChartError.textContent = msg; }
@@ -2063,6 +2145,7 @@ manualChartLines = loadManualChartLines();
 manualChartDrawings = loadManualChartDrawings();
 setupCollapsibleSections();
 bindDrawingManagerEvents();
+bindCurrentPriceDetailEvents();
 closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
