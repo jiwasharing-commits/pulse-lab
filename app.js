@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 15:40";
+const APP_LAST_UPDATED = "2026-05-28 16:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -82,9 +82,11 @@ const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: n
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], srSummary: null },
-  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null },
+  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null },
   h1: { sweepStatus: null, structureStatus: null },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
+  ticker: { change24hPct: null },
+  sentiment: { value: null, label: null, updatedAt: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, h4: false, h1: false } },
 };
@@ -624,10 +626,60 @@ function buildMarketPreparationMap(){
     return { upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" };
   }
 }
-function buildCurrentPriceDetailData(){
+function getSentimentMeaning(value, label){
+  if(!Number.isFinite(value)) return "Sentiment context is unavailable.";
+  const lc = String(label || "").toLowerCase();
+  if(lc.includes("extreme fear")) return "Risk-off pressure is elevated.";
+  if(lc.includes("fear")) return "Risk appetite is cautious.";
+  if(lc.includes("extreme greed")) return "Risk-on conditions are stretched.";
+  if(lc.includes("greed")) return "Risk-on conditions are elevated.";
+  return "Sentiment is balanced; monitor follow-through.";
+}
+function compute4hVolumeStatus(candles){
+  try{
+    if(!Array.isArray(candles) || candles.length < 20) return null;
+    const vols = candles.map(c=>Number(c.volume)).filter(v=>Number.isFinite(v) && v>0);
+    if(vols.length < 20) return null;
+    const latest = vols[vols.length - 1];
+    const avg = vols.slice(-20).reduce((a,b)=>a+b,0) / 20;
+    if(!Number.isFinite(latest) || !Number.isFinite(avg) || avg <= 0) return null;
+    const ratio = latest / avg;
+    const label = ratio < 0.8 ? "Weak" : ratio <= 1.2 ? "Average" : ratio <= 1.8 ? "Above Avg" : "Spike";
+    return { label, ratio };
+  }catch{
+    return null;
+  }
+}
+function getKeyZonePositionContext(mapData, state){
+  const upside = Array.isArray(mapData?.upside) && mapData.upside.length ? mapData.upside[0] : null;
+  const downside = Array.isArray(mapData?.downside) && mapData.downside.length ? mapData.downside[0] : null;
+  const price = state.currentPrice;
+  let position = "Key zone context unavailable";
+  const near = (d)=>Number.isFinite(d) && d <= 1.0;
+  if(Number.isFinite(price)){
+    const upIn = upside && price >= upside.lower && price <= upside.upper;
+    const dnIn = downside && price >= downside.lower && price <= downside.upper;
+    if(upIn || dnIn) position = "Inside FVG";
+    else if(upside && near(upside.distancePct)) position = String(upside.label||"").includes("Resistance") ? "Near Resistance" : "Near FVG";
+    else if(downside && near(downside.distancePct)) position = String(downside.label||"").includes("Support") ? "Near Support" : "Near FVG";
+    else if(upside || downside) position = "Between key zones";
+  }
+  return {
+    nearestUpside: upside ? `${upside.label} · ${upside.distanceText} above` : "—",
+    nearestDownside: downside ? `${downside.label} · ${downside.distanceText} below` : "—",
+    position,
+  };
+}
+function buildCurrentPriceDetailDataV2(mapData){
   const price = marketPreparationState.currentPrice;
+  const change24hPct = marketPreparationState.ticker?.change24hPct;
+  const sentiment = marketPreparationState.sentiment || { value:null, label:null, updatedAt:null };
+  const weeklyBias = marketPreparationState.mtf?.weeklyBias || "Unavailable";
+  const weeklyFvg = (marketPreparationState.weekly?.fvgZones||[])[0] || null;
+  const weeklySr = marketPreparationState.weekly?.srSummary || null;
   const h4Status = marketPreparationState.h4?.structureStatus || "Unavailable";
   const h4Rsi = marketPreparationState.h4?.rsiStatus || { ok:false, value:null, regime:null, slope:null, label:"4H RSI unavailable" };
+  const h4Volume = marketPreparationState.h4?.volumeStatus || null;
   const h1Sweep = marketPreparationState.h1?.sweepStatus || "Unavailable";
   const h1Structure = marketPreparationState.h1?.structureStatus || "Unavailable";
   const contains = (txt, key)=>String(txt||"").toLowerCase().includes(String(key).toLowerCase());
@@ -660,29 +712,75 @@ function buildCurrentPriceDetailData(){
       : (contains(h4Rsi.label,"Overbought") && contains(h1Sweep,"Bearish Sweep"))
         ? "Avoid chasing long. Watch rejection near upside reaction zone."
         : "Keep preparation neutral and wait for multi-timeframe confirmation.";
+  const weeklyFvgText = weeklyFvg ? `${weeklyFvg.type || "Weekly FVG"} ${Number.isFinite(price)&&price<weeklyFvg.lower?"above":Number.isFinite(price)&&price>weeklyFvg.upper?"below":"nearby"}` : "—";
+  const weeklySrText = weeklySr?.support && weeklySr?.resistance ? "Price between weekly zones" : (weeklySr?.support || weeklySr?.resistance) ? "Price near weekly zone" : "—";
+  const keyZone = getKeyZonePositionContext(mapData, marketPreparationState);
   return {
     compactRowText: Number.isFinite(price)
       ? `● ${usd(price)} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
       : "● Price unavailable | Waiting for ticker/4H/1H context",
-    price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable" },
+    price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable", change24hPct: Number.isFinite(change24hPct) ? change24hPct : null },
+    sentiment: { value: Number.isFinite(Number(sentiment.value)) ? Number(sentiment.value) : null, label: sentiment.label || null, meaning: getSentimentMeaning(Number(sentiment.value), sentiment.label) },
+    weekly: { bias: weeklyBias, fvg: weeklyFvgText, sr: weeklySrText, meaning: weeklyBias !== "Unavailable" ? "Weekly context still defines the main reaction zones." : "Weekly context unavailable." },
     h4Structure: { status: h4Status, brokenLevel: null, latestClose: null, meaning: h4Meaning },
     h4Rsi: { ok: !!h4Rsi.ok, value: Number.isFinite(h4Rsi.value) ? h4Rsi.value : null, regime: h4Rsi.regime || null, slope: h4Rsi.slope || null, label: h4Rsi.label || "4H RSI unavailable", meaning: h4RsiMeaning },
+    h4Volume: { label: h4Volume?.label || null, ratio: Number.isFinite(h4Volume?.ratio) ? h4Volume.ratio : null },
+    h4ContextMeaning: (contains(h4Status,"Bearish BOS") || contains(h4Status,"Bearish CHoCH")) ? "Downside reaction pressure exists; monitor reclaim attempts." : contains(h4Rsi.label,"Oversold") ? "Downside pressure exists, but bounce risk can increase." : "4H context is mixed; watch zone reactions.",
     h1Sweep: { status: h1Sweep, sweptLevel: null, distancePct: null, meaning: h1SweepMeaning },
     h1Structure: { status: h1Structure, brokenLevel: null, latestClose: null, meaning: h1StructureMeaning },
+    h1TimingMeaning: contains(h1Sweep,"Bullish Sweep") ? "Buyer reaction appeared, but reversal confirmation still needed." : contains(h1Sweep,"Bearish Sweep") ? "Seller reaction appeared; watch continuation or failed follow-through." : "Timing confirmation is still limited.",
+    keyZone,
     preparation: { note: prepNote }
   };
 }
-function renderCurrentPriceDetail(detail){
+function renderCurrentPriceDetailCards(detail){
   if(!els.prepCurrentDetailContent) return;
-  const nUsd = (v)=>Number.isFinite(v) ? usd(v) : "—";
-  const nPct = (v)=>Number.isFinite(v) ? `${f1(v)}%` : "—";
+  const nPct = (v)=>Number.isFinite(v) ? `${v>=0?"+":""}${f1(v)}%` : "—";
+  const nNum = (v)=>Number.isFinite(v) ? f1(v) : "—";
   els.prepCurrentDetailContent.innerHTML = `
-    <div class="prep-current-detail-block"><span class="prep-current-detail-label">Price:</span> ${detail.price.text}</div>
-    <div class="prep-current-detail-block"><span class="prep-current-detail-label">4H Structure:</span> ${detail.h4Structure.status}<br>Broken level: ${nUsd(detail.h4Structure.brokenLevel)}<br>Latest close: ${nUsd(detail.h4Structure.latestClose)}<br>Meaning: ${detail.h4Structure.meaning}</div>
-    <div class="prep-current-detail-block"><span class="prep-current-detail-label">4H RSI:</span> ${detail.h4Rsi.label}<br>RSI: ${detail.h4Rsi.value ?? "—"}<br>Regime: ${detail.h4Rsi.regime || "—"}<br>Slope: ${detail.h4Rsi.slope || "—"}<br>Meaning: ${detail.h4Rsi.meaning}</div>
-    <div class="prep-current-detail-block"><span class="prep-current-detail-label">1H Liquidity Sweep:</span> ${detail.h1Sweep.status}<br>Swept level: ${nUsd(detail.h1Sweep.sweptLevel)}<br>Distance: ${nPct(detail.h1Sweep.distancePct)}<br>Meaning: ${detail.h1Sweep.meaning}</div>
-    <div class="prep-current-detail-block"><span class="prep-current-detail-label">1H Structure:</span> ${detail.h1Structure.status}<br>Broken level: ${nUsd(detail.h1Structure.brokenLevel)}<br>Latest close: ${nUsd(detail.h1Structure.latestClose)}<br>Meaning: ${detail.h1Structure.meaning}</div>
-    <div class="prep-current-detail-note"><span class="prep-current-detail-label">Preparation:</span> ${detail.preparation.note}</div>
+    <div class="prep-current-detail-cards">
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">Price</h4>
+        <p class="prep-current-detail-kv">Current: ${detail.price.text}</p>
+        <p class="prep-current-detail-kv">24H: ${nPct(detail.price.change24hPct)}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">Sentiment</h4>
+        <p class="prep-current-detail-kv">Fear & Greed: ${detail.sentiment.value ?? "—"}</p>
+        <p class="prep-current-detail-kv">Label: ${detail.sentiment.label || "—"}</p>
+        <p class="prep-current-detail-meaning">${detail.sentiment.meaning}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">Weekly Context</h4>
+        <p class="prep-current-detail-kv">Weekly Bias: ${detail.weekly.bias}</p>
+        <p class="prep-current-detail-kv">Weekly FVG: ${detail.weekly.fvg}</p>
+        <p class="prep-current-detail-kv">Weekly S/R: ${detail.weekly.sr}</p>
+        <p class="prep-current-detail-meaning">${detail.weekly.meaning}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">4H Context</h4>
+        <p class="prep-current-detail-kv">Structure: ${detail.h4Structure.status}</p>
+        <p class="prep-current-detail-kv">RSI: ${detail.h4Rsi.ok ? `${nNum(detail.h4Rsi.value)} · ${detail.h4Rsi.regime||"—"} · ${detail.h4Rsi.slope||"—"}` : "—"}</p>
+        <p class="prep-current-detail-kv">Volume: ${detail.h4Volume.label ? `${detail.h4Volume.label} (${nNum(detail.h4Volume.ratio)}x)` : "—"}</p>
+        <p class="prep-current-detail-meaning">${detail.h4ContextMeaning}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">1H Timing</h4>
+        <p class="prep-current-detail-kv">Sweep: ${detail.h1Sweep.status}</p>
+        <p class="prep-current-detail-kv">Structure: ${detail.h1Structure.status}</p>
+        <p class="prep-current-detail-meaning">${detail.h1TimingMeaning}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">Key Zone Position</h4>
+        <p class="prep-current-detail-kv">Nearest Upside: ${detail.keyZone.nearestUpside}</p>
+        <p class="prep-current-detail-kv">Nearest Downside: ${detail.keyZone.nearestDownside}</p>
+        <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
+      </article>
+      <article class="prep-current-detail-card prep-current-detail-preparation">
+        <h4 class="prep-current-detail-card-title">Preparation</h4>
+        <p class="prep-current-detail-meaning">${detail.preparation.note}</p>
+      </article>
+    </div>
   `;
 }
 function setCurrentPriceDetailState(isOpen){
@@ -705,9 +803,9 @@ function renderMarketPreparationMap(mapData){
   const row = (r)=>`<div class="prep-map-row"><span class="prep-map-row-symbol">${r.symbol}</span><span class="prep-map-row-zone">${r.zoneText}</span><span class="prep-map-row-label">${r.label}</span><span class="prep-map-row-quality">${r.quality}</span><span class="prep-map-row-distance">${r.distanceText}</span></div>`;
   if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = mapData.upside.length ? mapData.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
   if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = mapData.downside.length ? mapData.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
-  const detail = buildCurrentPriceDetailData();
+  const detail = buildCurrentPriceDetailDataV2(mapData);
   if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
-  renderCurrentPriceDetail(detail);
+  renderCurrentPriceDetailCards(detail);
   setCurrentPriceDetailState(prepCurrentDetailOpen);
 }
 
@@ -895,7 +993,21 @@ function renderWeeklyCandleCharacter(dataset){
   }
 }
 
-function renderFearGreed(data){ const l=data?.data?.[0]; if(!l){ if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; return; } const ts=Number(l.timestamp)*1000; const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown"; if(els.leftFearGreed){ els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`; els.leftFearGreed.title=`Updated: ${t}`; } }
+function renderFearGreed(data){
+  const l=data?.data?.[0];
+  if(!l){
+    if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable";
+    updateMarketPreparationState({ sentiment: { value: null, label: null, updatedAt: null } });
+    return;
+  }
+  const ts=Number(l.timestamp)*1000;
+  const t=Number.isFinite(ts)?new Date(ts).toLocaleString():"unknown";
+  if(els.leftFearGreed){
+    els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`;
+    els.leftFearGreed.title=`Updated: ${t}`;
+  }
+  updateMarketPreparationState({ sentiment: { value: Number(l.value), label: l.value_classification || null, updatedAt: Number.isFinite(ts) ? ts : null } });
+}
 
 
 function getClosedWeeklyCandles(dataset){
@@ -1648,6 +1760,7 @@ function render4hFvgSummaryAndOverlay(candles){
   try {
     latest4hCandles = candles;
     const rsiStatus = compute4hRsiStatus(candles, RSI_PERIOD);
+    const volumeStatus = compute4hVolumeStatus(candles);
     if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); latest4hSrSummary={ok:false,reason:'not_enough_candles'}; clear4hSrOverlay(); return; }
     clear4hFvgOverlay();
     const current=candles[candles.length-1]?.close;
@@ -1660,7 +1773,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status, rsiStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -1672,7 +1785,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const srSummary = scan4hSupportResistance(candles);
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
-    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status, rsiStatus }, meta: { sourcesReady: { h4: true } } });
+    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
@@ -2052,7 +2165,7 @@ function renderTicker(t){
   els.btc24hInline.textContent=`24h: ${ch>=0?"+":""}${ch.toFixed(1)}%`;
   els.btc24hInline.className=`meta ${ch>0?"pos":ch<0?"neg":"neu"}`;
   els.btcPriceMeta.textContent="BTCUSDT 24h ticker";
-  updateMarketPreparationState({ currentPrice: p, meta: { sourcesReady: { ticker: true } } });
+  updateMarketPreparationState({ currentPrice: p, ticker: { change24hPct: ch }, meta: { sourcesReady: { ticker: true } } });
   renderMarketPreparationMap(buildMarketPreparationMap());
 }
 
