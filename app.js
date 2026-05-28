@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 13:20";
+const APP_LAST_UPDATED = "2026-05-28 14:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -29,7 +29,8 @@ const els = {
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
-  weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyManageLinesBtn: document.getElementById("weeklyManageLinesBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4ManageLinesBtn: document.getElementById("h4ManageLinesBtn"),
+  weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageLinesBtn: document.getElementById("weeklyManageLinesBtn"), weeklyManageDrawingsBtn: document.getElementById("weeklyManageDrawingsBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageLinesBtn: document.getElementById("h4ManageLinesBtn"), h4ManageDrawingsBtn: document.getElementById("h4ManageDrawingsBtn"),
+  weeklyTrendlineOverlay: document.getElementById("weeklyTrendlineOverlay"), h4TrendlineOverlay: document.getElementById("h4TrendlineOverlay"),
 };
 
 let priceChart = null;
@@ -63,12 +64,16 @@ let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
 const MANUAL_LINES_KEY = "pl_manual_chart_lines_v1";
+const MANUAL_DRAWINGS_KEY = "pl_manual_chart_drawings_v1";
 const MAX_MANUAL_LINES_PER_CHART = 30;
+const MAX_MANUAL_DRAWINGS_PER_CHART = 30;
 let manualChartLines = { weekly: [], h4: [] };
+let manualChartDrawings = { weekly: [], h4: [] };
 const manualLineHandles = { weekly: [], h4: [] };
 let manualLinePlacement = { active: false, chartKey: null };
 let weeklyPlacementHandler = null;
 let h4PlacementHandler = null;
+let trendlineDrawMode = { active: false, chartKey: null, startPoint: null };
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
 const marketPreparationState = {
   currentPrice: null,
@@ -159,7 +164,19 @@ function loadManualChartLines(){
   }
 }
 function saveManualChartLines(){ try { localStorage.setItem(MANUAL_LINES_KEY, JSON.stringify(manualChartLines)); } catch(_){} }
+function loadManualChartDrawings(){
+  try{
+    const raw = localStorage.getItem(MANUAL_DRAWINGS_KEY);
+    if(!raw) return { weekly: [], h4: [] };
+    const parsed = JSON.parse(raw);
+    return { weekly: Array.isArray(parsed?.weekly) ? parsed.weekly : [], h4: Array.isArray(parsed?.h4) ? parsed.h4 : [] };
+  }catch{
+    return { weekly: [], h4: [] };
+  }
+}
+function saveManualChartDrawings(){ try { localStorage.setItem(MANUAL_DRAWINGS_KEY, JSON.stringify(manualChartDrawings)); } catch(_){} }
 function getManualLines(chartKey){ return Array.isArray(manualChartLines?.[chartKey]) ? manualChartLines[chartKey] : []; }
+function getManualDrawings(chartKey){ return Array.isArray(manualChartDrawings?.[chartKey]) ? manualChartDrawings[chartKey] : []; }
 function addManualLine(chartKey, lineData){
   if(!manualChartLines[chartKey]) manualChartLines[chartKey] = [];
   if(manualChartLines[chartKey].length >= MAX_MANUAL_LINES_PER_CHART) return false;
@@ -173,6 +190,19 @@ function deleteManualLine(chartKey, lineId){
   saveManualChartLines();
 }
 function clearManualLines(chartKey){ manualChartLines[chartKey] = []; saveManualChartLines(); }
+function addManualDrawing(chartKey, drawing){
+  if(!manualChartDrawings[chartKey]) manualChartDrawings[chartKey] = [];
+  if(manualChartDrawings[chartKey].length >= MAX_MANUAL_DRAWINGS_PER_CHART) return false;
+  manualChartDrawings[chartKey].push(drawing);
+  saveManualChartDrawings();
+  return true;
+}
+function deleteManualDrawing(chartKey, drawingId){
+  if(!Array.isArray(manualChartDrawings?.[chartKey])) return;
+  manualChartDrawings[chartKey] = manualChartDrawings[chartKey].filter((d)=>d.id !== drawingId);
+  saveManualChartDrawings();
+}
+function clearManualDrawings(chartKey){ manualChartDrawings[chartKey] = []; saveManualChartDrawings(); }
 function buildPriceLineOptions(line){
   const byType = {
     "Support": { color: "rgba(56, 189, 248, 0.72)" },
@@ -279,6 +309,7 @@ function handleChartLinePlacementClick(chartKey, event){
 }
 function enableManualLinePlacement(chartKey){
   if(manualLinePlacement.active && manualLinePlacement.chartKey === chartKey){ disableManualLinePlacement(); return; }
+  disableTrendlineDrawMode();
   disableManualLinePlacement();
   const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
   if(!series){ window.alert("Chart is not ready yet."); return; }
@@ -287,13 +318,142 @@ function enableManualLinePlacement(chartKey){
 }
 function attachWeeklyPlacementListener(){
   if(weeklyPlacementHandler && els.priceChart) els.priceChart.removeEventListener("click", weeklyPlacementHandler);
-  weeklyPlacementHandler = (e)=>handleChartLinePlacementClick("weekly", e);
+  weeklyPlacementHandler = (e)=>{ handleChartLinePlacementClick("weekly", e); handleTrendlineChartClick("weekly", e); };
   els.priceChart?.addEventListener("click", weeklyPlacementHandler);
 }
 function attach4hPlacementListener(){
   if(h4PlacementHandler && els.lower4hChart) els.lower4hChart.removeEventListener("click", h4PlacementHandler);
-  h4PlacementHandler = (e)=>handleChartLinePlacementClick("h4", e);
+  h4PlacementHandler = (e)=>{ handleChartLinePlacementClick("h4", e); handleTrendlineChartClick("h4", e); };
   els.lower4hChart?.addEventListener("click", h4PlacementHandler);
+}
+function clearTrendlineOverlay(chartKey){
+  const layer = chartKey === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
+  if(layer) layer.innerHTML = "";
+}
+function buildDrawingStyle(drawing){
+  const map = {
+    "Support": "#38bdf8",
+    "Resistance": "#fbbf24",
+    "Alert": "#a855f7",
+    "Entry": "#22c55e",
+    "Stop Loss": "#ef4444",
+    "Take Profit": "#14b8a6",
+    "Custom": "#94a3b8",
+  };
+  return map[drawing.type] || map.Custom;
+}
+function renderTrendlinesForChart(chartKey){
+  try{
+    const layer = chartKey === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
+    const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
+    const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
+    if(!layer || !chart || !series){ clearTrendlineOverlay(chartKey); return; }
+    const drawings = getManualDrawings(chartKey).filter((d)=>d.kind==="trendline");
+    if(!drawings.length){ clearTrendlineOverlay(chartKey); return; }
+    const svgns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgns, "svg");
+    drawings.forEach((d)=>{
+      const x1 = chart.timeScale().timeToCoordinate(d.start?.time);
+      const x2 = chart.timeScale().timeToCoordinate(d.end?.time);
+      const y1 = series.priceToCoordinate(Number(d.start?.price));
+      const y2 = series.priceToCoordinate(Number(d.end?.price));
+      if(!Number.isFinite(x1)||!Number.isFinite(x2)||!Number.isFinite(y1)||!Number.isFinite(y2)) return;
+      const color = buildDrawingStyle(d);
+      const line = document.createElementNS(svgns, "line");
+      line.setAttribute("x1", `${x1}`); line.setAttribute("y1", `${y1}`);
+      line.setAttribute("x2", `${x2}`); line.setAttribute("y2", `${y2}`);
+      line.setAttribute("stroke", color); line.setAttribute("class", "trendline");
+      svg.appendChild(line);
+      const label = document.createElementNS(svgns, "text");
+      label.setAttribute("x", `${x2 + 4}`); label.setAttribute("y", `${y2 - 4}`);
+      label.setAttribute("class", "trendline-label");
+      label.textContent = d.label || d.type || "Trendline";
+      svg.appendChild(label);
+    });
+    layer.innerHTML = "";
+    layer.appendChild(svg);
+  }catch(_){}
+}
+function scheduleTrendlineRedraw(chartKey){
+  requestAnimationFrame(()=>renderTrendlinesForChart(chartKey));
+}
+function setTrendlineDrawUiState(chartKey, text){
+  const btn = chartKey === "weekly" ? els.weeklyDrawTrendlineBtn : els.h4DrawTrendlineBtn;
+  if(!btn) return;
+  btn.classList.toggle("active-draw", !!text);
+  btn.textContent = text || "Draw Trendline";
+}
+function disableTrendlineDrawMode(){
+  const activeChart = trendlineDrawMode.chartKey;
+  trendlineDrawMode = { active: false, chartKey: null, startPoint: null };
+  setTrendlineDrawUiState("weekly", null);
+  setTrendlineDrawUiState("h4", null);
+  if(activeChart) {
+    const layer = activeChart === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
+    if(layer) layer.style.pointerEvents = "none";
+  }
+}
+function getChartPointFromClick(chartKey, event){
+  const container = chartKey === "weekly" ? els.priceChart : els.lower4hChart;
+  const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
+  const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
+  if(!container || !chart || !series) return null;
+  const rect = container.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>rect.width||y>rect.height) return null;
+  const price = series.coordinateToPrice(y);
+  const time = chart.timeScale().coordinateToTime(x);
+  if(!Number.isFinite(price) || !time) return null;
+  return { time, price: Number(price) };
+}
+function handleTrendlineChartClick(chartKey, event){
+  if(!trendlineDrawMode.active || trendlineDrawMode.chartKey !== chartKey) return;
+  const point = getChartPointFromClick(chartKey, event);
+  if(!point) return;
+  if(!trendlineDrawMode.startPoint){
+    trendlineDrawMode.startPoint = point;
+    setTrendlineDrawUiState(chartKey, "Click end point");
+    return;
+  }
+  const labelRaw = window.prompt("Enter trendline label:", "Manual Trendline");
+  if(labelRaw === null){ disableTrendlineDrawMode(); return; }
+  const typeRaw = window.prompt("Type: Support / Resistance / Alert / Entry / Stop Loss / Take Profit / Custom", "Custom");
+  if(typeRaw === null){ disableTrendlineDrawMode(); return; }
+  const drawing = { id:`${chartKey}_tl_${Date.now()}_${Math.random().toString(36).slice(2,7)}`, chart: chartKey, kind:"trendline", label:(labelRaw||"Manual Trendline").trim(), type: normalizeManualLineType(typeRaw), start: trendlineDrawMode.startPoint, end: point, createdAt: new Date().toISOString() };
+  if(!addManualDrawing(chartKey, drawing)){ window.alert(`Maximum ${MAX_MANUAL_DRAWINGS_PER_CHART} drawings reached for this chart.`); disableTrendlineDrawMode(); return; }
+  renderTrendlinesForChart(chartKey);
+  disableTrendlineDrawMode();
+}
+function enableTrendlineDrawMode(chartKey){
+  if(trendlineDrawMode.active && trendlineDrawMode.chartKey === chartKey){ disableTrendlineDrawMode(); return; }
+  const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
+  const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
+  if(!chart || !series){ window.alert("Chart is not ready yet."); return; }
+  disableManualLinePlacement();
+  disableTrendlineDrawMode();
+  trendlineDrawMode = { active: true, chartKey, startPoint: null };
+  const layer = chartKey === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
+  if(layer) layer.style.pointerEvents = "none";
+  setTrendlineDrawUiState(chartKey, "Click start point");
+}
+function handleManageDrawings(chartKey){
+  try{
+    const drawings = getManualDrawings(chartKey).filter((d)=>d.kind==="trendline");
+    if(!drawings.length){ window.alert("No trendlines on this chart."); return; }
+    const list = drawings.map((d,i)=>`${i+1}) Trendline | ${d.type || "Custom"} | ${d.label || "Manual Trendline"}`).join("\n");
+    const cmd = window.prompt(`${list}\n\nCommands:\nd:2 = delete item 2\nclear = clear all\n(cancel = no action)`, "");
+    if(!cmd) return;
+    const c = cmd.trim().toLowerCase();
+    if(c === "clear"){
+      if(window.confirm("Clear all drawings for this chart?")){ clearManualDrawings(chartKey); renderTrendlinesForChart(chartKey); }
+      return;
+    }
+    if(c.startsWith("d:")){
+      const idx = Number(c.split(":")[1]) - 1;
+      if(Number.isInteger(idx) && idx >= 0 && idx < drawings.length){ deleteManualDrawing(chartKey, drawings[idx].id); renderTrendlinesForChart(chartKey); }
+    }
+  }catch(_){}
 }
 function prepDistancePct(price, lower, upper){
   if(!Number.isFinite(price)||!Number.isFinite(lower)||!Number.isFinite(upper)) return null;
@@ -439,6 +599,7 @@ function renderPriceChart(dataset){
   candleSeries.setData(candles);
   attachWeeklyPlacementListener();
   applyManualLinesToWeeklyChart();
+  renderTrendlinesForChart("weekly");
   priceChart.timeScale().fitContent();
 }
 
@@ -856,8 +1017,8 @@ function renderFvgOverlay(activeFvgs, dataset){
     renderFvgFilledOverlay();
     render4hVsWeeklyFvgSummary();
 
-    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); });
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); });
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
   } catch (e) {
     console.error("FVG overlay render failed", e);
   }
@@ -904,18 +1065,22 @@ function setupCollapsibleSections(){
   els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1m'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
   els.weeklyAddLineBtn?.addEventListener('click', ()=>handleAddLine('weekly'));
   els.weeklyDrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('weekly'));
+  els.weeklyDrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('weekly'));
   els.weeklyManageLinesBtn?.addEventListener('click', ()=>handleManageLines('weekly'));
+  els.weeklyManageDrawingsBtn?.addEventListener('click', ()=>handleManageDrawings('weekly'));
   els.h4AddLineBtn?.addEventListener('click', ()=>handleAddLine('h4'));
   els.h4DrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('h4'));
+  els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageLinesBtn?.addEventListener('click', ()=>handleManageLines('h4'));
-  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape") disableManualLinePlacement(); });
+  els.h4ManageDrawingsBtn?.addEventListener('click', ()=>handleManageDrawings('h4'));
+  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); } });
   setLtfPresetUI('1m');
   restoreToggleState();
   if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('1M'); lowerTimeframeLoaded=true; }); }
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); }
+function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); clearTrendlineOverlay("h4"); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); if(trendlineDrawMode.chartKey==='h4') disableTrendlineDrawMode(); }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
@@ -984,10 +1149,11 @@ async function renderLowerTimeframeMode(mode="1W"){
         attach4hPlacementListener();
         ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
         ltf4hChart.timeScale().fitContent();
-        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
-        ltf4hChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
+        ltf4hChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); scheduleTrendlineRedraw("h4"); } catch(err){ console.error('4H overlay redraw failed', err); } });
+        ltf4hChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); scheduleTrendlineRedraw("h4"); } catch(err){ console.error('4H overlay redraw failed', err); } });
         try { render4hFvgSummaryAndOverlay(candles); } catch(err){ console.error('4H FVG overlay redraw failed', err); }
         applyManualLinesTo4hChart();
+        renderTrendlinesForChart("h4");
         requestAnimationFrame(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
         setTimeout(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } },50);
         console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
@@ -1797,10 +1963,13 @@ loadVersionMeta();
 loadDashboard();
 
 manualChartLines = loadManualChartLines();
+manualChartDrawings = loadManualChartDrawings();
 setupCollapsibleSections();
 
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
+  scheduleTrendlineRedraw("weekly");
+  scheduleTrendlineRedraw("h4");
   if(ltf4hChart) { schedule4hFvgOverlayRedraw(latest4hCandles); schedule4hSrOverlayRedraw(latest4hCandles); renderLowerTfReactionSummary(); }
 });
