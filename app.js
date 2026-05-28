@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 11:05";
+const APP_LAST_UPDATED = "2026-05-28 11:40";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -65,7 +65,7 @@ const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: n
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], srSummary: null },
-  h4: { fvgZones: [], srSummary: null, structureStatus: null },
+  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null },
   h1: { sweepStatus: null, structureStatus: null },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
@@ -146,6 +146,31 @@ function prepDistancePct(price, lower, upper){
   if(price > upper) return ((price-upper)/price)*100;
   return 0;
 }
+function compute4hRsiStatus(candles, period = 14){
+  try{
+    if(!Array.isArray(candles) || candles.length < (period + 1)) return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"not_enough_candles" };
+    const closes = candles.map(c=>Number(c.close)).filter(Number.isFinite);
+    if(closes.length < (period + 1)) return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"not_enough_candles" };
+    const series = calculateRsiSeries(closes, period);
+    if(!Array.isArray(series) || series.length < 1) return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"insufficient_rsi" };
+    const value = Number(series[series.length-1]);
+    const prev = series.length > 1 ? Number(series[series.length-2]) : null;
+    if(!Number.isFinite(value)) return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"invalid_rsi" };
+    const d = Number.isFinite(prev) ? (value - prev) : 0;
+    const slope = !Number.isFinite(prev) ? null : (Math.abs(d) < 0.15 ? "flat" : (d > 0 ? "rising" : "falling"));
+    const regime = value >= 70 ? "Overbought" : value <= 30 ? "Oversold" : value >= 50 ? "Above 50" : "Below 50";
+    let label = "4H RSI unavailable";
+    if(value >= 70) label = "4H RSI Overbought";
+    else if(value <= 30) label = "4H RSI Oversold";
+    else if(value < 50 && slope === "rising") label = "4H RSI Recovering";
+    else if(value > 50 && slope === "falling") label = "4H RSI Weakening";
+    else if(value >= 50) label = "4H RSI Above 50 ↑";
+    else if(value < 50) label = "4H RSI Below 50 ↓";
+    return { ok:true, value:Number(value.toFixed(1)), prev:Number.isFinite(prev)?Number(prev.toFixed(1)):null, slope, regime, label, reason:null };
+  }catch{
+    return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"compute_failed" };
+  }
+}
 function buildMarketPreparationMap(){
   try{
     const price = marketPreparationState.currentPrice;
@@ -174,8 +199,9 @@ function buildMarketPreparationMap(){
     };
     const upside = dedupe(rows.filter((r)=>r.side==='upside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)>price : true));
     const downside = dedupe(rows.filter((r)=>r.side==='downside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)<price : true));
+    const h4RsiText = marketPreparationState.h4.rsiStatus?.ok ? ` | ${marketPreparationState.h4.rsiStatus.label}` : "";
     const currentRowText = Number.isFinite(price)
-      ? `● ${usd(price)} | ${marketPreparationState.h4.structureStatus||'4H —'} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`
+      ? `● ${usd(price)} | ${marketPreparationState.h4.structureStatus||'4H —'}${h4RsiText} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`
       : "● Price unavailable | Waiting for ticker/4H/1H context";
     return { upside, downside, currentRowText };
   } catch {
@@ -1100,6 +1126,7 @@ function schedule4hFvgOverlayRedraw(candles){
 function render4hFvgSummaryAndOverlay(candles){
   try {
     latest4hCandles = candles;
+    const rsiStatus = compute4hRsiStatus(candles, RSI_PERIOD);
     if(!ltf4hChart || !ltf4hSeries){ if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='4H FVG: 4H data unavailable.'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); latest4hSrSummary={ok:false,reason:'not_enough_candles'}; clear4hSrOverlay(); return; }
     clear4hFvgOverlay();
     const current=candles[candles.length-1]?.close;
@@ -1112,7 +1139,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status, rsiStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -1124,7 +1151,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const srSummary = scan4hSupportResistance(candles);
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
-    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status }, meta: { sourcesReady: { h4: true } } });
+    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status, rsiStatus }, meta: { sourcesReady: { h4: true } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
