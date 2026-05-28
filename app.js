@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 14:05";
+const APP_LAST_UPDATED = "2026-05-28 14:30";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -353,11 +353,16 @@ function renderTrendlinesForChart(chartKey){
     const svgns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgns, "svg");
     drawings.forEach((d)=>{
-      const x1 = chart.timeScale().timeToCoordinate(d.start?.time);
-      const x2 = chart.timeScale().timeToCoordinate(d.end?.time);
+      const startNorm = normalizeTrendlineTimeForChart(chartKey, d.start?.time);
+      const endNorm = normalizeTrendlineTimeForChart(chartKey, d.end?.time);
+      const x1 = startNorm == null ? null : chart.timeScale().timeToCoordinate(startNorm);
+      const x2 = endNorm == null ? null : chart.timeScale().timeToCoordinate(endNorm);
       const y1 = series.priceToCoordinate(Number(d.start?.price));
       const y2 = series.priceToCoordinate(Number(d.end?.price));
-      if(!Number.isFinite(x1)||!Number.isFinite(x2)||!Number.isFinite(y1)||!Number.isFinite(y2)) return;
+      if(!Number.isFinite(x1)||!Number.isFinite(x2)||!Number.isFinite(y1)||!Number.isFinite(y2)){
+        console.warn("Trendline coordinate conversion failed", { chartKey, startTime: d.start?.time, endTime: d.end?.time, startNorm, endNorm });
+        return;
+      }
       const color = buildDrawingStyle(d);
       const line = document.createElementNS(svgns, "line");
       line.setAttribute("x1", `${x1}`); line.setAttribute("y1", `${y1}`);
@@ -393,6 +398,40 @@ function disableTrendlineDrawMode(){
     if(layer) layer.style.pointerEvents = "none";
   }
 }
+function normalizeTrendlineTimeForChart(chartKey, time){
+  if(time == null) return null;
+  const toDateString = (input)=>{
+    if(typeof input === "string"){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+      const d = new Date(input);
+      return Number.isFinite(d.getTime()) ? d.toISOString().slice(0,10) : null;
+    }
+    if(typeof input === "number"){
+      const ms = input > 1e12 ? input : input * 1000;
+      const d = new Date(ms);
+      return Number.isFinite(d.getTime()) ? d.toISOString().slice(0,10) : null;
+    }
+    if(typeof input === "object" && "year" in input && "month" in input && "day" in input){
+      const mm = String(input.month).padStart(2,"0");
+      const dd = String(input.day).padStart(2,"0");
+      return `${input.year}-${mm}-${dd}`;
+    }
+    return null;
+  };
+  const toUnix = (input)=>{
+    if(typeof input === "number") return Number.isFinite(input) ? Math.floor(input > 1e12 ? input/1000 : input) : null;
+    if(typeof input === "string"){
+      const d = new Date(input);
+      return Number.isFinite(d.getTime()) ? Math.floor(d.getTime()/1000) : null;
+    }
+    if(typeof input === "object" && "year" in input && "month" in input && "day" in input){
+      const d = new Date(Date.UTC(input.year, input.month-1, input.day, 0, 0, 0));
+      return Number.isFinite(d.getTime()) ? Math.floor(d.getTime()/1000) : null;
+    }
+    return null;
+  };
+  return chartKey === "weekly" ? toDateString(time) : toUnix(time);
+}
 function getChartPointFromClick(chartKey, event){
   const container = chartKey === "weekly" ? els.priceChart : els.lower4hChart;
   const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
@@ -403,7 +442,8 @@ function getChartPointFromClick(chartKey, event){
   const y = event.clientY - rect.top;
   if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>rect.width||y>rect.height) return null;
   const price = series.coordinateToPrice(y);
-  const time = chart.timeScale().coordinateToTime(x);
+  const rawTime = chart.timeScale().coordinateToTime(x);
+  const time = normalizeTrendlineTimeForChart(chartKey, rawTime);
   if(!Number.isFinite(price) || !time) return null;
   return { time, price: Number(price) };
 }
