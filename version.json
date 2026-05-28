@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-05-28 15:15",
+  "version": "v0.1.50",
+  "commitLabel": "manual",
+  "note": "Fix drawing manager modal hidden state on page load"
+}
