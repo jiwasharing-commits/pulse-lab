@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 11:40";
+const APP_LAST_UPDATED = "2026-05-28 12:20";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -28,7 +28,7 @@ const els = {
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
-  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
+  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
 };
 
 let priceChart = null;
@@ -55,9 +55,9 @@ let latest4hSrSummary = null;
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
-let activeLowerTfMode = "1W";
+let activeLowerTfMode = "1M";
 let ltfVisible = false;
-let ltfPreset = "1w";
+let ltfPreset = "1m";
 let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
@@ -724,24 +724,30 @@ function restoreToggleState(){
 function setLtfPresetUI(preset){
   ltfPreset = preset;
   const act=(el,on)=>{ if(!el) return; el.classList.toggle('active', on); };
-  act(els.ltfPreset1w, preset==='1w'); act(els.ltfPreset2w, preset==='2w'); act(els.ltfPresetCustom, preset==='custom');
+  act(els.ltfPreset1w, preset==='1w');
+  act(els.ltfPreset2w, preset==='2w');
+  act(els.ltfPreset1m, preset==='1m');
+  act(els.ltfPreset3m, preset==='3m');
+  act(els.ltfPresetCustom, preset==='custom');
   if(els.ltfDateControls) els.ltfDateControls.hidden = preset!=='custom';
 }
 
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1w'); renderLowerTimeframeMode('1W'); } else { renderLowerTimeframeMode(ltfPreset==='2w'?'2W':'1W'); } }); } else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1m'); renderLowerTimeframeMode('1M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderLowerTimeframeMode(m[ltfPreset] || '1M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
   els.fvgViewDetailsBtn?.addEventListener('click', ()=>{ setToggleState('fvg', true); document.getElementById('fvgPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   els.biasViewDetailsBtn?.addEventListener('click', ()=>{ setToggleState('bias', true); document.getElementById('biasScannerPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
   els.ltfPreset1w?.addEventListener('click', ()=>{ setLtfPresetUI('1w'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('1W'); } });
   els.ltfPreset2w?.addEventListener('click', ()=>{ setLtfPresetUI('2w'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('2W'); } });
+  els.ltfPreset1m?.addEventListener('click', ()=>{ setLtfPresetUI('1m'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('1M'); } });
+  els.ltfPreset3m?.addEventListener('click', ()=>{ setLtfPresetUI('3m'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('3M'); } });
   els.ltfPresetCustom?.addEventListener('click', ()=>{ setLtfPresetUI('custom'); });
   els.ltfApplyBtn?.addEventListener('click', ()=>{ lowerTimeframeLoaded=true; renderLowerTimeframeMode('CUSTOM'); });
-  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1w'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
-  setLtfPresetUI('1w');
+  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1m'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
+  setLtfPresetUI('1m');
   restoreToggleState();
-  if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('1W'); lowerTimeframeLoaded=true; }); }
+  if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('1M'); lowerTimeframeLoaded=true; }); }
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
@@ -785,17 +791,21 @@ async function renderLowerTimeframeMode(mode="1W"){
   if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML='';
   if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML='';
 
-  let st=null, et=null, preset='1w';
+  let st=null, et=null, preset='1m';
   if(mode==='2W') preset='2w';
+  if(mode==='1M') preset='1m';
+  if(mode==='3M') preset='3m';
   if(mode==='CUSTOM') preset='custom';
-  if(mode==='RESET') preset='1w';
+  if(mode==='RESET') preset='1m';
   const hasRange = preset==='custom' && els.ltfStartDate.value && els.ltfEndDate.value;
   if(hasRange){
     st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
     et = new Date(`${els.ltfEndDate.value}T23:59:59`).getTime();
   }
-  const limit4h = hasRange ? 1000 : (preset==='2w' ? 84 : 42);
-  const limit1h = hasRange ? 1000 : (preset==='2w' ? 336 : 168);
+  const limit4hByPreset = { '1w': 42, '2w': 84, '1m': 180, '3m': 540 };
+  const limit1hByPreset = { '1w': 168, '2w': 336, '1m': 336, '3m': 336 };
+  const limit4h = hasRange ? 1000 : (limit4hByPreset[preset] || 180);
+  const limit1h = hasRange ? 1000 : (limit1hByPreset[preset] || 336);
   console.log('4H chart size:', els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
   if(h4.status==='fulfilled'){
