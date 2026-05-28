@@ -16,6 +16,7 @@
 .panel-header h2{margin:0;font-size:.95rem}.panel-header p{margin:0;color:var(--muted);font-size:.76rem}.panel-note{margin:.3rem 0 0;color:var(--muted);font-size:.76rem}
 .chart-tools{display:flex;gap:.35rem;margin-left:auto;flex-wrap:wrap}
 .chart-tool-btn{padding:.24rem .5rem;font-size:.7rem}
+.chart-tool-btn.active-draw{outline:2px solid rgba(111,140,255,.6);background:#33498a;color:#fff}
 .overview{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:.5rem;margin-bottom:.5rem}.compact-card{min-height:96px}.card h2{font-size:.78rem;margin:0 0 .2rem;color:var(--muted)}
 .value{margin:0;font-size:1.08rem;font-weight:700}.compact-value{font-size:.92rem}.meta{margin:.18rem 0 0;color:var(--muted);font-size:.75rem;line-height:1.2}
 .chart-wrap{width:100%;min-height:210px;position:relative}.chart-wrap.compact{min-height:215px;margin-top:.38rem}

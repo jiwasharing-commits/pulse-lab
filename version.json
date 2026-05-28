@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 12:45",
-  "version": "v0.1.45",
+  "lastUpdated": "2026-05-28 13:20",
+  "version": "v0.1.46",
   "commitLabel": "manual",
-  "note": "Add manual horizontal price lines for weekly and 4H charts"
+  "note": "Add click-to-place manual horizontal lines for weekly and 4H charts"
 }
