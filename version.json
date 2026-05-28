@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 16:05",
-  "version": "v0.1.52",
+  "lastUpdated": "2026-05-28 16:20",
+  "version": "v0.1.53",
   "commitLabel": "manual",
-  "note": "Refine Current Price Detail into compact V2 card layout"
+  "note": "Hide redundant Section 1 top status cards"
 }
