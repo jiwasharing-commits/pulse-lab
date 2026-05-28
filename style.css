@@ -69,6 +69,16 @@
 
 .conclusion-card .mini-panel{margin-bottom:0}
 .conclusion-card .mtf-final{font-size:.9rem}
+.prep-map-card{margin-top:12px}
+.prep-map-group{margin-top:10px}
+.prep-map-title{margin:0 0 6px;font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.prep-map-rows{display:grid;gap:6px}
+.prep-map-row{display:grid;grid-template-columns:18px minmax(0,1fr) minmax(0,1.2fr) auto auto;gap:8px;align-items:center;font-size:.78rem}
+.prep-map-row-symbol{font-weight:700}
+.prep-map-row-zone{font-weight:600}
+.prep-map-row-label,.prep-map-row-quality,.prep-map-row-distance{color:var(--muted)}
+.prep-map-current-row{font-size:.8rem;font-weight:600}
+.prep-map-empty{margin:0;color:var(--muted);font-size:.78rem}
 
 .conclusion-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
 .conclusion-grid .panel,.conclusion-grid .card{margin-bottom:0}

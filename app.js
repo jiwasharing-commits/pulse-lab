@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-27 02:10";
+const APP_LAST_UPDATED = "2026-05-28 10:20";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -21,7 +21,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
-  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -62,6 +62,15 @@ let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
+const marketPreparationState = {
+  currentPrice: null,
+  weekly: { fvgZones: [], srSummary: null },
+  h4: { fvgZones: [], srSummary: null, structureStatus: null },
+  h1: { sweepStatus: null, structureStatus: null },
+  mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
+  map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
+  meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, h4: false, h1: false } },
+};
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -120,6 +129,64 @@ function timeKey(t){
     return `${t.year}-${mm}-${dd}`;
   }
   return "";
+}
+function updateMarketPreparationState(partial = {}){
+  const merge = (target, source) => Object.entries(source).forEach(([k,v])=>{
+    if(v && typeof v === "object" && !Array.isArray(v)){
+      target[k] = target[k] && typeof target[k] === "object" && !Array.isArray(target[k]) ? target[k] : {};
+      merge(target[k], v);
+    } else target[k] = v;
+  });
+  merge(marketPreparationState, partial);
+  marketPreparationState.meta.lastUpdatedMs = Date.now();
+}
+function prepDistancePct(price, lower, upper){
+  if(!Number.isFinite(price)||!Number.isFinite(lower)||!Number.isFinite(upper)) return null;
+  if(price < lower) return ((lower-price)/price)*100;
+  if(price > upper) return ((price-upper)/price)*100;
+  return 0;
+}
+function buildMarketPreparationMap(){
+  try{
+    const price = marketPreparationState.currentPrice;
+    const mkRow = (base) => {
+      const dist = prepDistancePct(price, base.lower, base.upper);
+      return { ...base, distancePct: dist, distanceText: dist===null?'—':`${f1(dist)}%`, zoneText: `${usd(base.lower)}–${usd(base.upper)}` };
+    };
+    const rows = [];
+    const add = (row) => { if(Number.isFinite(row.lower)&&Number.isFinite(row.upper)) rows.push(mkRow(row)); };
+    (marketPreparationState.weekly.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'W Bullish FVG':'W Bearish FVG', quality: z.status||'Valid', source:'weekly_fvg', priorityScore:20, detail:'' }));
+    const wsr = marketPreparationState.weekly.srSummary;
+    if(wsr?.support) add({ side:'downside', symbol:'▼', lower:wsr.support.lower, upper:wsr.support.upper, label:'W Support', quality:wsr.support.strength||'Strong', source:'weekly_sr', priorityScore:25, detail:'' });
+    if(wsr?.resistance) add({ side:'upside', symbol:'▲', lower:wsr.resistance.lower, upper:wsr.resistance.upper, label:'W Resistance', quality:wsr.resistance.strength||'Strong', source:'weekly_sr', priorityScore:25, detail:'' });
+    (marketPreparationState.h4.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'4H Bullish FVG':'4H Bearish FVG', quality: z.status||'High Prob', source:'h4_fvg', priorityScore:32, detail:'' }));
+    const h4sr = marketPreparationState.h4.srSummary;
+    if(h4sr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:h4sr.support.nearest.lower, upper:h4sr.support.nearest.upper, label:'4H Support', quality:`Touch ${h4sr.support.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
+    if(h4sr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:h4sr.resistance.nearest.lower, upper:h4sr.resistance.nearest.upper, label:'4H Resistance', quality:`Touch ${h4sr.resistance.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
+    const dedupe = (arr) => {
+      const out = [];
+      arr.sort((a,b)=>b.priorityScore-a.priorityScore).forEach((r)=>{
+        const c = (r.lower+r.upper)/2;
+        const exists = out.find((o)=>Math.abs(c-((o.lower+o.upper)/2))/Math.max(1, price||1) < 0.0035);
+        if(!exists) out.push(r);
+      });
+      return out.slice(0,3);
+    };
+    const upside = dedupe(rows.filter((r)=>r.side==='upside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)>price : true));
+    const downside = dedupe(rows.filter((r)=>r.side==='downside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)<price : true));
+    const currentRowText = Number.isFinite(price)
+      ? `● ${usd(price)} | ${marketPreparationState.h4.structureStatus||'4H —'} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`
+      : "● Price unavailable | Waiting for ticker/4H/1H context";
+    return { upside, downside, currentRowText };
+  } catch {
+    return { upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" };
+  }
+}
+function renderMarketPreparationMap(mapData){
+  const row = (r)=>`<div class="prep-map-row"><span class="prep-map-row-symbol">${r.symbol}</span><span class="prep-map-row-zone">${r.zoneText}</span><span class="prep-map-row-label">${r.label}</span><span class="prep-map-row-quality">${r.quality}</span><span class="prep-map-row-distance">${r.distanceText}</span></div>`;
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = mapData.upside.length ? mapData.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = mapData.downside.length ? mapData.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  if(els.prepCurrentRow) els.prepCurrentRow.textContent = mapData.currentRowText || "● Price unavailable";
 }
 
 function togglePriceChartError(msg=""){ if(!els.priceChartError) return; els.priceChartError.hidden = !msg; if(msg) els.priceChartError.textContent = msg; }
@@ -1045,7 +1112,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -1057,6 +1124,8 @@ function render4hFvgSummaryAndOverlay(candles){
     const srSummary = scan4hSupportResistance(candles);
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
+    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status }, meta: { sourcesReady: { h4: true } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
   } catch(e){ console.error('Clean 4H FVG overlay failed:', e); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; latest4hSrSummary={ok:false,reason:'scan_failed'}; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); clear4hSrOverlay(); if(els.lower4hStructure) els.lower4hStructure.textContent='4H Structure: unavailable.'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: unavailable.'; }
@@ -1255,11 +1324,15 @@ function render1hStructureSummary(candles){
   try {
     const st=detect1hStructure(candles);
     latest1hStructureStatus = st.status;
+    updateMarketPreparationState({ h1: { structureStatus: st.status }, meta: { sourcesReady: { h1: true } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Structure = st.status;
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent=`1H Structure | Status: ${st.status} | Broken Level: ${st.broken?usd(st.broken):'—'} | Reference Swing: ${st.ref} | Latest Close: ${usd(st.latestClose)}`;
   } catch(e){
     console.error('1H structure scanner failed', e);
     latest1hStructureStatus = '1H structure unavailable';
+    updateMarketPreparationState({ h1: { structureStatus: latest1hStructureStatus }, meta: { sourcesReady: { h1: true } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable';
   }
 }
@@ -1289,6 +1362,8 @@ function render1hSweepSummary(candles){
   try{
     const sweep=detect1hLiquiditySweep(candles);
     latest1hSweepStatus = sweep.status;
+    updateMarketPreparationState({ h1: { sweepStatus: sweep.status }, meta: { sourcesReady: { h1: true } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
     if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No signal detected (1H liquidity sweep).'; return; }
@@ -1417,6 +1492,7 @@ function setLoading(){
   if(els.weeklyCandleW3) els.weeklyCandleW3.textContent='W-3: loading';
   if(els.weeklyCandleReading) els.weeklyCandleReading.textContent='3W Reading: loading';
   if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent='Condition: loading';
+  renderMarketPreparationMap({ upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" });
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
@@ -1428,6 +1504,8 @@ function renderTicker(t){
   els.btc24hInline.textContent=`24h: ${ch>=0?"+":""}${ch.toFixed(1)}%`;
   els.btc24hInline.className=`meta ${ch>0?"pos":ch<0?"neg":"neu"}`;
   els.btcPriceMeta.textContent="BTCUSDT 24h ticker";
+  updateMarketPreparationState({ currentPrice: p, meta: { sourcesReady: { ticker: true } } });
+  renderMarketPreparationMap(buildMarketPreparationMap());
 }
 
 async function loadDashboard(){
@@ -1455,6 +1533,8 @@ async function loadDashboard(){
       renderWeeklySupportResistance(weeklySrSummary);
       renderWeeklyCandleCharacter(dataset);
       renderMtfSummary();
+      updateMarketPreparationState({ weekly: { fvgZones: activeFvgs, srSummary: weeklySrSummary }, meta: { sourcesReady: { weekly: true } } });
+      renderMarketPreparationMap(buildMarketPreparationMap());
       weeklyOk = true;
 
       try { renderPriceChart(dataset); togglePriceChartError(""); renderFvgOverlay(activeFvgs, dataset); renderWeeklySrOverlay(weeklySrSummary, dataset); }
