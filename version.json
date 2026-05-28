@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 14:30",
-  "version": "v0.1.48",
+  "lastUpdated": "2026-05-28 15:00",
+  "version": "v0.1.49",
   "commitLabel": "manual",
-  "note": "Fix trendline time normalization for weekly and 4H rendering"
+  "note": "Refactor chart drawing tools UX with unified manage modal"
 }

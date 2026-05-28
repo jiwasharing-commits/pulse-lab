@@ -21,6 +21,13 @@
 .trendline-overlay-layer svg{width:100%;height:100%;display:block}
 .trendline-overlay-layer .trendline{stroke-width:1.6}
 .trendline-overlay-layer .trendline-label{font-size:10px;fill:#dbe4ff}
+.drawing-manager-modal{position:fixed;inset:0;z-index:50;display:grid;place-items:center}
+.drawing-manager-backdrop{position:absolute;inset:0;background:rgba(2,6,23,.65)}
+.drawing-manager-panel{position:relative;width:min(560px,92vw);max-height:85vh;overflow:auto;background:linear-gradient(145deg,var(--panel),var(--panel-alt));border:1px solid var(--border);border-radius:.75rem;padding:.8rem}
+.drawing-manager-section{margin:.45rem 0}
+.drawing-manager-item{display:flex;justify-content:space-between;gap:.5rem;align-items:center;padding:.35rem .45rem;border:1px solid var(--border);border-radius:.45rem;margin:.28rem 0;background:rgba(15,23,44,.5);font-size:.76rem}
+.drawing-manager-actions{display:flex;justify-content:flex-end;gap:.45rem;margin-top:.65rem}
+.btn-danger{background:#7f1d1d!important}
 .overview{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:.5rem;margin-bottom:.5rem}.compact-card{min-height:96px}.card h2{font-size:.78rem;margin:0 0 .2rem;color:var(--muted)}
 .value{margin:0;font-size:1.08rem;font-weight:700}.compact-value{font-size:.92rem}.meta{margin:.18rem 0 0;color:var(--muted);font-size:.75rem;line-height:1.2}
 .chart-wrap{width:100%;min-height:210px;position:relative}.chart-wrap.compact{min-height:215px;margin-top:.38rem}

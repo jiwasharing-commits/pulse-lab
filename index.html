@@ -118,7 +118,7 @@
             <div class="weekly-center-col">
               <div class="weekly-chart-stack">
                 <section class="panel weekly-chart-card weekly-candle-card">
-                  <div class="panel-header"><h2>BTC Weekly Candlestick</h2><p>Main weekly divergence monitoring section</p><div class="chart-tools"><button id="weeklyAddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add Line</button><button id="weeklyDrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Line</button><button id="weeklyDrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="weeklyManageLinesBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage Lines</button><button id="weeklyManageDrawingsBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage Drawings</button></div></div>
+                  <div class="panel-header"><h2>BTC Weekly Candlestick</h2><p>Main weekly divergence monitoring section</p><div class="chart-tools"><button id="weeklyAddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add by Price</button><button id="weeklyDrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Click to Place</button><button id="weeklyDrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="weeklyManageBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage</button></div></div>
                   <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
                   <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
                   <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
@@ -210,7 +210,7 @@
               </div>
 
               <section class="panel ltf-chart-card">
-                <div class="panel-header compact-header"><h3>4H Candlestick</h3><div class="chart-tools"><button id="h4AddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add Line</button><button id="h4DrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Line</button><button id="h4DrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="h4ManageLinesBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage Lines</button><button id="h4ManageDrawingsBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage Drawings</button></div></div>
+                <div class="panel-header compact-header"><h3>4H Candlestick</h3><div class="chart-tools"><button id="h4AddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add by Price</button><button id="h4DrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Click to Place</button><button id="h4DrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="h4ManageBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage</button></div></div>
                 <div class="ltf-chart-card-grid">
                   <div class="ltf-chart-main">
                     <div class="chart-wrap compact lower-chart-wrapper" id="lower4hChartWrapper"><div id="lower4hChart" class="lower-chart" role="img"></div><div id="lower4hFvgOverlay" class="fvg-overlay-layer"></div><div id="lower4hSrOverlay" class="ltf-sr-overlay-layer"></div><div id="h4TrendlineOverlay" class="trendline-overlay-layer"></div><div id="lower4hError" class="chart-error" hidden>4H chart unavailable.</div></div>
@@ -236,6 +236,24 @@
           </section>
         </section>
       </main>
+    </div>
+    <div id="drawingManagerModal" class="drawing-manager-modal" hidden>
+      <div class="drawing-manager-backdrop"></div>
+      <div class="drawing-manager-panel">
+        <h3 id="drawingManagerTitle">Manage Chart Drawings</h3>
+        <div class="drawing-manager-section">
+          <h4>Horizontal Lines</h4>
+          <div id="drawingManagerLinesList"></div>
+        </div>
+        <div class="drawing-manager-section">
+          <h4>Trendlines</h4>
+          <div id="drawingManagerTrendlinesList"></div>
+        </div>
+        <div class="drawing-manager-actions">
+          <button id="drawingManagerClearAllBtn" class="refresh-btn secondary btn-danger" type="button">Clear All</button>
+          <button id="drawingManagerCloseBtn" class="refresh-btn secondary" type="button">Close</button>
+        </div>
+      </div>
     </div>
     <script src="app.js"></script>
   </body>

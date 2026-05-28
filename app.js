@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 14:30";
+const APP_LAST_UPDATED = "2026-05-28 15:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -29,7 +29,8 @@ const els = {
   lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
-  weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageLinesBtn: document.getElementById("weeklyManageLinesBtn"), weeklyManageDrawingsBtn: document.getElementById("weeklyManageDrawingsBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageLinesBtn: document.getElementById("h4ManageLinesBtn"), h4ManageDrawingsBtn: document.getElementById("h4ManageDrawingsBtn"),
+  weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
+  drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
   weeklyTrendlineOverlay: document.getElementById("weeklyTrendlineOverlay"), h4TrendlineOverlay: document.getElementById("h4TrendlineOverlay"),
 };
 
@@ -74,6 +75,7 @@ let manualLinePlacement = { active: false, chartKey: null };
 let weeklyPlacementHandler = null;
 let h4PlacementHandler = null;
 let trendlineDrawMode = { active: false, chartKey: null, startPoint: null };
+let drawingManagerChartKey = null;
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
 const marketPreparationState = {
   currentPrice: null,
@@ -494,6 +496,63 @@ function handleManageDrawings(chartKey){
       if(Number.isInteger(idx) && idx >= 0 && idx < drawings.length){ deleteManualDrawing(chartKey, drawings[idx].id); renderTrendlinesForChart(chartKey); }
     }
   }catch(_){}
+}
+function deleteManagedLine(chartKey, lineId){
+  deleteManualLine(chartKey, lineId);
+  rebuildManualLines(chartKey);
+  renderDrawingManager(chartKey);
+}
+function deleteManagedTrendline(chartKey, drawingId){
+  deleteManualDrawing(chartKey, drawingId);
+  renderTrendlinesForChart(chartKey);
+  renderDrawingManager(chartKey);
+}
+function clearAllManagedDrawings(chartKey){
+  clearManualLines(chartKey);
+  clearManualDrawings(chartKey);
+  rebuildManualLines(chartKey);
+  clearTrendlineOverlay(chartKey);
+  renderTrendlinesForChart(chartKey);
+  renderDrawingManager(chartKey);
+}
+function renderDrawingManager(chartKey){
+  if(!els.drawingManagerLinesList || !els.drawingManagerTrendlinesList || !els.drawingManagerTitle) return;
+  const lines = getManualLines(chartKey);
+  const trends = getManualDrawings(chartKey).filter((d)=>d.kind==="trendline");
+  els.drawingManagerTitle.textContent = `Manage Chart Drawings (${chartKey === 'weekly' ? 'Weekly' : '4H'})`;
+  els.drawingManagerLinesList.innerHTML = lines.length
+    ? lines.map((l)=>`<div class="drawing-manager-item"><span>${f1(l.price)} | ${l.type} | ${l.label}</span><button class="refresh-btn secondary btn-danger" data-kind="line" data-id="${l.id}" type="button">Delete</button></div>`).join("")
+    : `<div class="drawing-manager-item"><span>No horizontal lines.</span></div>`;
+  els.drawingManagerTrendlinesList.innerHTML = trends.length
+    ? trends.map((t)=>`<div class="drawing-manager-item"><span>Trendline | ${t.type || "Custom"} | ${t.label || "Manual Trendline"}</span><button class="refresh-btn secondary btn-danger" data-kind="trendline" data-id="${t.id}" type="button">Delete</button></div>`).join("")
+    : `<div class="drawing-manager-item"><span>No trendlines.</span></div>`;
+}
+function openDrawingManager(chartKey){
+  drawingManagerChartKey = chartKey;
+  renderDrawingManager(chartKey);
+  if(els.drawingManagerModal) els.drawingManagerModal.hidden = false;
+}
+function closeDrawingManager(){
+  drawingManagerChartKey = null;
+  if(els.drawingManagerModal) els.drawingManagerModal.hidden = true;
+}
+function bindDrawingManagerEvents(){
+  if(!els.drawingManagerModal) return;
+  els.drawingManagerModal.addEventListener("click", (e)=>{
+    const target = e.target;
+    if(!(target instanceof HTMLElement)) return;
+    if(target.classList.contains("drawing-manager-backdrop")) closeDrawingManager();
+    if(target.id === "drawingManagerCloseBtn") closeDrawingManager();
+    if(target.id === "drawingManagerClearAllBtn" && drawingManagerChartKey){
+      clearAllManagedDrawings(drawingManagerChartKey);
+    }
+    if(target.dataset.kind === "line" && drawingManagerChartKey){
+      deleteManagedLine(drawingManagerChartKey, target.dataset.id);
+    }
+    if(target.dataset.kind === "trendline" && drawingManagerChartKey){
+      deleteManagedTrendline(drawingManagerChartKey, target.dataset.id);
+    }
+  });
 }
 function prepDistancePct(price, lower, upper){
   if(!Number.isFinite(price)||!Number.isFinite(lower)||!Number.isFinite(upper)) return null;
@@ -1106,13 +1165,11 @@ function setupCollapsibleSections(){
   els.weeklyAddLineBtn?.addEventListener('click', ()=>handleAddLine('weekly'));
   els.weeklyDrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('weekly'));
   els.weeklyDrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('weekly'));
-  els.weeklyManageLinesBtn?.addEventListener('click', ()=>handleManageLines('weekly'));
-  els.weeklyManageDrawingsBtn?.addEventListener('click', ()=>handleManageDrawings('weekly'));
+  els.weeklyManageBtn?.addEventListener('click', ()=>openDrawingManager('weekly'));
   els.h4AddLineBtn?.addEventListener('click', ()=>handleAddLine('h4'));
   els.h4DrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('h4'));
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
-  els.h4ManageLinesBtn?.addEventListener('click', ()=>handleManageLines('h4'));
-  els.h4ManageDrawingsBtn?.addEventListener('click', ()=>handleManageDrawings('h4'));
+  els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); } });
   setLtfPresetUI('1m');
   restoreToggleState();
@@ -2005,6 +2062,7 @@ loadDashboard();
 manualChartLines = loadManualChartLines();
 manualChartDrawings = loadManualChartDrawings();
 setupCollapsibleSections();
+bindDrawingManagerEvents();
 
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
