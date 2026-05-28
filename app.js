@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 15:00";
+const APP_LAST_UPDATED = "2026-05-28 15:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -2063,6 +2063,7 @@ manualChartLines = loadManualChartLines();
 manualChartDrawings = loadManualChartDrawings();
 setupCollapsibleSections();
 bindDrawingManagerEvents();
+closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
