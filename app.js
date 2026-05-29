@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 06:05";
+const APP_LAST_UPDATED = "2026-05-29 06:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
+  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
@@ -90,7 +90,7 @@ const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: n
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], srSummary: null },
-  daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
+  daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("6M"), meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
   h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
   h1: { sweepStatus: null, structureStatus: null, stochastic: { ok: false, k: null, d: null, prevK: null, prevD: null, label: "Stoch unavailable", reason: null, status: "idle" } },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
@@ -2078,7 +2078,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; }
+function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
 function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles, els.lowerDailyChart?.clientHeight || 400); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
 function scanDailyFvg(candles){
@@ -2098,10 +2098,212 @@ function scanDailySupportResistance(candles){
     return { ok:false, reason:'scan_failed', currentPrice:candles?.[candles.length-1]?.close??null, candleCount:Array.isArray(candles)?candles.length:0, support:{nearest:null,strongest:null}, resistance:{nearest:null,strongest:null}, meta:{swingHighCount:0,swingLowCount:0,supportZoneCount:0,resistanceZoneCount:0,activeSupportCount:0,activeResistanceCount:0,tolerancePct:0,avgRangeAbs:0} };
   }
 }
+
+function createEmptyDailyPattern(rangeMode = activeDailyRange || "6M", reason = "Daily pattern unavailable."){
+  return { ok:false, type:null, status:"Unavailable", rangeMode, supportLine:null, resistanceLine:null, supportTouches:0, resistanceTouches:0, totalTouches:0, currentPosition:null, breakoutStatus:null, qualityScore:0, reason, updatedAt:null };
+}
+function isValidCandle(c){ return c && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close); }
+function detectSwingPoints(candles, left = 3, right = 3){
+  const highs=[], lows=[];
+  if(!Array.isArray(candles) || candles.length < left + right + 3) return { highs, lows };
+  const minSep = Math.max(5, left + right - 1);
+  const pushSeparated = (arr, point, pickHigher)=>{
+    const prev = arr[arr.length - 1];
+    if(prev && point.index - prev.index < minSep){
+      if(pickHigher ? point.price > prev.price : point.price < prev.price) arr[arr.length - 1] = point;
+      return;
+    }
+    arr.push(point);
+  };
+  for(let i=left;i<candles.length-right;i++){
+    const c=candles[i];
+    if(!isValidCandle(c)) continue;
+    let isHigh=true, isLow=true;
+    for(let j=1;j<=left;j++){
+      if(!isValidCandle(candles[i-j]) || c.high<=candles[i-j].high) isHigh=false;
+      if(!isValidCandle(candles[i-j]) || c.low>=candles[i-j].low) isLow=false;
+    }
+    for(let j=1;j<=right;j++){
+      if(!isValidCandle(candles[i+j]) || c.high<=candles[i+j].high) isHigh=false;
+      if(!isValidCandle(candles[i+j]) || c.low>=candles[i+j].low) isLow=false;
+    }
+    if(isHigh) pushSeparated(highs, { index:i, time:c.time, price:c.high }, true);
+    if(isLow) pushSeparated(lows, { index:i, time:c.time, price:c.low }, false);
+  }
+  return { highs, lows };
+}
+function buildLineFromPoints(a, b){
+  if(!a || !b || a.index===b.index || !Number.isFinite(a.price) || !Number.isFinite(b.price)) return null;
+  const slope = (b.price - a.price) / (b.index - a.index);
+  const midPrice = Math.max((a.price + b.price) / 2, 1);
+  return { startIndex:a.index, startTime:a.time, startPrice:a.price, endIndex:b.index, endTime:b.time, endPrice:b.price, slope, slopePctPerCandle:slope / midPrice };
+}
+function getLineValueAtIndex(line, index){ return line && Number.isFinite(line.startPrice) && Number.isFinite(line.slope) ? line.startPrice + line.slope * (index - line.startIndex) : null; }
+function getAverageDailyRange(candles){
+  const ranges = (candles||[]).map(c=>isValidCandle(c) ? (c.high - c.low) : null).filter(v=>Number.isFinite(v)&&v>0);
+  return ranges.length ? ranges.reduce((a,b)=>a+b,0)/ranges.length : 0;
+}
+function countBoundaryTouches(candles, line, side, toleranceAbs){
+  let count=0, inTouch=false, lastTouchIndex=null;
+  (candles||[]).forEach((c,i)=>{
+    if(!isValidCandle(c)) return;
+    const boundary = getLineValueAtIndex(line, i);
+    if(!Number.isFinite(boundary)) return;
+    const probe = side === "support" ? c.low : c.high;
+    const touching = Math.abs(probe - boundary) <= toleranceAbs;
+    if(touching && !inTouch){ count++; lastTouchIndex=i; inTouch=true; }
+    if(!touching) inTouch=false;
+  });
+  return { count, lastTouchIndex };
+}
+function getPatternCurrentPosition(candles, pattern, toleranceAbs){
+  const latestIndex = candles.length - 1;
+  const latest = candles[latestIndex];
+  const lower = getLineValueAtIndex(pattern.supportLine, latestIndex);
+  const upper = getLineValueAtIndex(pattern.resistanceLine, latestIndex);
+  if(!isValidCandle(latest) || !Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) return { currentPosition:null, breakoutStatus:null, insideRatio:null };
+  const buffer = Math.max(toleranceAbs * 0.6, latest.close * 0.003);
+  if(latest.close > upper + buffer) return { currentPosition:"Breakout", breakoutStatus:"Breakout", insideRatio:null };
+  if(latest.close < lower - buffer) return { currentPosition:"Breakdown", breakoutStatus:"Breakdown", insideRatio:null };
+  if(latest.low <= lower + toleranceAbs && latest.close >= lower) return { currentPosition:"Testing support boundary", breakoutStatus:null, insideRatio:null };
+  if(latest.high >= upper - toleranceAbs && latest.close <= upper) return { currentPosition:"Testing resistance boundary", breakoutStatus:null, insideRatio:null };
+  const ratio = (latest.close - lower) / (upper - lower);
+  if(pattern.type === "Horizontal Range"){
+    if(ratio <= 0.25) return { currentPosition:"Near range support", breakoutStatus:null, insideRatio:ratio };
+    if(ratio >= 0.75) return { currentPosition:"Near range resistance", breakoutStatus:null, insideRatio:ratio };
+    return { currentPosition:"Inside range", breakoutStatus:null, insideRatio:ratio };
+  }
+  if(ratio <= 0.25) return { currentPosition:"Near lower channel", breakoutStatus:null, insideRatio:ratio };
+  if(ratio >= 0.75) return { currentPosition:"Near upper channel", breakoutStatus:null, insideRatio:ratio };
+  return { currentPosition:"Middle of channel", breakoutStatus:null, insideRatio:ratio };
+}
+function scoreDailyPatternCandidate(candidate){
+  const totalTouches = candidate.supportTouches + candidate.resistanceTouches;
+  const touchScore = Math.min(totalTouches, 8) / 8 * 25;
+  const balanceScore = Math.min(candidate.supportTouches, candidate.resistanceTouches) >= 2 ? 15 : Math.min(candidate.supportTouches, candidate.resistanceTouches) / 2 * 15;
+  const insideScore = Math.max(0, Math.min(candidate.insideRatio || 0, 1)) * 25;
+  const lineScore = Math.max(0, Math.min(candidate.lineQuality || 0, 1)) * 15;
+  const latestTouch = Math.max(candidate.supportLastTouchIndex ?? -1, candidate.resistanceLastTouchIndex ?? -1);
+  const recencyScore = latestTouch < 0 ? 0 : Math.max(0, 1 - ((candidate.candleCount - 1 - latestTouch) / Math.max(candidate.candleCount, 1))) * 10;
+  const width = candidate.widthPct || 0;
+  const widthScore = width >= 3 && width <= 35 ? 10 : width >= 1.5 && width <= 45 ? 5 : 0;
+  return Math.round(touchScore + balanceScore + insideScore + lineScore + recencyScore + widthScore);
+}
+function finalizeDailyPatternCandidate(candidate, candles, rangeMode, toleranceAbs){
+  const position = getPatternCurrentPosition(candles, candidate, toleranceAbs);
+  const qualityScore = scoreDailyPatternCandidate(candidate);
+  let status = qualityScore >= 75 ? "Strong" : qualityScore >= 55 ? "Valid" : qualityScore >= 35 ? "Weak" : "Detected";
+  if(position.breakoutStatus) status = "Broken";
+  const supportTouches = candidate.supportTouches;
+  const resistanceTouches = candidate.resistanceTouches;
+  const totalTouches = supportTouches + resistanceTouches;
+  const reason = status === "Broken"
+    ? `Daily ${candidate.type.toLowerCase()} ${position.breakoutStatus.toLowerCase()} confirmed by close outside boundary.`
+    : `Price remains ${candidate.type === "Horizontal Range" ? "in horizontal range" : "inside channel"} with ${totalTouches} total touches.`;
+  return { ok:true, type:candidate.type, status, rangeMode, supportLine:candidate.supportLine, resistanceLine:candidate.resistanceLine, supportTouches, resistanceTouches, totalTouches, currentPosition:position.currentPosition, breakoutStatus:position.breakoutStatus, qualityScore, reason, updatedAt:Date.now() };
+}
+function evaluateDailyPatternCandidate(type, supportLine, resistanceLine, candles, rangeMode, toleranceAbs, lineQuality){
+  if(!supportLine || !resistanceLine) return null;
+  const lastIndex = candles.length - 1;
+  let inside=0, valid=0;
+  for(let i=0;i<candles.length;i++){
+    const c=candles[i]; if(!isValidCandle(c)) continue;
+    const lower = getLineValueAtIndex(supportLine, i), upper = getLineValueAtIndex(resistanceLine, i);
+    if(!Number.isFinite(lower) || !Number.isFinite(upper) || upper<=lower) continue;
+    valid++;
+    if(c.close >= lower - toleranceAbs && c.close <= upper + toleranceAbs) inside++;
+  }
+  const lowerLast = getLineValueAtIndex(supportLine, lastIndex), upperLast = getLineValueAtIndex(resistanceLine, lastIndex);
+  if(!Number.isFinite(lowerLast) || !Number.isFinite(upperLast) || upperLast<=lowerLast) return null;
+  const current = Math.max(candles[lastIndex]?.close || 1, 1);
+  const widthPct = ((upperLast - lowerLast) / current) * 100;
+  const support = countBoundaryTouches(candles, supportLine, "support", toleranceAbs);
+  const resistance = countBoundaryTouches(candles, resistanceLine, "resistance", toleranceAbs);
+  return { type, supportLine, resistanceLine, supportTouches:support.count, resistanceTouches:resistance.count, supportLastTouchIndex:support.lastTouchIndex, resistanceLastTouchIndex:resistance.lastTouchIndex, insideRatio:valid ? inside / valid : 0, widthPct, lineQuality, candleCount:candles.length };
+}
+function detectDailyChannelPattern(candles, rangeMode){
+  if(!Array.isArray(candles) || candles.length < 40) return null;
+  const currentPrice = candles[candles.length-1]?.close;
+  const avgRangeAbs = getAverageDailyRange(candles);
+  const toleranceAbs = Math.max((currentPrice || 1) * 0.0075, avgRangeAbs * 0.35);
+  const swings = detectSwingPoints(candles, 3, 3);
+  const highs = swings.highs.slice(-10);
+  const lows = swings.lows.slice(-10);
+  let best = null;
+  for(let li=0; li<lows.length-1; li++){
+    for(let lj=li+1; lj<lows.length; lj++){
+      const supportLine = buildLineFromPoints(lows[li], lows[lj]);
+      if(!supportLine) continue;
+      for(let hi=0; hi<highs.length-1; hi++){
+        for(let hj=hi+1; hj<highs.length; hj++){
+          const resistanceLine = buildLineFromPoints(highs[hi], highs[hj]);
+          if(!resistanceLine) continue;
+          const supportSlope = supportLine.slopePctPerCandle;
+          const resistanceSlope = resistanceLine.slopePctPerCandle;
+          const rising = supportSlope > 0.00015 && resistanceSlope > 0.00015 && lows[lj].price > lows[li].price && highs[hj].price > highs[hi].price;
+          const falling = supportSlope < -0.00015 && resistanceSlope < -0.00015 && lows[lj].price < lows[li].price && highs[hj].price < highs[hi].price;
+          if(!rising && !falling) continue;
+          const slopeDenom = Math.max(Math.abs(supportSlope), Math.abs(resistanceSlope), 0.00001);
+          const parallelQuality = Math.max(0, 1 - (Math.abs(supportSlope - resistanceSlope) / slopeDenom));
+          if(parallelQuality < 0.25) continue;
+          const candidate = evaluateDailyPatternCandidate(rising ? "Rising Channel" : "Falling Channel", supportLine, resistanceLine, candles, rangeMode, toleranceAbs, parallelQuality);
+          if(!candidate || candidate.supportTouches < 2 || candidate.resistanceTouches < 2 || candidate.supportTouches + candidate.resistanceTouches < 4 || candidate.insideRatio < 0.60 || candidate.widthPct < 2 || candidate.widthPct > 45) continue;
+          candidate.qualityScore = scoreDailyPatternCandidate(candidate);
+          if(!best || candidate.qualityScore > best.qualityScore) best = candidate;
+        }
+      }
+    }
+  }
+  return best ? finalizeDailyPatternCandidate(best, candles, rangeMode, toleranceAbs) : null;
+}
+function detectDailyRangePattern(candles, rangeMode){
+  if(!Array.isArray(candles) || candles.length < 40) return null;
+  const currentPrice = candles[candles.length-1]?.close;
+  const avgRangeAbs = getAverageDailyRange(candles);
+  const toleranceAbs = Math.max((currentPrice || 1) * 0.0075, avgRangeAbs * 0.35);
+  const swings = detectSwingPoints(candles, 3, 3);
+  const highs = swings.highs.slice(-8);
+  const lows = swings.lows.slice(-8);
+  if(highs.length < 2 || lows.length < 2) return null;
+  const avgHigh = highs.reduce((sum,p)=>sum+p.price,0)/highs.length;
+  const avgLow = lows.reduce((sum,p)=>sum+p.price,0)/lows.length;
+  if(!Number.isFinite(avgHigh) || !Number.isFinite(avgLow) || avgHigh <= avgLow) return null;
+  const start = { index:0, time:candles[0]?.time, price:avgLow };
+  const end = { index:candles.length-1, time:candles[candles.length-1]?.time, price:avgLow };
+  const supportLine = buildLineFromPoints(start, end);
+  const resistanceLine = buildLineFromPoints({ ...start, price:avgHigh }, { ...end, price:avgHigh });
+  const widthPct = ((avgHigh - avgLow) / Math.max(currentPrice || 1, 1)) * 100;
+  const highDrift = Math.abs(highs[highs.length-1].price - highs[0].price) / Math.max(avgHigh, 1);
+  const lowDrift = Math.abs(lows[lows.length-1].price - lows[0].price) / Math.max(avgLow, 1);
+  const flatQuality = Math.max(0, 1 - ((highDrift + lowDrift) / 0.18));
+  if(widthPct < 3 || widthPct > 35 || flatQuality < 0.25) return null;
+  const candidate = evaluateDailyPatternCandidate("Horizontal Range", supportLine, resistanceLine, candles, rangeMode, toleranceAbs, flatQuality);
+  if(!candidate || candidate.supportTouches < 2 || candidate.resistanceTouches < 2 || candidate.supportTouches + candidate.resistanceTouches < 4 || candidate.insideRatio < 0.62) return null;
+  return finalizeDailyPatternCandidate(candidate, candles, rangeMode, toleranceAbs);
+}
+function detectDailyPattern(candles, rangeMode = activeDailyRange || "6M"){
+  try{
+    if(!Array.isArray(candles) || candles.length < 40) return createEmptyDailyPattern(rangeMode, "Not enough Daily candles for pattern detection.");
+    const candidates = [detectDailyChannelPattern(candles, rangeMode), detectDailyRangePattern(candles, rangeMode)].filter(Boolean);
+    if(!candidates.length) return createEmptyDailyPattern(rangeMode, "No clear Daily channel/range detected.");
+    return candidates.sort((a,b)=>b.qualityScore-a.qualityScore)[0];
+  }catch(e){
+    console.error("Daily pattern detection failed:", e);
+    return createEmptyDailyPattern(rangeMode, "Daily pattern unavailable.");
+  }
+}
+function formatDailyPatternSummary(pattern){
+  if(!pattern?.ok) return "Daily Pattern · No clear channel/range detected";
+  return `Daily Pattern · ${pattern.type} · ${pattern.status} · ${pattern.currentPosition || "Position unavailable"} · Touches ${pattern.supportTouches}/${pattern.resistanceTouches}`;
+}
+function setDailyPatternSummary(pattern){ if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent = formatDailyPatternSummary(pattern); }
+
 function updateDailyMarketContext(candles, mode){
   try{
     if(!Array.isArray(candles) || !candles.length){
-      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+      const pattern = createEmptyDailyPattern(mode, "Daily pattern unavailable.");
+      setDailyPatternSummary(pattern);
+      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
       renderMarketPreparationMap(buildMarketPreparationMap());
       return;
     }
@@ -2113,11 +2315,15 @@ function updateDailyMarketContext(candles, mode){
       return { ...f, distancePct: distance };
     }).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct) || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1)) || b.index-a.index);
     const srSummary = scanDailySupportResistance(candles);
-    updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    const pattern = detectDailyPattern(candles, mode);
+    setDailyPatternSummary(pattern);
+    updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
   }catch(e){
     console.error('Daily market context update failed:', e);
-    updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+    const pattern = createEmptyDailyPattern(mode, "Daily pattern unavailable.");
+    setDailyPatternSummary(pattern);
+    updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
   }
 }
