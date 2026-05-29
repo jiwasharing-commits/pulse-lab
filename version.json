@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 02:35",
-  "version": "v0.1.58",
+  "lastUpdated": "2026-05-29 03:00",
+  "version": "v0.1.59",
   "commitLabel": "manual",
-  "note": "Add current price position and recent reaction context"
+  "note": "Add 1H stochastic timing filter to Current Price Detail"
 }

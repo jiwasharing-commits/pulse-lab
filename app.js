@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 02:35";
+const APP_LAST_UPDATED = "2026-05-29 03:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -87,7 +87,7 @@ const marketPreparationState = {
   weekly: { fvgZones: [], srSummary: null },
   daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, meta: { rangeMode: null, candleCount: 0, updatedAt: null } },
   h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
-  h1: { sweepStatus: null, structureStatus: null },
+  h1: { sweepStatus: null, structureStatus: null, stochastic: { ok: false, k: null, d: null, prevK: null, prevD: null, label: "Stoch unavailable", reason: null, status: "idle" } },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
   sentiment: { value: null, label: null, updatedAt: null },
@@ -748,6 +748,53 @@ function compute4hVolumeStatus(candles){
     return null;
   }
 }
+function compute1hStochasticStatus(candles, kPeriod = 14, dPeriod = 3){
+  const unavailable = (reason)=>({ ok:false, k:null, d:null, prevK:null, prevD:null, label:"Stoch unavailable", reason, status:"idle" });
+  try{
+    if(!Array.isArray(candles) || candles.length < (kPeriod + dPeriod + 1)) return unavailable("not_enough_candles");
+    const values = candles.map((c)=>({ high:Number(c.high), low:Number(c.low), close:Number(c.close) }));
+    if(values.some((c)=>!Number.isFinite(c.high) || !Number.isFinite(c.low) || !Number.isFinite(c.close))) return unavailable("invalid_candles");
+    const kValues = [];
+    for(let i=kPeriod-1;i<values.length;i++){
+      const window = values.slice(i-kPeriod+1, i+1);
+      const highestHigh = Math.max(...window.map(c=>c.high));
+      const lowestLow = Math.min(...window.map(c=>c.low));
+      if(!Number.isFinite(highestHigh) || !Number.isFinite(lowestLow) || highestHigh === lowestLow){
+        kValues.push(null);
+        continue;
+      }
+      kValues.push(((values[i].close - lowestLow) / (highestHigh - lowestLow)) * 100);
+    }
+    const dValues = kValues.map((_, i)=>{
+      if(i < dPeriod-1) return null;
+      const slice = kValues.slice(i-dPeriod+1, i+1);
+      if(slice.some((v)=>!Number.isFinite(v))) return null;
+      return slice.reduce((a,b)=>a+b,0) / dPeriod;
+    });
+    const latestIndex = kValues.length - 1;
+    let prevIndex = latestIndex - 1;
+    while(prevIndex >= 0 && (!Number.isFinite(kValues[prevIndex]) || !Number.isFinite(dValues[prevIndex]))) prevIndex--;
+    const k = kValues[latestIndex];
+    const d = dValues[latestIndex];
+    const prevK = prevIndex >= 0 ? kValues[prevIndex] : null;
+    const prevD = prevIndex >= 0 ? dValues[prevIndex] : null;
+    if(!Number.isFinite(k) || !Number.isFinite(d) || !Number.isFinite(prevK) || !Number.isFinite(prevD)) return unavailable("insufficient_stochastic");
+    const bullishCross = prevK <= prevD && k > d;
+    const bearishCross = prevK >= prevD && k < d;
+    let label = "Stoch Neutral";
+    let status = "neutral";
+    let reason = "No clear stochastic timing signal.";
+    if(k < 20 && bullishCross){ label = "Stoch Oversold Cross Up"; status = "oversold_cross_up"; reason = "Short-term bounce timing may be forming."; }
+    else if(k > 80 && bearishCross){ label = "Stoch Overbought Cross Down"; status = "overbought_cross_down"; reason = "Short-term rejection timing may be forming."; }
+    else if(k < 20){ label = "Stoch Oversold"; status = "oversold"; reason = "Short-term timing is in an oversold area."; }
+    else if(k > 80){ label = "Stoch Overbought"; status = "overbought"; reason = "Short-term timing is in an overbought area."; }
+    else if(bullishCross){ label = "Stoch Bullish Cross"; status = "bullish_cross"; reason = "Short-term momentum crossed upward."; }
+    else if(bearishCross){ label = "Stoch Bearish Cross"; status = "bearish_cross"; reason = "Short-term momentum crossed downward."; }
+    return { ok:true, k:Number(k.toFixed(1)), d:Number(d.toFixed(1)), prevK:Number(prevK.toFixed(1)), prevD:Number(prevD.toFixed(1)), label, reason, status };
+  }catch{
+    return unavailable("compute_failed");
+  }
+}
 function getNearestUpsideZoneFromMap(mapData){
   return Array.isArray(mapData?.upside) && mapData.upside.length ? mapData.upside[0] : null;
 }
@@ -927,6 +974,7 @@ function buildCurrentPriceDetailDataV2(mapData){
   const h4Volume = marketPreparationState.h4?.volumeStatus || null;
   const h1Sweep = marketPreparationState.h1?.sweepStatus || "Unavailable";
   const h1Structure = marketPreparationState.h1?.structureStatus || "Unavailable";
+  const h1Stochastic = marketPreparationState.h1?.stochastic || { ok:false, k:null, d:null, prevK:null, prevD:null, label:"Stoch unavailable", reason:null, status:"idle" };
   const contains = (txt, key)=>String(txt||"").toLowerCase().includes(String(key).toLowerCase());
   const h4Meaning = (contains(h4Status,"Bearish BOS") || contains(h4Status,"Bearish CHoCH"))
     ? "4H structure still reflects downside reaction pressure."
@@ -973,6 +1021,7 @@ function buildCurrentPriceDetailDataV2(mapData){
     h4ContextMeaning: (contains(h4Status,"Bearish BOS") || contains(h4Status,"Bearish CHoCH")) ? "Downside reaction pressure exists; monitor reclaim attempts." : contains(h4Rsi.label,"Oversold") ? "Downside pressure exists, but bounce risk can increase." : "4H context is mixed; watch zone reactions.",
     h1Sweep: { status: h1Sweep, sweptLevel: null, distancePct: null, meaning: h1SweepMeaning },
     h1Structure: { status: h1Structure, brokenLevel: null, latestClose: null, meaning: h1StructureMeaning },
+    h1Stochastic: { ok: !!h1Stochastic.ok, k: Number.isFinite(h1Stochastic.k) ? h1Stochastic.k : null, d: Number.isFinite(h1Stochastic.d) ? h1Stochastic.d : null, prevK: Number.isFinite(h1Stochastic.prevK) ? h1Stochastic.prevK : null, prevD: Number.isFinite(h1Stochastic.prevD) ? h1Stochastic.prevD : null, label: h1Stochastic.label || "Stoch unavailable", reason: h1Stochastic.reason || null, status: h1Stochastic.status || "idle" },
     h1TimingMeaning: contains(h1Sweep,"Bullish Sweep") ? "Buyer reaction appeared, but reversal confirmation still needed." : contains(h1Sweep,"Bearish Sweep") ? "Seller reaction appeared; watch continuation or failed follow-through." : "Timing confirmation is still limited.",
     keyZone,
     preparation: { note: prepNote }
@@ -1013,6 +1062,8 @@ function renderCurrentPriceDetailCards(detail){
         <h4 class="prep-current-detail-card-title">1H Timing</h4>
         <p class="prep-current-detail-kv">Sweep: ${detail.h1Sweep.status}</p>
         <p class="prep-current-detail-kv">Structure: ${detail.h1Structure.status}</p>
+        <p class="prep-current-detail-kv">Stochastic: ${detail.h1Stochastic.ok ? detail.h1Stochastic.label : "—"}</p>
+        <p class="prep-current-detail-kv">K/D: ${detail.h1Stochastic.ok ? `K ${nNum(detail.h1Stochastic.k)} · D ${nNum(detail.h1Stochastic.d)}` : "—"}</p>
         <p class="prep-current-detail-meaning">${detail.h1TimingMeaning}</p>
       </article>
       <article class="prep-current-detail-card">
@@ -1779,12 +1830,13 @@ async function renderLowerTimeframeMode(mode="3M"){
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
-      if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); }
+      if(!candles.length) { toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); update1hStochasticStatus([]); }
       else {
         const r1=renderSingleLtfChart(els.lower1hChart,candles,280);
         ltf1hChart=r1.chart; ltf1hSeries=r1.series;
         ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
         ltf1hChart.timeScale().fitContent();
+        try { update1hStochasticStatus(candles); } catch(err){ console.error("1H stochastic update failed:", err); }
         try { render1hSweepSummary(candles); } catch(err){ console.error("1H sweep render failed:", err); }
         try { render1hStructureSummary(candles); } catch(err){ console.error("1H structure render failed:", err); }
         try { render1hEventMarkers(candles); } catch(err){ console.error("1H event marker render failed:", err); }
@@ -1792,8 +1844,8 @@ async function renderLowerTimeframeMode(mode="3M"){
         renderMtfSummary();
       }
     }
-    catch(e){ console.error('1H chart render failed:', e); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
-  } else { toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
+    catch(e){ console.error('1H chart render failed:', e); update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
+  } else { update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
   render4hVsWeeklyFvgSummary();
 }
 
@@ -2303,6 +2355,13 @@ function render1hEventMarkers(candles){
     ltf1hSeries.createSeriesMarkers(markers);
   }
 }
+function update1hStochasticStatus(candles){
+  const stochastic = compute1hStochasticStatus(candles, 14, 3);
+  updateMarketPreparationState({ h1: { stochastic }, meta: { sourcesReady: { h1: true } } });
+  renderMarketPreparationMap(buildMarketPreparationMap());
+  return stochastic;
+}
+
 function render1hStructureSummary(candles){
   try {
     const st=detect1hStructure(candles);
