@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 03:25";
+const APP_LAST_UPDATED = "2026-05-29 03:50";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -31,7 +31,7 @@ const els = {
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
-  drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
+  exportPdfBtn: document.getElementById("exportPdfBtn"), pdfReportRoot: document.getElementById("pdfReportRoot"), drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
   weeklyTrendlineOverlay: document.getElementById("weeklyTrendlineOverlay"), h4TrendlineOverlay: document.getElementById("h4TrendlineOverlay"),
 };
 
@@ -50,6 +50,7 @@ let ltf1hChart = null;
 let ltfDailySeries = null;
 let ltf4hSeries = null;
 let ltf1hSeries = null;
+let latest1hCandles = [];
 let current4hFvgPriceLines = [];
 let current4hFvgOverlays = [];
 let ltf4hFvgLayer = null;
@@ -1118,6 +1119,148 @@ function renderMarketPreparationMap(mapData){
   setCurrentPriceDetailState(prepCurrentDetailOpen);
 }
 
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"]/g, (ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+}
+function formatPdfDate(date = new Date()){
+  return `${date.toISOString().slice(0,10)} ${date.toISOString().slice(11,16)} UTC`;
+}
+function formatPdfMaybe(value, fallback = "—"){
+  return value === null || value === undefined || value === "" ? fallback : String(value);
+}
+function formatPdfZoneRow(row, side){
+  const sources = Array.isArray(row?.sources) && row.sources.length ? [...new Set(row.sources.map((s)=>s.label || s.source).filter(Boolean))].join(" + ") : (row?.source || "—");
+  return {
+    side,
+    zone: row?.zoneText || "—",
+    source: sources,
+    type: row?.label || "—",
+    status: row?.quality || "—",
+    distance: row?.distanceText || "—",
+    note: row?.detail || row?.confluenceLabel || row?.quality || "—",
+  };
+}
+function buildPdfKeyLevels(mapData){
+  return [
+    ...(mapData?.upside || []).map((row)=>formatPdfZoneRow(row, "Upside")),
+    ...(mapData?.downside || []).map((row)=>formatPdfZoneRow(row, "Downside")),
+  ];
+}
+function formatReactionMemoryItem(item){
+  if(!item) return "—";
+  const zone = item.zone?.lower && item.zone?.upper ? ` · ${usd(item.zone.lower)}–${usd(item.zone.upper)}` : "";
+  return `${item.label || item.status || "Available"}${zone}`;
+}
+function buildPdfRecentReactionHistory(state){
+  const memory = state?.h4?.recentReaction || {};
+  return {
+    recentlyBrokenFvg: formatReactionMemoryItem(memory.lastBrokenFvg),
+    recentlyMitigatedFvg: formatReactionMemoryItem(memory.lastMitigatedFvg),
+    recentSupportBroken: formatReactionMemoryItem(memory.lastBrokenSupport),
+    recentResistanceBroken: formatReactionMemoryItem(memory.lastBrokenResistance),
+    lastReaction: memory.lastReactionLabel || "No clear recent reaction",
+  };
+}
+function buildPdfScenarios(detail, mapData, state){
+  const upside = mapData?.upside?.[0];
+  const downside = mapData?.downside?.[0];
+  const h4Rsi = detail?.h4Rsi?.label || "4H RSI unavailable";
+  const h1Sweep = detail?.h1Sweep?.status || "1H sweep unavailable";
+  return {
+    bullish: `Monitor whether price reclaims ${upside?.zoneText || "the nearest upside zone"} with supportive 1H timing. Current timing context: ${h1Sweep}.`,
+    bearish: `Monitor whether price fails below ${downside?.zoneText || "the nearest downside zone"} or rejects from upside reaction zones. Current momentum context: ${h4Rsi}.`,
+    caution: "Keep preparation neutral when confirmation is mixed. Avoid relying on one timeframe only; wait for Weekly, Daily, 4H, and 1H context to align.",
+  };
+}
+function buildPdfChartRangeContext(){
+  const dailyRange = getCandleDateRange(marketPreparationState.daily?.candles || latestDailyCandles);
+  const h4Range = getCandleDateRange(latest4hCandles);
+  const h1Range = getCandleDateRange(latest1hCandles);
+  return {
+    weekly: { title:"Weekly Chart Snapshot", meta:"48 weekly candles / ±1 year", purpose:"Big bias, major FVG, major S/R", placeholder:"Chart image will be added in a later PDF phase." },
+    daily: { title:"Daily Chart Snapshot", meta: dailyRange.count ? `follows selected 3M range · ${dailyRange.first} → ${dailyRange.last} · ${dailyRange.count} candles` : "range unavailable", purpose:"Larger lower-timeframe context", placeholder:"Daily chart snapshot placeholder." },
+    h4: { title:"4H Chart Snapshot", meta: h4Range.count ? `follows selected 3M range · ${h4Range.first} → ${h4Range.last} · ${h4Range.count} candles` : "range unavailable", purpose:"Reaction / validation timeframe", placeholder:"4H chart snapshot placeholder." },
+    h1: { title:"1H Chart Snapshot", meta: h1Range.count ? `capped for timing · latest ${h1Range.count} candles · ${h1Range.first} → ${h1Range.last}` : "capped for timing · latest 336 candles · range unavailable", purpose:"Short-term timing layer", placeholder:"1H chart snapshot placeholder." },
+  };
+}
+function buildPdfReportData(){
+  const mapData = buildMarketPreparationMap();
+  const detail = buildCurrentPriceDetailDataV2(mapData);
+  const state = marketPreparationState;
+  const priceText = detail.price?.text || "Price unavailable";
+  const changeText = Number.isFinite(detail.price?.change24hPct) ? `${detail.price.change24hPct >= 0 ? "+" : ""}${f1(detail.price.change24hPct)}%` : "—";
+  const marketStatus = state.mtf?.finalStatus || state.h4?.structureStatus || "Status unavailable";
+  const mainBias = state.mtf?.weeklyBias || detail.weekly?.bias || "Bias unavailable";
+  return {
+    meta: { title:"Pulse Lab Market Preparation Report", asset:"BTC/USDT", generatedAt:formatPdfDate(), context:"Weekly + Daily + 4H + 1H", lowerTimeframeDefault:"3M" },
+    executiveSummary: { currentPrice:priceText, change24h:changeText, marketStatus, mainBias, keyMessage:detail.preparation?.note || "Keep preparation neutral and wait for multi-timeframe confirmation." },
+    marketMap: { upside:mapData.upside || [], current:detail.compactRowText || mapData.currentRowText, downside:mapData.downside || [] },
+    detail,
+    dailyContext: {
+      fvg: (state.daily?.fvgZones || [])[0]?.type || "—",
+      sr: state.daily?.srSummary?.support?.nearest || state.daily?.srSummary?.resistance?.nearest ? "Daily S/R available" : "—",
+      meta: getCandleDateRange(state.daily?.candles || latestDailyCandles),
+    },
+    keyLevels: buildPdfKeyLevels(mapData),
+    recentHistory: buildPdfRecentReactionHistory(state),
+    scenarios: buildPdfScenarios(detail, mapData, state),
+    charts: buildPdfChartRangeContext(),
+    notes: ["Weekly uses 48 candles for the main momentum window.", "Daily follows the selected lower-timeframe range.", "4H follows the selected lower-timeframe range.", "1H is capped for timing/performance.", "This report is for market preparation and monitoring context only."],
+  };
+}
+function renderPdfRows(rows){
+  if(!rows?.length) return '<p class="pdf-muted">No rows available.</p>';
+  return rows.map((r)=>`<div class="pdf-ladder-row"><strong>${escapeHtml(r.zoneText || "—")}</strong><span>${escapeHtml(r.label || "—")}</span><span>${escapeHtml(r.quality || "—")}</span><span>${escapeHtml(r.distanceText || "—")}</span></div>`).join("");
+}
+function renderPdfCards(cards){
+  return cards.map((card)=>`<article class="pdf-card"><h3>${escapeHtml(card.title)}</h3>${card.lines.map((line)=>`<p>${escapeHtml(line)}</p>`).join("")}</article>`).join("");
+}
+function renderPdfReportPreview(report){
+  if(!els.pdfReportRoot) return;
+  const d = report.detail;
+  const dailyMeta = report.dailyContext.meta;
+  const detailCards = [
+    { title:"Price", lines:[`Current: ${d.price.text}`, `24H: ${report.executiveSummary.change24h}`] },
+    { title:"Sentiment", lines:[`Fear & Greed: ${formatPdfMaybe(d.sentiment.value)}`, `Label: ${formatPdfMaybe(d.sentiment.label)}`, d.sentiment.meaning] },
+    { title:"Weekly Context", lines:[`Bias: ${d.weekly.bias}`, `FVG: ${d.weekly.fvg}`, `S/R: ${d.weekly.sr}`] },
+    { title:"Daily Context", lines:[`FVG: ${report.dailyContext.fvg}`, `S/R: ${report.dailyContext.sr}`, dailyMeta.count ? `${dailyMeta.first} → ${dailyMeta.last} · ${dailyMeta.count} candles` : "Range unavailable"] },
+    { title:"4H Context", lines:[`Structure: ${d.h4Structure.status}`, `RSI: ${d.h4Rsi.ok ? `${d.h4Rsi.value} · ${d.h4Rsi.regime} · ${d.h4Rsi.slope}` : "—"}`, `Volume: ${d.h4Volume.label ? `${d.h4Volume.label} (${f1(d.h4Volume.ratio)}x)` : "—"}`] },
+    { title:"1H Timing", lines:[`Sweep: ${d.h1Sweep.status}`, `Structure: ${d.h1Structure.status}`, `Stochastic: ${d.h1Stochastic.ok ? `${d.h1Stochastic.label} · K ${d.h1Stochastic.k} / D ${d.h1Stochastic.d}` : "—"}`] },
+    { title:"Key Zone Position", lines:[`Upside: ${d.keyZone.nearestUpside}`, `Downside: ${d.keyZone.nearestDownside}`, `Position: ${d.keyZone.position}`, `Recent: ${d.keyZone.recentReaction}`] },
+    { title:"Preparation", lines:[d.preparation.note] },
+  ];
+  const keyRows = report.keyLevels.length ? report.keyLevels.map((row)=>`<tr><td>${escapeHtml(row.side)}</td><td>${escapeHtml(row.zone)}</td><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.distance)}</td><td>${escapeHtml(row.note)}</td></tr>`).join("") : '<tr><td colspan="7">No key levels available.</td></tr>';
+  const chartBlocks = Object.values(report.charts).map((chart)=>`<section class="pdf-chart-placeholder"><h3>${escapeHtml(chart.title)}</h3><p><strong>Range:</strong> ${escapeHtml(chart.meta)}</p><p><strong>Purpose:</strong> ${escapeHtml(chart.purpose)}</p><div>${escapeHtml(chart.placeholder)}</div></section>`).join("");
+  els.pdfReportRoot.innerHTML = `
+    <div class="pdf-report-actions"><button id="pdfPrintBtn" class="refresh-btn" type="button">Print / Save PDF</button><button id="pdfCloseBtn" class="refresh-btn secondary" type="button">Close</button></div>
+    <article class="pdf-report">
+      <section class="pdf-page">
+        <header class="pdf-report-header"><p>Pulse Lab</p><h1>${escapeHtml(report.meta.title)}</h1><div class="pdf-report-meta"><span>Asset: ${escapeHtml(report.meta.asset)}</span><span>Generated: ${escapeHtml(report.meta.generatedAt)}</span><span>Context: ${escapeHtml(report.meta.context)}</span><span>Lower TF Default: ${escapeHtml(report.meta.lowerTimeframeDefault)}</span></div></header>
+        <section class="pdf-section"><h2>Executive Summary</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Current Price",lines:[report.executiveSummary.currentPrice, `24H: ${report.executiveSummary.change24h}`]},{title:"Market Status",lines:[report.executiveSummary.marketStatus]},{title:"Main Bias",lines:[report.executiveSummary.mainBias]},{title:"Key Message",lines:[report.executiveSummary.keyMessage]}])}</div></section>
+        <section class="pdf-section avoid-break"><h2>Market Preparation Map</h2><div class="pdf-map"><h3>Upside Watch</h3>${renderPdfRows(report.marketMap.upside)}<h3>Current Price</h3><p class="pdf-current-row">${escapeHtml(report.marketMap.current)}</p><h3>Downside Watch</h3>${renderPdfRows(report.marketMap.downside)}</div></section>
+        <section class="pdf-section"><h2>Current Price Detail</h2><div class="pdf-card-grid pdf-card-grid-4">${renderPdfCards(detailCards)}</div></section>
+      </section>
+      <section class="pdf-page">
+        <section class="pdf-section"><h2>Key Levels & Preparation Plan</h2><table class="pdf-table"><thead><tr><th>Side</th><th>Zone</th><th>Source</th><th>Type</th><th>Status</th><th>Distance</th><th>Note</th></tr></thead><tbody>${keyRows}</tbody></table></section>
+        <section class="pdf-section avoid-break"><h2>Recent Reaction / Broken Zone History</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Recently Broken FVG",lines:[report.recentHistory.recentlyBrokenFvg]},{title:"Recently Mitigated FVG",lines:[report.recentHistory.recentlyMitigatedFvg]},{title:"Recent Support Broken",lines:[report.recentHistory.recentSupportBroken]},{title:"Recent Resistance Broken",lines:[report.recentHistory.recentResistanceBroken]},{title:"Last Reaction",lines:[report.recentHistory.lastReaction]}])}</div></section>
+        <section class="pdf-section avoid-break"><h2>Preparation Scenario</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Bullish Scenario",lines:[report.scenarios.bullish]},{title:"Bearish Scenario",lines:[report.scenarios.bearish]},{title:"Caution / Invalidation",lines:[report.scenarios.caution]}])}</div></section>
+      </section>
+      <section class="pdf-page">
+        <section class="pdf-section"><h2>Chart Snapshot Placeholder / Range Context</h2><div class="pdf-chart-grid">${chartBlocks}</div></section>
+        <section class="pdf-section avoid-break"><h2>Data Notes</h2><ul>${report.notes.map((note)=>`<li>${escapeHtml(note)}</li>`).join("")}</ul></section>
+      </section>
+    </article>`;
+  els.pdfReportRoot.hidden = false;
+  document.getElementById("pdfPrintBtn")?.addEventListener("click", ()=>window.print());
+  document.getElementById("pdfCloseBtn")?.addEventListener("click", closePdfReportPreview);
+}
+function openPdfReportPreview(){ renderPdfReportPreview(buildPdfReportData()); }
+function closePdfReportPreview(){ if(els.pdfReportRoot){ els.pdfReportRoot.hidden = true; els.pdfReportRoot.innerHTML = ""; } }
+function exportMarketReportPdf(){
+  try { openPdfReportPreview(); }
+  catch(error){ console.error("PDF report export failed", error); window.alert("Report export unavailable. Please wait for dashboard data to finish loading and try again."); }
+}
+
 function togglePriceChartError(msg=""){ if(!els.priceChartError) return; els.priceChartError.hidden = !msg; if(msg) els.priceChartError.textContent = msg; }
 function toggleRsiChartError(msg=""){ if(!els.rsiChartError) return; els.rsiChartError.hidden = !msg; if(msg) els.rsiChartError.textContent = msg; }
 
@@ -1675,7 +1818,8 @@ function setupCollapsibleSections(){
   els.h4DrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('h4'));
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
-  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); } });
+  els.exportPdfBtn?.addEventListener('click', exportMarketReportPdf);
+  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); } });
   setLtfPresetUI('3m');
   restoreToggleState();
   if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('3M'); lowerTimeframeLoaded=true; }); }
@@ -1864,8 +2008,9 @@ async function renderLowerTimeframeMode(mode="3M"){
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
       console.log('1H candles length:', candles.length);
       console.log('Sample 1H candle:', candles[0]);
-      if(!candles.length) { setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); update1hStochasticStatus([]); }
+      if(!candles.length) { latest1hCandles = []; setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); update1hStochasticStatus([]); }
       else {
+        latest1hCandles = candles;
         setLtfMeta(els.lower1hMeta, formatLtfRangeMeta({ role:'1H Timing', mode:selectedModeLabel, candles, isCapped:!hasRange && (preset==='1m' || preset==='3m'), isCustom:hasRange, capLabel:hasRange ? 'max 1000 candles' : h1CapLabelByPreset[preset] }));
         const r1=renderSingleLtfChart(els.lower1hChart,candles,280);
         ltf1hChart=r1.chart; ltf1hSeries=r1.series;
@@ -1879,8 +2024,8 @@ async function renderLowerTimeframeMode(mode="3M"){
         renderMtfSummary();
       }
     }
-    catch(e){ console.error('1H chart render failed:', e); setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
-  } else { setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
+    catch(e){ console.error('1H chart render failed:', e); latest1hCandles = []; setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
+  } else { latest1hCandles = []; setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); update1hStochasticStatus([]); toggleLtfError(els.lower1hError,'1H chart unavailable.'); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H data unavailable.'; if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable'; }
   render4hVsWeeklyFvgSummary();
 }
 

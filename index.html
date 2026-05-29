@@ -59,8 +59,11 @@
           </div>
           <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
             <div class="panel-header compact-header">
-              <h3>Market Preparation Map</h3>
-              <p>Weekly + 4H + 1H preparation ladder</p>
+              <div>
+                <h3>Market Preparation Map</h3>
+                <p>Weekly + 4H + 1H preparation ladder</p>
+              </div>
+              <button id="exportPdfBtn" class="refresh-btn secondary chart-tool-btn" type="button">Export PDF</button>
             </div>
             <div class="prep-map-group">
               <p class="prep-map-title">Upside Watch</p>
@@ -268,6 +271,7 @@
         </div>
       </div>
     </div>
+    <div id="pdfReportRoot" class="pdf-report-root" hidden></div>
     <script src="app.js"></script>
   </body>
 </html>
