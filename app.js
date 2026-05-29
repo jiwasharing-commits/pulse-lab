@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 06:35";
+const APP_LAST_UPDATED = "2026-05-29 06:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
+  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
@@ -1265,6 +1265,9 @@ function redrawSnapshotLayers(chartKey){
       if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
       scheduleTrendlineRedraw("weekly");
     }
+    if(chartKey === "daily"){
+      renderDailyPatternOverlay();
+    }
     if(chartKey === "h4"){
       schedule4hFvgOverlayRedraw(latest4hCandles);
       schedule4hSrOverlayRedraw(latest4hCandles);
@@ -2078,7 +2081,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
+function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; clearDailyPatternOverlay(); if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
 function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles, els.lowerDailyChart?.clientHeight || 400); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
 function scanDailyFvg(candles){
@@ -2318,6 +2321,7 @@ function updateDailyMarketContext(candles, mode){
     const pattern = detectDailyPattern(candles, mode);
     setDailyPatternSummary(pattern);
     updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    renderDailyPatternOverlay();
     renderMarketPreparationMap(buildMarketPreparationMap());
   }catch(e){
     console.error('Daily market context update failed:', e);
@@ -2380,6 +2384,62 @@ function formatLtfRangeMeta({ role, mode, candles, isCapped = false, isCustom = 
   return `${role} · ${behavior} · ${range.first} → ${range.last} · ${range.count} candles`;
 }
 
+
+function clearDailyPatternOverlay(){ if(els.lowerDailyPatternOverlay) els.lowerDailyPatternOverlay.innerHTML = ""; }
+function lineToSvgCoords(chart, series, line, startIndex, endIndex, candles){
+  if(!chart || !series || !line || !Array.isArray(candles) || !candles.length) return null;
+  const startCandle = candles[startIndex], endCandle = candles[endIndex];
+  if(!startCandle || !endCandle) return null;
+  const startPrice = getLineValueAtIndex(line, startIndex);
+  const endPrice = getLineValueAtIndex(line, endIndex);
+  if(!Number.isFinite(startPrice) || !Number.isFinite(endPrice)) return null;
+  const x1 = chart.timeScale().timeToCoordinate(startCandle.time);
+  const x2 = chart.timeScale().timeToCoordinate(endCandle.time);
+  const y1 = series.priceToCoordinate(startPrice);
+  const y2 = series.priceToCoordinate(endPrice);
+  if([x1,x2,y1,y2].some((v)=>!Number.isFinite(v))) return null;
+  return { x1, y1, x2, y2, endPrice };
+}
+function getDailyPatternOverlayPoints(pattern){
+  const candles = marketPreparationState.daily?.candles?.length ? marketPreparationState.daily.candles : latestDailyCandles;
+  if(!pattern?.ok || !Array.isArray(candles) || !candles.length) return null;
+  const startIndex = Math.max(0, Math.min(pattern.supportLine?.startIndex ?? 0, pattern.resistanceLine?.startIndex ?? 0));
+  const endIndex = candles.length - 1;
+  return {
+    candles,
+    support: lineToSvgCoords(ltfDailyChart, ltfDailySeries, pattern.supportLine, startIndex, endIndex, candles),
+    resistance: lineToSvgCoords(ltfDailyChart, ltfDailySeries, pattern.resistanceLine, startIndex, endIndex, candles),
+  };
+}
+function renderPatternLineSvg({ coords, label, className }){
+  if(!coords) return "";
+  const labelX = Math.max(6, Math.min(coords.x2 - 120, Math.max(coords.x1, coords.x2) - 128));
+  const labelY = Math.max(14, coords.y2 - 7);
+  return `<g class="${className}"><line x1="${coords.x1.toFixed(1)}" y1="${coords.y1.toFixed(1)}" x2="${coords.x2.toFixed(1)}" y2="${coords.y2.toFixed(1)}"/><text x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}">${escapeHtml(label)}</text></g>`;
+}
+function renderDailyPatternOverlay(){
+  try{
+    const layer = els.lowerDailyPatternOverlay;
+    const pattern = marketPreparationState.daily?.pattern;
+    if(!layer || !ltfDailyChart || !ltfDailySeries || !pattern?.ok){ clearDailyPatternOverlay(); return; }
+    const drawableStatuses = ["Valid", "Strong", "Broken"];
+    if(!drawableStatuses.includes(pattern.status)){ clearDailyPatternOverlay(); return; }
+    const points = getDailyPatternOverlayPoints(pattern);
+    if(!points?.support || !points?.resistance){ clearDailyPatternOverlay(); return; }
+    const rect = layer.getBoundingClientRect();
+    const width = Math.max(layer.clientWidth || rect.width || 0, 1);
+    const height = Math.max(layer.clientHeight || rect.height || 0, 1);
+    const isRange = pattern.type === "Horizontal Range";
+    const brokenClass = pattern.status === "Broken" ? " broken" : "";
+    const supportLabel = pattern.status === "Broken" && !isRange ? "Broken Channel Support" : (isRange ? "Daily Range Support" : "Daily Channel Support");
+    const resistanceLabel = pattern.status === "Broken" && !isRange ? "Broken Channel Resistance" : (isRange ? "Daily Range Resistance" : "Daily Channel Resistance");
+    layer.innerHTML = `<svg viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="none" aria-hidden="true">${renderPatternLineSvg({ coords:points.support, label:supportLabel, className:`daily-pattern-line support${brokenClass}` })}${renderPatternLineSvg({ coords:points.resistance, label:resistanceLabel, className:`daily-pattern-line resistance${brokenClass}` })}</svg>`;
+  }catch(e){
+    console.error("Daily pattern overlay render failed:", e);
+    clearDailyPatternOverlay();
+  }
+}
+
 function formatDailyRangeMeta({ role, mode, candles }){
   const range = getCandleDateRange(candles);
   if(!range.count) return `${role} · range unavailable`;
@@ -2417,6 +2477,8 @@ async function renderDailyRangeMode(mode = activeDailyRange || "6M"){
     renderDailyTimeframeChart(candles);
     ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
     ltfDailyChart.timeScale().fitContent();
+    ltfDailyChart.timeScale().subscribeVisibleTimeRangeChange(()=>renderDailyPatternOverlay());
+    ltfDailyChart.timeScale().subscribeVisibleLogicalRangeChange(()=>renderDailyPatternOverlay());
     updateDailyMarketContext(candles, mode);
   }catch(e){
     console.error('Daily chart render failed:', e);
@@ -3316,7 +3378,7 @@ window.addEventListener("resize", ()=>{
     renderFvgFilledOverlay();
     if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
   }
-  if(ltfDailyChart && els.lowerDailyChart) ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
+  if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); renderDailyPatternOverlay(); }
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
   scheduleTrendlineRedraw("weekly");
