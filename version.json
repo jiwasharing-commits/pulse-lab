@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 05:15",
-  "version": "v0.1.65",
+  "lastUpdated": "2026-05-29 05:40",
+  "version": "v0.1.66",
   "commitLabel": "manual",
-  "note": "Increase chart heights and enlarge PDF chart pages"
+  "note": "Improve PDF chart capture height and report table fallbacks"
 }

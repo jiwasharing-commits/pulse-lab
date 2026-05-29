@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 05:15";
+const APP_LAST_UPDATED = "2026-05-29 05:40";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -1129,17 +1129,73 @@ function formatPdfDate(date = new Date()){
 function formatPdfMaybe(value, fallback = "—"){
   return value === null || value === undefined || value === "" ? fallback : String(value);
 }
+function getPdfSourceCode(sourceLike){
+  const raw = String(sourceLike || "").toLowerCase();
+  if(raw.includes("weekly") || raw.includes("w ") || raw.startsWith("w")) return "W";
+  if(raw.includes("daily") || raw.includes("1d")) return "Daily";
+  if(raw.includes("h4") || raw.includes("4h")) return "4H";
+  return null;
+}
+function formatPdfSourceShort(row){
+  const sourceItems = Array.isArray(row?.sources) && row.sources.length ? row.sources : [row].filter(Boolean);
+  const found = new Set();
+  sourceItems.forEach((item)=>{
+    [item?.source, item?.primarySource, item?.label].forEach((value)=>{
+      const code = getPdfSourceCode(value);
+      if(code) found.add(code);
+    });
+  });
+  const ordered = ["W", "Daily", "4H"].filter((code)=>found.has(code));
+  return ordered.length ? ordered.join(" + ") : "—";
+}
+function formatPdfTypeShort(row){
+  const text = `${row?.label || ""} ${row?.source || ""} ${row?.confluenceLabel || ""}`;
+  if((row?.confluenceCount || 0) > 1 || /confluence/i.test(text)) return "Confluence";
+  if(/fvg/i.test(text)) return "FVG";
+  if(/support/i.test(text)) return "Support";
+  if(/resistance/i.test(text)) return "Resistance";
+  return row?.label || "—";
+}
+function formatPdfStatusShort(row){
+  const sourceQualities = Array.isArray(row?.sources) ? row.sources.map((s)=>s.quality || s.status).join(" ") : "";
+  const text = `${row?.quality || ""} ${row?.status || ""} ${sourceQualities}`;
+  if(/broken/i.test(text)) return "Broken";
+  if(/partial|partially/i.test(text)) return "Partial";
+  if(/filled/i.test(text)) return "Filled";
+  if(/unfilled|active/i.test(text)) return "Active";
+  if(/valid|touch|strong|medium|weak|high prob/i.test(text)) return "Valid";
+  return "Valid";
+}
+function formatPdfNote(row){
+  const sourceDetails = Array.isArray(row?.sources) && row.sources.length
+    ? [...new Set(row.sources.map((s)=>s.label || s.source).filter(Boolean))].join(" + ")
+    : "";
+  return row?.detail || row?.confluenceLabel || sourceDetails || row?.quality || "—";
+}
 function formatPdfZoneRow(row, side){
-  const sources = Array.isArray(row?.sources) && row.sources.length ? [...new Set(row.sources.map((s)=>s.label || s.source).filter(Boolean))].join(" + ") : (row?.source || "—");
   return {
     side,
     zone: row?.zoneText || "—",
-    source: sources,
-    type: row?.label || "—",
-    status: row?.quality || "—",
+    source: formatPdfSourceShort(row),
+    type: formatPdfTypeShort(row),
+    status: formatPdfStatusShort(row),
     distance: row?.distanceText || "—",
-    note: row?.detail || row?.confluenceLabel || row?.quality || "—",
+    note: formatPdfNote(row),
   };
+}
+function normalizePdfBiasText(value){
+  const text = String(value || "").trim();
+  if(!text || /^unavailable$/i.test(text) || /bias unavailable/i.test(text)) return null;
+  if(/waiting/i.test(text)) return "Mixed / Waiting confirmation";
+  return text;
+}
+function getPdfMainBias(state, detail){
+  const candidates = [state?.mtf?.weeklyBias, mtfState?.weeklyDirection, detail?.weekly?.bias];
+  for(const candidate of candidates){
+    const normalized = normalizePdfBiasText(candidate);
+    if(normalized) return normalized;
+  }
+  return "Neutral / Confirmation needed";
 }
 function buildPdfKeyLevels(mapData){
   return [
@@ -1188,27 +1244,92 @@ function getChartSnapshotTarget(chartKey){
   const ids = { weekly:"weeklyPriceChartWrapper", daily:"lowerDailyChartWrapper", h4:"lower4hChartWrapper", h1:"lower1hChartWrapper" };
   return document.getElementById(ids[chartKey]);
 }
+function getChartSnapshotElement(chartKey){
+  return { weekly:els.priceChart, daily:els.lowerDailyChart, h4:els.lower4hChart, h1:els.lower1hChart }[chartKey] || null;
+}
+function getChartSnapshotInstance(chartKey){
+  return { weekly:priceChart, daily:ltfDailyChart, h4:ltf4hChart, h1:ltf1hChart }[chartKey] || null;
+}
+function getPdfCaptureHeight(chartKey){
+  return { weekly:760, daily:720, h4:720, h1:680 }[chartKey] || 720;
+}
+function redrawSnapshotLayers(chartKey){
+  try{
+    if(chartKey === "weekly"){
+      renderFvgFilledOverlay();
+      if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
+      scheduleTrendlineRedraw("weekly");
+    }
+    if(chartKey === "h4"){
+      schedule4hFvgOverlayRedraw(latest4hCandles);
+      schedule4hSrOverlayRedraw(latest4hCandles);
+      scheduleTrendlineRedraw("h4");
+    }
+  } catch(error){
+    console.warn("Snapshot overlay redraw skipped", chartKey, error);
+  }
+}
+function resizeChartForSnapshot(chartKey, height = getPdfCaptureHeight(chartKey)){
+  const target = getChartSnapshotTarget(chartKey);
+  const chartEl = getChartSnapshotElement(chartKey);
+  const chart = getChartSnapshotInstance(chartKey);
+  if(!target || !chartEl) return null;
+  const previousState = {
+    target,
+    chartEl,
+    chart,
+    targetHeight: target.style.height,
+    targetMinHeight: target.style.minHeight,
+    chartHeight: chartEl.style.height,
+    chartMinHeight: chartEl.style.minHeight,
+  };
+  target.style.height = `${height}px`;
+  target.style.minHeight = `${height}px`;
+  chartEl.style.height = `${height}px`;
+  chartEl.style.minHeight = `${height}px`;
+  if(chart) chart.resize(Math.max(chartEl.clientWidth || target.clientWidth || 320, 320), height);
+  redrawSnapshotLayers(chartKey);
+  return previousState;
+}
+function restoreChartAfterSnapshot(chartKey, previousState){
+  if(!previousState) return;
+  const { target, chartEl, chart } = previousState;
+  target.style.height = previousState.targetHeight;
+  target.style.minHeight = previousState.targetMinHeight;
+  chartEl.style.height = previousState.chartHeight;
+  chartEl.style.minHeight = previousState.chartMinHeight;
+  const restoredHeight = Math.max(chartEl.clientHeight || 0, 1);
+  const restoredWidth = Math.max(chartEl.clientWidth || target.clientWidth || 320, 320);
+  if(chart) chart.resize(restoredWidth, restoredHeight);
+  redrawSnapshotLayers(chartKey);
+}
 function waitForSnapshotFrame(ms = 120){
   return new Promise((resolve)=>requestAnimationFrame(()=>setTimeout(resolve, ms)));
 }
 async function captureChartSnapshot(chartKey){
+  let snapshotState = null;
   try{
     if(typeof window.html2canvas !== "function") return null;
-    if(chartKey === "weekly") { try { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []); scheduleTrendlineRedraw("weekly"); } catch(_){} }
-    if(chartKey === "h4") { try { schedule4hFvgOverlayRedraw(latest4hCandles); schedule4hSrOverlayRedraw(latest4hCandles); scheduleTrendlineRedraw("h4"); } catch(_){} }
-    await waitForSnapshotFrame();
     const target = getChartSnapshotTarget(chartKey);
     if(!target || target.clientWidth <= 0 || target.clientHeight <= 0) return null;
+    snapshotState = resizeChartForSnapshot(chartKey);
+    await waitForSnapshotFrame(160);
     const canvas = await window.html2canvas(target, { scale:2, backgroundColor:"#0b1120", useCORS:true, logging:false });
     return canvas.toDataURL("image/png", 0.92);
   }catch(error){
     console.warn("Chart snapshot capture failed", chartKey, error);
     return null;
+  } finally {
+    restoreChartAfterSnapshot(chartKey, snapshotState);
+    await waitForSnapshotFrame(60);
   }
 }
 async function captureAllReportChartSnapshots(){
-  const entries = await Promise.all(["weekly","daily","h4","h1"].map(async (key)=>[key, await captureChartSnapshot(key)]));
-  return Object.fromEntries(entries);
+  const snapshots = {};
+  for(const key of ["weekly","daily","h4","h1"]){
+    snapshots[key] = await captureChartSnapshot(key);
+  }
+  return snapshots;
 }
 function injectChartSnapshotsIntoReport(reportData, snapshots){
   Object.entries(snapshots || {}).forEach(([key, imageDataUrl])=>{
@@ -1223,7 +1344,7 @@ function buildPdfReportData(){
   const priceText = detail.price?.text || "Price unavailable";
   const changeText = Number.isFinite(detail.price?.change24hPct) ? `${detail.price.change24hPct >= 0 ? "+" : ""}${f1(detail.price.change24hPct)}%` : "—";
   const marketStatus = state.mtf?.finalStatus || state.h4?.structureStatus || "Status unavailable";
-  const mainBias = state.mtf?.weeklyBias || detail.weekly?.bias || "Bias unavailable";
+  const mainBias = getPdfMainBias(state, detail);
   return {
     meta: { title:"Pulse Lab Market Preparation Report", asset:"BTC/USDT", generatedAt:formatPdfDate(), context:"Weekly + Daily + 4H + 1H", lowerTimeframeDefault:"3M" },
     executiveSummary: { currentPrice:priceText, change24h:changeText, marketStatus, mainBias, keyMessage:detail.preparation?.note || "Keep preparation neutral and wait for multi-timeframe confirmation." },
