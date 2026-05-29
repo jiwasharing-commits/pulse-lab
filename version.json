@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 03:00",
-  "version": "v0.1.59",
+  "lastUpdated": "2026-05-29 03:25",
+  "version": "v0.1.60",
   "commitLabel": "manual",
-  "note": "Add 1H stochastic timing filter to Current Price Detail"
+  "note": "Add lower timeframe chart range meta clarity"
 }
