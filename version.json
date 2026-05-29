@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 05:40",
-  "version": "v0.1.66",
+  "lastUpdated": "2026-05-29 06:05",
+  "version": "v0.1.67",
   "commitLabel": "manual",
-  "note": "Improve PDF chart capture height and report table fallbacks"
+  "note": "Add independent Daily range selector"
 }
