@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 01:05";
+const APP_LAST_UPDATED = "2026-05-29 01:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -27,7 +27,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
+  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
@@ -44,8 +44,10 @@ let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
 let weeklySrSummaryForOverlay = null;
+let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
+let ltfDailySeries = null;
 let ltf4hSeries = null;
 let ltf1hSeries = null;
 let current4hFvgPriceLines = [];
@@ -53,6 +55,7 @@ let current4hFvgOverlays = [];
 let ltf4hFvgLayer = null;
 let fvgRedrawPending = false;
 let active4hFvgs = [];
+let latestDailyCandles = [];
 let latest4hCandles = [];
 let srRedrawPending = false;
 let latest4hSrSummary = null;
@@ -1462,7 +1465,10 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); clearTrendlineOverlay("h4"); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); if(trendlineDrawMode.chartKey==='h4') disableTrendlineDrawMode(); }
+function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Visual confirmation layer'; }
+function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
+function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles,280); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent=`Daily candles: ${candles.length}`; return r; }
+function destroyLtfCharts(){ destroyDailyChart(); if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); clearTrendlineOverlay("h4"); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); if(trendlineDrawMode.chartKey==='h4') disableTrendlineDrawMode(); }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
   return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]), volume:parseFloat(k[5]) }))
@@ -1490,13 +1496,14 @@ async function renderLowerTimeframeMode(mode="3M"){
   activeLowerTfMode = mode;
   console.log("Lower TF mode:", activeLowerTfMode);
   if(!ltfVisible) return;
-  if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0 || els.lower4hChart.clientHeight===0 || els.lower1hChart.clientHeight===0){
+  if(!els.lowerDailyChart || !els.lower4hChart || !els.lower1hChart || els.lowerDailyChart.clientWidth===0 || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0 || els.lowerDailyChart.clientHeight===0 || els.lower4hChart.clientHeight===0 || els.lower1hChart.clientHeight===0){
     requestAnimationFrame(()=>renderLowerTimeframeMode(mode));
     return;
   }
   lowerTimeframeLoaded = true;
-  toggleLtfError(els.lower4hError,''); toggleLtfError(els.lower1hError,'');
+  toggleLtfError(els.lowerDailyError,''); toggleLtfError(els.lower4hError,''); toggleLtfError(els.lower1hError,'');
   destroyLtfCharts();
+  if(els.lowerDailyChart) els.lowerDailyChart.innerHTML='';
   if(els.lower4hChart) els.lower4hChart.innerHTML='';
   if(els.lower1hChart) els.lower1hChart.innerHTML='';
   if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML='';
@@ -1513,12 +1520,28 @@ async function renderLowerTimeframeMode(mode="3M"){
     st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
     et = new Date(`${els.ltfEndDate.value}T23:59:59`).getTime();
   }
+  const limitDailyByPreset = { '1w': 7, '2w': 14, '1m': 31, '3m': 92 };
   const limit4hByPreset = { '1w': 42, '2w': 84, '1m': 180, '3m': 540 };
   const limit1hByPreset = { '1w': 168, '2w': 336, '1m': 336, '3m': 336 };
-  const limit4h = hasRange ? 1000 : (limit4hByPreset[preset] || 180);
+  const limitDaily = hasRange ? 1000 : (limitDailyByPreset[preset] || 92);
+  const limit4h = hasRange ? 1000 : (limit4hByPreset[preset] || 540);
   const limit1h = hasRange ? 1000 : (limit1hByPreset[preset] || 336);
   console.log('4H chart size:', els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
-  const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
+  const [daily,h4,h1] = await Promise.allSettled([fetchLtfKlines('1d', st, et, limitDaily), fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
+  if(daily.status==='fulfilled'){
+    try {
+      const candles=mapKlinesToCandles(daily.value, hasRange ? undefined : limitDaily);
+      if(!candles.length) toggleLtfError(els.lowerDailyError,'No Daily candles found for selected range.');
+      else {
+        renderDailyTimeframeChart(candles);
+        ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
+        ltfDailyChart.timeScale().fitContent();
+      }
+    }
+    catch(e){ console.error('Daily chart render failed:', e); toggleLtfError(els.lowerDailyError,'Daily chart unavailable.'); }
+  } else {
+    toggleLtfError(els.lowerDailyError,'Daily chart unavailable.');
+  }
   if(h4.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
@@ -2357,6 +2380,7 @@ bindCurrentPriceDetailEvents();
 closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
+  if(ltfDailyChart && els.lowerDailyChart) ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
   scheduleTrendlineRedraw("weekly");

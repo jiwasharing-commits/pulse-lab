@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 01:05",
-  "version": "v0.1.55",
+  "lastUpdated": "2026-05-29 01:35",
+  "version": "v0.1.56",
   "commitLabel": "manual",
-  "note": "Merge overlapping Market Preparation Map rows into confluence zones"
+  "note": "Add visual-only Daily chart to lower timeframe section"
 }
