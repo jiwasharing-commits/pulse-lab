@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 04:35";
+const APP_LAST_UPDATED = "2026-05-29 04:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -1272,7 +1272,7 @@ function renderPdfReportPreview(report){
   const weeklyDailyCharts = [report.charts.weekly, report.charts.daily].map(renderPdfChartBlock).join("");
   const lowerTfCharts = [report.charts.h4, report.charts.h1].map(renderPdfChartBlock).join("");
   els.pdfReportRoot.innerHTML = `
-    <div class="pdf-report-actions"><button id="pdfPrintBtn" class="refresh-btn" type="button">Print / Save PDF</button><button id="pdfCloseBtn" class="refresh-btn secondary" type="button">Close</button></div>
+    <div class="pdf-report-actions"><button id="pdfPrintBtn" class="refresh-btn" type="button">Print / Save PDF</button><button id="pdfDownloadBtn" class="refresh-btn" type="button">Download PDF</button><button id="pdfCloseBtn" class="refresh-btn secondary" type="button">Close</button></div>
     <article class="pdf-report">
       <section class="pdf-page">
         <header class="pdf-report-header"><p>Pulse Lab</p><h1>${escapeHtml(report.meta.title)}</h1><div class="pdf-report-meta"><span>Asset: ${escapeHtml(report.meta.asset)}</span><span>Generated: ${escapeHtml(report.meta.generatedAt)}</span><span>Context: ${escapeHtml(report.meta.context)}</span><span>Lower TF Default: ${escapeHtml(report.meta.lowerTimeframeDefault)}</span></div></header>
@@ -1295,6 +1295,7 @@ function renderPdfReportPreview(report){
     </article>`;
   els.pdfReportRoot.hidden = false;
   document.getElementById("pdfPrintBtn")?.addEventListener("click", ()=>window.print());
+  document.getElementById("pdfDownloadBtn")?.addEventListener("click", downloadMarketReportPdf);
   document.getElementById("pdfCloseBtn")?.addEventListener("click", closePdfReportPreview);
 }
 async function openPdfReportPreview(){
@@ -1303,6 +1304,56 @@ async function openPdfReportPreview(){
   renderPdfReportPreview(injectChartSnapshotsIntoReport(report, snapshots));
 }
 function closePdfReportPreview(){ if(els.pdfReportRoot){ els.pdfReportRoot.hidden = true; els.pdfReportRoot.innerHTML = ""; } }
+function ensureJsPdfReady(){
+  return typeof window.jspdf?.jsPDF === "function" ? window.jspdf.jsPDF : null;
+}
+function getPdfFileName(){
+  const date = new Date().toISOString().slice(0,10);
+  return `pulse-lab-btcusdt-report-${date}.pdf`;
+}
+async function waitForPdfPageImages(pageEl){
+  const images = Array.from(pageEl?.querySelectorAll("img") || []);
+  await Promise.all(images.map((img)=>{
+    if(img.complete && img.naturalWidth > 0) return Promise.resolve();
+    return new Promise((resolve)=>{
+      img.addEventListener("load", resolve, { once:true });
+      img.addEventListener("error", resolve, { once:true });
+      setTimeout(resolve, 1500);
+    });
+  }));
+}
+async function capturePdfPage(pageEl){
+  if(typeof window.html2canvas !== "function") return null;
+  if(!pageEl) return null;
+  await waitForPdfPageImages(pageEl);
+  await waitForSnapshotFrame(80);
+  return window.html2canvas(pageEl, { scale:2, backgroundColor:"#ffffff", useCORS:true, logging:false });
+}
+async function downloadMarketReportPdf(){
+  const jsPDF = ensureJsPdfReady();
+  if(!jsPDF){ window.alert("Direct download unavailable. Use Print / Save PDF."); return; }
+  if(!els.pdfReportRoot || els.pdfReportRoot.hidden){ window.alert("Report preview unavailable. Open Export PDF first."); return; }
+  const btn = document.getElementById("pdfDownloadBtn");
+  try{
+    if(btn){ btn.disabled = true; btn.textContent = "Preparing download..."; }
+    const pages = Array.from(els.pdfReportRoot.querySelectorAll(".pdf-page"));
+    if(!pages.length) throw new Error("No PDF pages found");
+    const pdf = new jsPDF("p", "mm", "a4");
+    for(let i=0;i<pages.length;i++){
+      const canvas = await capturePdfPage(pages[i]);
+      if(!canvas) throw new Error(`Could not capture report page ${i+1}`);
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      if(i > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+    }
+    pdf.save(getPdfFileName());
+  } catch(error){
+    console.error("Direct PDF download failed", error);
+    window.alert("Direct download failed. Use Print / Save PDF.");
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = "Download PDF"; }
+  }
+}
 async function exportMarketReportPdf(){
   try {
     if(els.exportPdfBtn) { els.exportPdfBtn.disabled = true; els.exportPdfBtn.textContent = "Preparing PDF..."; }
