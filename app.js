@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 06:55";
+const APP_LAST_UPDATED = "2026-05-29 07:20";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -607,7 +607,7 @@ function normalizeMapZoneRow(row, currentPrice){
   const upper = Math.max(row.lower, row.upper);
   const center = (lower + upper) / 2;
   const distancePct = prepDistancePct(currentPrice, lower, upper);
-  const sourceRank = { daily_sr: 6, daily_fvg: 5, h4_sr: 4, h4_fvg: 3, weekly_sr: 2, weekly_fvg: 1 }[row.source] || 0;
+  const sourceRank = { daily_pattern_resistance: 8, daily_pattern_support: 8, daily_pattern_range_resistance: 8, daily_pattern_range_support: 8, daily_sr: 6, daily_fvg: 5, h4_sr: 4, h4_fvg: 3, weekly_sr: 2, weekly_fvg: 1 }[row.source] || 0;
   return {
     ...row,
     lower,
@@ -701,6 +701,78 @@ function mergeConfluenceRows(rows, currentPrice){
   }).sort((a,b)=> (b.priorityScore-a.priorityScore) || ((a.distancePct ?? 999)-(b.distancePct ?? 999))).slice(0,3);
 }
 
+
+function isActionableDailyPattern(pattern){ return !!pattern?.ok && ["Valid", "Strong"].includes(pattern.status); }
+function isBrokenDailyPattern(pattern){ return !!pattern?.ok && pattern.status === "Broken"; }
+function formatDailyPatternName(pattern){ return pattern?.ok ? pattern.type : "No clear Daily channel/range"; }
+function formatDailyPatternTouches(pattern){ return pattern?.ok ? `Support ${pattern.supportTouches || 0}x / Resistance ${pattern.resistanceTouches || 0}x` : "—"; }
+function formatDailyPatternCaption(pattern){
+  if(!pattern?.ok) return "Daily Pattern: No clear Daily channel/range detected";
+  return `Daily Pattern: ${pattern.type} · ${pattern.status} · ${pattern.currentPosition || "Position unavailable"} · Touches ${pattern.supportTouches || 0}/${pattern.resistanceTouches || 0}`;
+}
+function getDailyPatternBoundaryValues(pattern, candles = marketPreparationState.daily?.candles || latestDailyCandles){
+  if(!pattern?.ok || !Array.isArray(candles) || !candles.length) return null;
+  const latestIndex = candles.length - 1;
+  const lower = getLineValueAtIndex(pattern.supportLine, latestIndex);
+  const upper = getLineValueAtIndex(pattern.resistanceLine, latestIndex);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  return { lower: Math.min(lower, upper), upper: Math.max(lower, upper), latestIndex };
+}
+function getDailyPatternBoundaryZone(price, boundaryPrice){
+  if(!Number.isFinite(boundaryPrice)) return null;
+  const avgRange = getAverageDailyRange(marketPreparationState.daily?.candles || latestDailyCandles);
+  const base = Number.isFinite(price) && price > 0 ? price : boundaryPrice;
+  const halfWidth = Math.max(base * 0.0025, avgRange * 0.15, boundaryPrice * 0.0015);
+  return { lower: boundaryPrice - halfWidth, upper: boundaryPrice + halfWidth };
+}
+function getDailyPatternBoundaryLabels(pattern){
+  const isRange = pattern?.type === "Horizontal Range";
+  return {
+    support: isRange ? "Daily Range Support" : "Daily Channel Support",
+    resistance: isRange ? "Daily Range Resistance" : "Daily Channel Resistance",
+    supportSource: isRange ? "daily_pattern_range_support" : "daily_pattern_support",
+    resistanceSource: isRange ? "daily_pattern_range_resistance" : "daily_pattern_resistance",
+    quality: pattern?.ok ? `${pattern.status} ${isRange ? "Daily Range" : pattern.type}` : "Daily Pattern",
+  };
+}
+function getDailyPatternRecentReaction(pattern){
+  if(!isBrokenDailyPattern(pattern)) return null;
+  if(pattern.type === "Horizontal Range") return pattern.breakoutStatus === "Breakout" ? "Daily Range Breakout" : pattern.breakoutStatus === "Breakdown" ? "Daily Range Breakdown" : "Broken Daily Range";
+  return `Broken Daily ${pattern.type}`;
+}
+function getDailyPatternKeyZoneContext(state){
+  const pattern = state?.daily?.pattern;
+  if(isBrokenDailyPattern(pattern)) return { currentPosition:null, recentReaction:getDailyPatternRecentReaction(pattern) };
+  if(!isActionableDailyPattern(pattern)) return { currentPosition:null, recentReaction:null };
+  const isRange = pattern.type === "Horizontal Range";
+  const pos = String(pattern.currentPosition || "").toLowerCase();
+  if(pos.includes("support") || pos.includes("lower")) return { currentPosition:`Near Daily ${isRange ? "Range Support" : "Channel Support"}`, recentReaction:null };
+  if(pos.includes("resistance") || pos.includes("upper")) return { currentPosition:`Near Daily ${isRange ? "Range Resistance" : "Channel Resistance"}`, recentReaction:null };
+  return { currentPosition:null, recentReaction:null };
+}
+function addDailyPatternMapRows(add, price){
+  const pattern = marketPreparationState.daily?.pattern;
+  if(!isActionableDailyPattern(pattern)) return;
+  const boundaries = getDailyPatternBoundaryValues(pattern);
+  if(!boundaries) return;
+  const labels = getDailyPatternBoundaryLabels(pattern);
+  const supportZone = getDailyPatternBoundaryZone(price, boundaries.lower);
+  const resistanceZone = getDailyPatternBoundaryZone(price, boundaries.upper);
+  if(supportZone) add({ side:'downside', symbol:'▼', lower:supportZone.lower, upper:supportZone.upper, label:labels.support, quality:labels.quality, source:labels.supportSource, priorityScore:48, detail:`${labels.support} · ${formatDailyPatternCaption(pattern)}` });
+  if(resistanceZone) add({ side:'upside', symbol:'▲', lower:resistanceZone.lower, upper:resistanceZone.upper, label:labels.resistance, quality:labels.quality, source:labels.resistanceSource, priorityScore:48, detail:`${labels.resistance} · ${formatDailyPatternCaption(pattern)}` });
+}
+function getDailyPatternDetail(pattern = marketPreparationState.daily?.pattern){
+  return {
+    ok: !!pattern?.ok,
+    pattern: formatDailyPatternName(pattern),
+    status: pattern?.ok ? pattern.status : "Unavailable",
+    position: pattern?.ok ? (pattern.currentPosition || "Position unavailable") : "—",
+    touches: formatDailyPatternTouches(pattern),
+    reason: pattern?.ok ? (pattern.reason || "Daily pattern detected.") : "No clear Daily channel/range detected",
+    caption: formatDailyPatternCaption(pattern),
+  };
+}
+
 function buildMarketPreparationMap(){
   try{
     const price = marketPreparationState.currentPrice;
@@ -714,6 +786,7 @@ function buildMarketPreparationMap(){
     const dsr = marketPreparationState.daily.srSummary;
     if(dsr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:dsr.support.nearest.lower, upper:dsr.support.nearest.upper, label:'Daily Support', quality:`Touch ${dsr.support.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
     if(dsr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:dsr.resistance.nearest.lower, upper:dsr.resistance.nearest.upper, label:'Daily Resistance', quality:`Touch ${dsr.resistance.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
+    addDailyPatternMapRows(add, price);
     (marketPreparationState.h4.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'4H Bullish FVG':'4H Bearish FVG', quality: z.status||'High Prob', source:'h4_fvg', priorityScore:32, detail:'' }));
     const h4sr = marketPreparationState.h4.srSummary;
     if(h4sr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:h4sr.support.nearest.lower, upper:h4sr.support.nearest.upper, label:'4H Support', quality:`Touch ${h4sr.support.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
@@ -958,13 +1031,15 @@ function buildCurrentPricePositionStatus(state, mapData){
 }
 function getKeyZonePositionContext(mapData, state){
   const status = buildCurrentPricePositionStatus(state, mapData);
+  const patternContext = getDailyPatternKeyZoneContext(state);
+  const recentReaction = patternContext.recentReaction || (status.recentReaction?.confirmation
+    ? `${formatRecentReactionLabel(status.recentReaction)} · ${status.recentReaction.confirmation}`
+    : formatRecentReactionLabel(status.recentReaction));
   return {
     nearestUpside: status.nearestUpsideZone?.text || "Nearest upside unavailable",
     nearestDownside: status.nearestDownsideZone?.text || "Nearest downside unavailable",
-    position: status.currentPosition || "Current position unavailable",
-    recentReaction: status.recentReaction?.confirmation
-      ? `${formatRecentReactionLabel(status.recentReaction)} · ${status.recentReaction.confirmation}`
-      : formatRecentReactionLabel(status.recentReaction),
+    position: patternContext.currentPosition || status.currentPosition || "Current position unavailable",
+    recentReaction,
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -1012,6 +1087,7 @@ function buildCurrentPriceDetailDataV2(mapData){
         : "Keep preparation neutral and wait for multi-timeframe confirmation.";
   const weeklyFvgText = weeklyFvg ? `${weeklyFvg.type || "Weekly FVG"} ${Number.isFinite(price)&&price<weeklyFvg.lower?"above":Number.isFinite(price)&&price>weeklyFvg.upper?"below":"nearby"}` : "—";
   const weeklySrText = weeklySr?.support && weeklySr?.resistance ? "Price between weekly zones" : (weeklySr?.support || weeklySr?.resistance) ? "Price near weekly zone" : "—";
+  const dailyPattern = getDailyPatternDetail(marketPreparationState.daily?.pattern);
   const keyZone = getKeyZonePositionContext(mapData, marketPreparationState);
   return {
     compactRowText: Number.isFinite(price)
@@ -1020,6 +1096,7 @@ function buildCurrentPriceDetailDataV2(mapData){
     price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable", change24hPct: Number.isFinite(change24hPct) ? change24hPct : null },
     sentiment: { value: toNullableNumber(sentiment.value), label: sentiment.label || null, meaning: getSentimentMeaning(toNullableNumber(sentiment.value), sentiment.label) },
     weekly: { bias: weeklyBias, fvg: weeklyFvgText, sr: weeklySrText, meaning: weeklyBias !== "Unavailable" ? "Weekly context still defines the main reaction zones." : "Weekly context unavailable." },
+    daily: { pattern: dailyPattern.pattern, status: dailyPattern.status, position: dailyPattern.position, touches: dailyPattern.touches, reason: dailyPattern.reason, caption: dailyPattern.caption },
     h4Structure: { status: h4Status, brokenLevel: null, latestClose: null, meaning: h4Meaning },
     h4Rsi: { ok: !!h4Rsi.ok, value: Number.isFinite(h4Rsi.value) ? h4Rsi.value : null, regime: h4Rsi.regime || null, slope: h4Rsi.slope || null, label: h4Rsi.label || "4H RSI unavailable", meaning: h4RsiMeaning },
     h4Volume: { label: h4Volume?.label || null, ratio: Number.isFinite(h4Volume?.ratio) ? h4Volume.ratio : null },
@@ -1055,6 +1132,14 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-kv">Weekly FVG: ${detail.weekly.fvg}</p>
         <p class="prep-current-detail-kv">Weekly S/R: ${detail.weekly.sr}</p>
         <p class="prep-current-detail-meaning">${detail.weekly.meaning}</p>
+      </article>
+      <article class="prep-current-detail-card">
+        <h4 class="prep-current-detail-card-title">Daily Context</h4>
+        <p class="prep-current-detail-kv">Pattern: ${detail.daily.pattern}</p>
+        <p class="prep-current-detail-kv">Status: ${detail.daily.status}</p>
+        <p class="prep-current-detail-kv">Position: ${detail.daily.position}</p>
+        <p class="prep-current-detail-kv">Touches: ${detail.daily.touches}</p>
+        <p class="prep-current-detail-meaning">${detail.daily.reason}</p>
       </article>
       <article class="prep-current-detail-card">
         <h4 class="prep-current-detail-card-title">4H Context</h4>
@@ -1154,6 +1239,8 @@ function formatPdfSourceShort(row){
 function formatPdfTypeShort(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.confluenceLabel || ""}`;
   if((row?.confluenceCount || 0) > 1 || /confluence/i.test(text)) return "Confluence";
+  if(/daily_pattern_range/i.test(text)) return "Range Boundary";
+  if(/daily_pattern|channel/i.test(text)) return "Channel Boundary";
   if(/fvg/i.test(text)) return "FVG";
   if(/support/i.test(text)) return "Support";
   if(/resistance/i.test(text)) return "Resistance";
@@ -1166,7 +1253,8 @@ function formatPdfStatusShort(row){
   if(/partial|partially/i.test(text)) return "Partial";
   if(/filled/i.test(text)) return "Filled";
   if(/unfilled|active/i.test(text)) return "Active";
-  if(/valid|touch|strong|medium|weak|high prob/i.test(text)) return "Valid";
+  if(/strong/i.test(text)) return "Strong";
+  if(/valid|touch|medium|weak|high prob/i.test(text)) return "Valid";
   return "Valid";
 }
 function formatPdfNote(row){
@@ -1226,10 +1314,12 @@ function buildPdfScenarios(detail, mapData, state){
   const downside = mapData?.downside?.[0];
   const h4Rsi = detail?.h4Rsi?.label || "4H RSI unavailable";
   const h1Sweep = detail?.h1Sweep?.status || "1H sweep unavailable";
+  const pattern = state?.daily?.pattern;
+  const patternContext = isActionableDailyPattern(pattern) ? ` Daily pattern context: ${pattern.type} is ${pattern.status} with price ${pattern.currentPosition || "near boundary context"}.` : "";
   return {
-    bullish: `Monitor whether price reclaims ${upside?.zoneText || "the nearest upside zone"} with supportive 1H timing. Current timing context: ${h1Sweep}.`,
-    bearish: `Monitor whether price fails below ${downside?.zoneText || "the nearest downside zone"} or rejects from upside reaction zones. Current momentum context: ${h4Rsi}.`,
-    caution: "Keep preparation neutral when confirmation is mixed. Avoid relying on one timeframe only; wait for Weekly, Daily, 4H, and 1H context to align.",
+    bullish: `Monitor whether price holds ${downside?.zoneText || "the nearest downside zone"} and reclaims ${upside?.zoneText || "the nearest upside zone"} with supportive 1H timing. Current timing context: ${h1Sweep}.${patternContext}`,
+    bearish: `Monitor whether price fails below ${downside?.zoneText || "the nearest downside zone"} or rejects from upside reaction zones. Current momentum context: ${h4Rsi}.${patternContext}`,
+    caution: "Daily pattern detection is heuristic; wait for candle-close confirmation near boundaries and avoid relying on one timeframe only.",
   };
 }
 function buildPdfChartRangeContext(){
@@ -1240,7 +1330,7 @@ function buildPdfChartRangeContext(){
   const intradayMode = ltfPreset === "custom" ? "Custom" : ({ "1w":"1W", "2w":"2W", "1m":"1M", "3m":"3M" }[ltfPreset] || activeLowerTfMode || "3M");
   return {
     weekly: { title:"Weekly Chart Snapshot", meta:"48 weekly candles / ±1 year", purpose:"Big bias, major FVG, major S/R", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
-    daily: { title:"Daily Chart Snapshot", meta: dailyRange.count ? `selected Daily Range: ${dailyMode} · ${dailyRange.first} → ${dailyRange.last} · ${dailyRange.count} candles` : `selected Daily Range: ${dailyMode} · range unavailable`, purpose:"Larger lower-timeframe context", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
+    daily: { title:"Daily Chart Snapshot", meta: dailyRange.count ? `selected Daily Range: ${dailyMode} · ${dailyRange.first} → ${dailyRange.last} · ${dailyRange.count} candles` : `selected Daily Range: ${dailyMode} · range unavailable`, purpose:"Larger lower-timeframe context", patternCaption: formatDailyPatternCaption(marketPreparationState.daily?.pattern), imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
     h4: { title:"4H Chart Snapshot", meta: h4Range.count ? `follows selected Intraday ${intradayMode} range · ${h4Range.first} → ${h4Range.last} · ${h4Range.count} candles` : `follows selected Intraday ${intradayMode} range · range unavailable`, purpose:"Reaction / validation timeframe", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
     h1: { title:"1H Chart Snapshot", meta: h1Range.count ? `capped for timing · latest ${h1Range.count} candles · ${h1Range.first} → ${h1Range.last}` : "capped for timing · latest 336 candles · range unavailable", purpose:"Short-term timing layer", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
   };
@@ -1361,13 +1451,14 @@ function buildPdfReportData(){
     dailyContext: {
       fvg: (state.daily?.fvgZones || [])[0]?.type || "—",
       sr: state.daily?.srSummary?.support?.nearest || state.daily?.srSummary?.resistance?.nearest ? "Daily S/R available" : "—",
+      pattern: getDailyPatternDetail(state.daily?.pattern),
       meta: getCandleDateRange(state.daily?.candles || latestDailyCandles),
     },
     keyLevels: buildPdfKeyLevels(mapData),
     recentHistory: buildPdfRecentReactionHistory(state),
     scenarios: buildPdfScenarios(detail, mapData, state),
     charts: buildPdfChartRangeContext(),
-    notes: ["Weekly uses 48 candles for the main momentum window.", `Daily follows selected Daily Range: ${marketPreparationState.daily?.meta?.rangeMode || activeDailyRange || "6M"}.`, `4H follows selected Intraday Range: ${ltfPreset === "custom" ? "Custom" : ({ "1w":"1W", "2w":"2W", "1m":"1M", "3m":"3M" }[ltfPreset] || "3M")}.`, "1H is capped for timing/performance.", "This report is for market preparation and monitoring context only."],
+    notes: ["Weekly uses 48 candles for the main momentum window.", `Daily follows selected Daily Range: ${marketPreparationState.daily?.meta?.rangeMode || activeDailyRange || "6M"}.`, "Daily Pattern is detected from selected Daily Range and used as preparation context.", `4H follows selected Intraday Range: ${ltfPreset === "custom" ? "Custom" : ({ "1w":"1W", "2w":"2W", "1m":"1M", "3m":"3M" }[ltfPreset] || "3M")}.`, "1H is capped for timing/performance.", "This report is for market preparation and monitoring context only."],
   };
 }
 function renderPdfRows(rows){
@@ -1381,7 +1472,8 @@ function renderPdfChartBlock(chart){
   const image = chart.imageDataUrl
     ? `<img class="pdf-chart-img" src="${chart.imageDataUrl}" alt="${escapeHtml(chart.title)}" />`
     : `<div class="pdf-chart-unavailable">${escapeHtml(chart.placeholder || "Chart snapshot unavailable")}</div>`;
-  return `<section class="pdf-chart-block"><h3>${escapeHtml(chart.title)}</h3><p><strong>Range:</strong> ${escapeHtml(chart.meta)}</p><p><strong>Purpose:</strong> ${escapeHtml(chart.purpose)}</p>${image}</section>`;
+  const patternCaption = chart.patternCaption ? `<p><strong>Pattern:</strong> ${escapeHtml(chart.patternCaption.replace(/^Daily Pattern:\s*/, ""))}</p>` : "";
+  return `<section class="pdf-chart-block"><h3>${escapeHtml(chart.title)}</h3><p><strong>Range:</strong> ${escapeHtml(chart.meta)}</p><p><strong>Purpose:</strong> ${escapeHtml(chart.purpose)}</p>${patternCaption}${image}</section>`;
 }
 function renderPdfReportPreview(report){
   if(!els.pdfReportRoot) return;
@@ -1391,7 +1483,7 @@ function renderPdfReportPreview(report){
     { title:"Price", lines:[`Current: ${d.price.text}`, `24H: ${report.executiveSummary.change24h}`] },
     { title:"Sentiment", lines:[`Fear & Greed: ${formatPdfMaybe(d.sentiment.value)}`, `Label: ${formatPdfMaybe(d.sentiment.label)}`, d.sentiment.meaning] },
     { title:"Weekly Context", lines:[`Bias: ${d.weekly.bias}`, `FVG: ${d.weekly.fvg}`, `S/R: ${d.weekly.sr}`] },
-    { title:"Daily Context", lines:[`FVG: ${report.dailyContext.fvg}`, `S/R: ${report.dailyContext.sr}`, dailyMeta.count ? `${dailyMeta.first} → ${dailyMeta.last} · ${dailyMeta.count} candles` : "Range unavailable"] },
+    { title:"Daily Context", lines:[`FVG: ${report.dailyContext.fvg}`, `S/R: ${report.dailyContext.sr}`, `Pattern: ${report.dailyContext.pattern.pattern}`, `Status: ${report.dailyContext.pattern.status}`, `Position: ${report.dailyContext.pattern.position}`, `Touches: ${report.dailyContext.pattern.touches}`, report.dailyContext.pattern.reason, dailyMeta.count ? `${dailyMeta.first} → ${dailyMeta.last} · ${dailyMeta.count} candles` : "Range unavailable"] },
     { title:"4H Context", lines:[`Structure: ${d.h4Structure.status}`, `RSI: ${d.h4Rsi.ok ? `${d.h4Rsi.value} · ${d.h4Rsi.regime} · ${d.h4Rsi.slope}` : "—"}`, `Volume: ${d.h4Volume.label ? `${d.h4Volume.label} (${f1(d.h4Volume.ratio)}x)` : "—"}`] },
     { title:"1H Timing", lines:[`Sweep: ${d.h1Sweep.status}`, `Structure: ${d.h1Structure.status}`, `Stochastic: ${d.h1Stochastic.ok ? `${d.h1Stochastic.label} · K ${d.h1Stochastic.k} / D ${d.h1Stochastic.d}` : "—"}`] },
     { title:"Key Zone Position", lines:[`Upside: ${d.keyZone.nearestUpside}`, `Downside: ${d.keyZone.nearestDownside}`, `Position: ${d.keyZone.position}`, `Recent: ${d.keyZone.recentReaction}`] },
