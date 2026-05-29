@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 04:15";
+const APP_LAST_UPDATED = "2026-05-29 04:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -1281,7 +1281,7 @@ function renderPdfReportPreview(report){
         <section class="pdf-section"><h2>Current Price Detail</h2><div class="pdf-card-grid pdf-card-grid-4">${renderPdfCards(detailCards)}</div></section>
       </section>
       <section class="pdf-page">
-        <section class="pdf-section"><h2>Key Levels & Preparation Plan</h2><table class="pdf-table"><thead><tr><th>Side</th><th>Zone</th><th>Source</th><th>Type</th><th>Status</th><th>Distance</th><th>Note</th></tr></thead><tbody>${keyRows}</tbody></table></section>
+        <section class="pdf-section"><h2>Key Levels & Preparation Plan</h2><div class="pdf-table-wrap"><table class="pdf-table"><thead><tr><th>Side</th><th>Zone</th><th>Source</th><th>Type</th><th>Status</th><th>Distance</th><th>Note</th></tr></thead><tbody>${keyRows}</tbody></table></div></section>
         <section class="pdf-section avoid-break"><h2>Recent Reaction / Broken Zone History</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Recently Broken FVG",lines:[report.recentHistory.recentlyBrokenFvg]},{title:"Recently Mitigated FVG",lines:[report.recentHistory.recentlyMitigatedFvg]},{title:"Recent Support Broken",lines:[report.recentHistory.recentSupportBroken]},{title:"Recent Resistance Broken",lines:[report.recentHistory.recentResistanceBroken]},{title:"Last Reaction",lines:[report.recentHistory.lastReaction]}])}</div></section>
         <section class="pdf-section avoid-break"><h2>Preparation Scenario</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Bullish Scenario",lines:[report.scenarios.bullish]},{title:"Bearish Scenario",lines:[report.scenarios.bearish]},{title:"Caution / Invalidation",lines:[report.scenarios.caution]}])}</div></section>
       </section>

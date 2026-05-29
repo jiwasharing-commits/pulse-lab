@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 04:15",
-  "version": "v0.1.62",
+  "lastUpdated": "2026-05-29 04:35",
+  "version": "v0.1.63",
   "commitLabel": "manual",
-  "note": "Add chart snapshots to printable PDF report"
+  "note": "Polish printable PDF report layout and page breaks"
 }
