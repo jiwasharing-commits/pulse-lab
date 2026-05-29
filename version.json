@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-05-29 04:55",
+  "version": "v0.1.64",
+  "commitLabel": "manual",
+  "note": "Add direct jsPDF download for printable reports"
+}
