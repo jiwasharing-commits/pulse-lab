@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 02:05",
-  "version": "v0.1.57",
+  "lastUpdated": "2026-05-29 02:35",
+  "version": "v0.1.58",
   "commitLabel": "manual",
-  "note": "Add Daily FVG/SR state to Market Preparation Map"
+  "note": "Add current price position and recent reaction context"
 }

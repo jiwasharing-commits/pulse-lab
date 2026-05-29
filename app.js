@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 02:05";
+const APP_LAST_UPDATED = "2026-05-29 02:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -86,11 +86,12 @@ const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], srSummary: null },
   daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, meta: { rangeMode: null, candleCount: 0, updatedAt: null } },
-  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null },
+  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
   h1: { sweepStatus: null, structureStatus: null },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
   sentiment: { value: null, label: null, updatedAt: null },
+  currentPricePosition: { currentPosition: null, nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, timeframe: "4H", updatedAt: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
@@ -747,24 +748,171 @@ function compute4hVolumeStatus(candles){
     return null;
   }
 }
-function getKeyZonePositionContext(mapData, state){
-  const upside = Array.isArray(mapData?.upside) && mapData.upside.length ? mapData.upside[0] : null;
-  const downside = Array.isArray(mapData?.downside) && mapData.downside.length ? mapData.downside[0] : null;
-  const price = state.currentPrice;
-  let position = "Key zone context unavailable";
-  const near = (d)=>Number.isFinite(d) && d <= 1.0;
-  if(Number.isFinite(price)){
-    const upIn = upside && price >= upside.lower && price <= upside.upper;
-    const dnIn = downside && price >= downside.lower && price <= downside.upper;
-    if(upIn || dnIn) position = "Inside FVG";
-    else if(upside && near(upside.distancePct)) position = String(upside.label||"").includes("Resistance") ? "Near Resistance" : "Near FVG";
-    else if(downside && near(downside.distancePct)) position = String(downside.label||"").includes("Support") ? "Near Support" : "Near FVG";
-    else if(upside || downside) position = "Between key zones";
+function getNearestUpsideZoneFromMap(mapData){
+  return Array.isArray(mapData?.upside) && mapData.upside.length ? mapData.upside[0] : null;
+}
+function getNearestDownsideZoneFromMap(mapData){
+  return Array.isArray(mapData?.downside) && mapData.downside.length ? mapData.downside[0] : null;
+}
+function getMapZoneKind(zone){
+  const label = String(zone?.label || zone?.source || "").toLowerCase();
+  if(label.includes("support")) return "support";
+  if(label.includes("resistance")) return "resistance";
+  if(label.includes("fvg")) return "fvg";
+  return "zone";
+}
+function getMapZoneText(zone, directionText){
+  if(!zone) return directionText === "above" ? "Nearest upside unavailable" : "Nearest downside unavailable";
+  const label = zone.label || "Zone";
+  const distance = zone.distanceText || "—";
+  return `${label} · ${distance} ${directionText}`;
+}
+function classifyZonePosition(currentPrice, zone){
+  if(!Number.isFinite(currentPrice) || !zone || !Number.isFinite(zone.lower) || !Number.isFinite(zone.upper)) return null;
+  const kind = getMapZoneKind(zone);
+  const lower = Math.min(zone.lower, zone.upper);
+  const upper = Math.max(zone.lower, zone.upper);
+  const distancePct = prepDistancePct(currentPrice, lower, upper);
+  const isInside = currentPrice >= lower && currentPrice <= upper;
+  const title = kind === "support" ? "Support" : kind === "resistance" ? "Resistance" : kind === "fvg" ? "FVG" : "Zone";
+  if(isInside) return { label: `Inside ${title}`, kind, distancePct, zone };
+  if(Number.isFinite(distancePct) && distancePct <= 1) return { label: `Near ${title}`, kind, distancePct, zone };
+  if(kind === "fvg" && Number.isFinite(distancePct) && distancePct <= 3) return { label: "Approaching FVG", kind, distancePct, zone };
+  if(kind === "fvg") return { label: currentPrice > upper ? "Above FVG" : "Below FVG", kind, distancePct, zone };
+  return { label: null, kind, distancePct, zone };
+}
+function normalizeReactionZone(zone, label, source){
+  if(!zone || !Number.isFinite(zone.lower) || !Number.isFinite(zone.upper)) return null;
+  return { ...zone, lower: Math.min(zone.lower, zone.upper), upper: Math.max(zone.lower, zone.upper), label, source };
+}
+function getSrZonesForReaction(srSummary){
+  const zones = [];
+  const add = (zone, type, label) => {
+    const normalized = normalizeReactionZone(zone, label, "h4_sr");
+    if(normalized) zones.push({ ...normalized, type });
+  };
+  add(srSummary?.support?.nearest, "support", "4H Support");
+  add(srSummary?.support?.strongest, "support", "4H Support");
+  add(srSummary?.resistance?.nearest, "resistance", "4H Resistance");
+  add(srSummary?.resistance?.strongest, "resistance", "4H Resistance");
+  const seen = new Set();
+  return zones.filter((z)=>{
+    const key = `${z.type}|${Number(z.lower).toFixed(2)}|${Number(z.upper).toFixed(2)}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function reactionTimeValue(candle){ return Number(candle?.time ?? candle?.openTime ?? Date.now()); }
+function detectRecentFvgReaction(candles, fvgZones, lookback = 3){
+  try{
+    if(!Array.isArray(candles) || !Array.isArray(fvgZones) || !fvgZones.length) return null;
+    const recent = candles.slice(-lookback).filter(Boolean);
+    let latest = null;
+    recent.forEach((c)=>{
+      fvgZones.forEach((zone)=>{
+        const z = normalizeReactionZone(zone, zone.type?.includes("Bullish") ? "4H Bullish FVG" : "4H Bearish FVG", "h4_fvg");
+        if(!z || !Number.isFinite(c.high) || !Number.isFinite(c.low) || !Number.isFinite(c.close)) return;
+        const touched = c.high >= z.lower && c.low <= z.upper;
+        const bullish = String(zone.type || "").includes("Bullish");
+        const broke = bullish ? c.close < z.lower : c.close > z.upper;
+        const rejected = touched && (bullish ? c.close > z.upper : c.close < z.lower);
+        const mitigated = touched && !broke;
+        const base = { zone: z, timeframe: "4H", time: reactionTimeValue(c), type: "fvg" };
+        if(broke) latest = { ...base, status: "Broke through FVG", label: `Broke through ${z.label}`, memoryKey: "lastBrokenFvg" };
+        else if(rejected) latest = { ...base, status: "Rejected from FVG", label: `Rejected from ${z.label} on last ${lookback} candles`, memoryKey: "lastMitigatedFvg" };
+        else if(mitigated) latest = { ...base, status: "Mitigated FVG", label: `Recently mitigated ${z.label}`, memoryKey: "lastMitigatedFvg" };
+      });
+    });
+    return latest;
+  }catch{ return null; }
+}
+function detectRecentSrReaction(candles, srSummary, lookback = 3){
+  try{
+    if(!Array.isArray(candles) || candles.length < 2 || !srSummary) return null;
+    const recent = candles.slice(-lookback).filter(Boolean);
+    const latestCandle = recent[recent.length - 1];
+    const previous = candles[candles.length - 2];
+    let latest = null;
+    getSrZonesForReaction(srSummary).forEach((zone)=>{
+      if(!latestCandle || !previous) return;
+      const touched = recent.some((c)=> zone.type === "support" ? c.low <= zone.upper && c.low >= zone.lower : c.high >= zone.lower && c.high <= zone.upper);
+      const supportBroken = zone.type === "support" && latestCandle.close < zone.lower && previous.close >= zone.lower;
+      const resistanceBroken = zone.type === "resistance" && latestCandle.close > zone.upper && previous.close <= zone.upper;
+      const bounced = zone.type === "support" && touched && latestCandle.close > zone.upper;
+      const rejected = zone.type === "resistance" && touched && latestCandle.close < zone.lower;
+      const base = { zone, timeframe: "4H", time: reactionTimeValue(latestCandle), type: "sr" };
+      if(supportBroken) latest = { ...base, status: "Support Broken", label: "Recent Support Broken", memoryKey: "lastBrokenSupport" };
+      else if(resistanceBroken) latest = { ...base, status: "Resistance Broken", label: "Recent Resistance Broken", memoryKey: "lastBrokenResistance" };
+      else if(bounced) latest = { ...base, status: "Bounced from Support", label: `Bounced from ${zone.label} on last ${lookback} candles`, memoryKey: null };
+      else if(rejected) latest = { ...base, status: "Rejected from Resistance", label: `Rejected from ${zone.label} on last ${lookback} candles`, memoryKey: null };
+    });
+    return latest;
+  }catch{ return null; }
+}
+function updateRecentReactionMemory(prevMemory, latestReaction){
+  const memory = {
+    lastBrokenFvg: prevMemory?.lastBrokenFvg || null,
+    lastMitigatedFvg: prevMemory?.lastMitigatedFvg || null,
+    lastBrokenSupport: prevMemory?.lastBrokenSupport || null,
+    lastBrokenResistance: prevMemory?.lastBrokenResistance || null,
+    lastReactionLabel: prevMemory?.lastReactionLabel || null,
+    updatedAt: prevMemory?.updatedAt || null,
+  };
+  if(!latestReaction) return memory;
+  if(latestReaction.memoryKey && Object.prototype.hasOwnProperty.call(memory, latestReaction.memoryKey)) memory[latestReaction.memoryKey] = latestReaction;
+  memory.lastReactionLabel = latestReaction.label || latestReaction.status || null;
+  memory.updatedAt = Date.now();
+  return memory;
+}
+function formatCurrentPositionLabel(position){
+  return position?.label || "Between key zones";
+}
+function formatRecentReactionLabel(reaction){
+  return reaction?.label || reaction?.lastReactionLabel || "No clear recent reaction";
+}
+function buildCurrentPricePositionStatus(state, mapData){
+  try{
+    const currentPrice = state?.currentPrice;
+    const upside = getNearestUpsideZoneFromMap(mapData);
+    const downside = getNearestDownsideZoneFromMap(mapData);
+    const upPosition = classifyZonePosition(currentPrice, upside);
+    const downPosition = classifyZonePosition(currentPrice, downside);
+    let currentPosition = "Current position unavailable";
+    if(Number.isFinite(currentPrice)){
+      const candidates = [upPosition, downPosition].filter((p)=>p?.label);
+      const inside = candidates.find((p)=>String(p.label).startsWith("Inside"));
+      const near = candidates.find((p)=>String(p.label).startsWith("Near"));
+      currentPosition = formatCurrentPositionLabel(inside || near || { label: (upside || downside) ? "Between key zones" : "Current position unavailable" });
+    }
+    const recentFvg = detectRecentFvgReaction(latest4hCandles, state?.h4?.fvgZones || [], 3);
+    const recentSr = detectRecentSrReaction(latest4hCandles, state?.h4?.srSummary, 3);
+    const latestReaction = [recentFvg, recentSr].filter(Boolean).sort((a,b)=>(b.time || 0) - (a.time || 0))[0] || null;
+    const memory = updateRecentReactionMemory(state?.h4?.recentReaction, latestReaction);
+    const h1Context = state?.h1?.sweepStatus ? `1H: ${state.h1.sweepStatus}` : null;
+    const recentReaction = latestReaction ? { ...latestReaction, confirmation: h1Context } : (memory.lastReactionLabel ? { label: memory.lastReactionLabel, confirmation: h1Context } : null);
+    return {
+      currentPosition,
+      nearestUpsideZone: upside ? { ...upside, text: getMapZoneText(upside, "above") } : null,
+      nearestDownsideZone: downside ? { ...downside, text: getMapZoneText(downside, "below") } : null,
+      recentReaction,
+      recentReactionMemory: memory,
+      timeframe: "4H",
+      updatedAt: Date.now(),
+    };
+  }catch{
+    return { currentPosition: "Current position unavailable", nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, recentReactionMemory: marketPreparationState.h4?.recentReaction || null, timeframe: "4H", updatedAt: Date.now() };
   }
+}
+function getKeyZonePositionContext(mapData, state){
+  const status = buildCurrentPricePositionStatus(state, mapData);
   return {
-    nearestUpside: upside ? `${upside.label} · ${upside.distanceText} above` : "—",
-    nearestDownside: downside ? `${downside.label} · ${downside.distanceText} below` : "—",
-    position,
+    nearestUpside: status.nearestUpsideZone?.text || "Nearest upside unavailable",
+    nearestDownside: status.nearestDownsideZone?.text || "Nearest downside unavailable",
+    position: status.currentPosition || "Current position unavailable",
+    recentReaction: status.recentReaction?.confirmation
+      ? `${formatRecentReactionLabel(status.recentReaction)} · ${status.recentReaction.confirmation}`
+      : formatRecentReactionLabel(status.recentReaction),
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -872,6 +1020,7 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-kv">Nearest Upside: ${detail.keyZone.nearestUpside}</p>
         <p class="prep-current-detail-kv">Nearest Downside: ${detail.keyZone.nearestDownside}</p>
         <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
+        <p class="prep-current-detail-kv">Recent Reaction: ${detail.keyZone.recentReaction}</p>
       </article>
       <article class="prep-current-detail-card prep-current-detail-preparation">
         <h4 class="prep-current-detail-card-title">Preparation</h4>
@@ -897,10 +1046,22 @@ function bindCurrentPriceDetailEvents(){
   els.prepCurrentDetailToggle?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleCurrentPriceDetail(); });
 }
 function renderMarketPreparationMap(mapData){
+  const safeMap = mapData || { upside: [], downside: [], currentRowText: "● Price unavailable" };
+  const positionStatus = buildCurrentPricePositionStatus(marketPreparationState, safeMap);
+  marketPreparationState.currentPricePosition = {
+    currentPosition: positionStatus.currentPosition,
+    nearestUpsideZone: positionStatus.nearestUpsideZone,
+    nearestDownsideZone: positionStatus.nearestDownsideZone,
+    recentReaction: positionStatus.recentReaction,
+    timeframe: positionStatus.timeframe,
+    updatedAt: positionStatus.updatedAt,
+  };
+  if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
+  marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
   const row = (r)=>`<div class="prep-map-row"><span class="prep-map-row-symbol">${r.symbol}</span><span class="prep-map-row-zone">${r.zoneText}</span><span class="prep-map-row-label">${r.label}</span><span class="prep-map-row-quality">${r.quality}</span><span class="prep-map-row-distance">${r.distanceText}</span></div>`;
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = mapData.upside.length ? mapData.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = mapData.downside.length ? mapData.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
-  const detail = buildCurrentPriceDetailDataV2(mapData);
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? safeMap.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? safeMap.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
   renderCurrentPriceDetailCards(detail);
   setCurrentPriceDetailState(prepCurrentDetailOpen);
