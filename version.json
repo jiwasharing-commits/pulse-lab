@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-05-29 00:15",
+  "version": "v0.1.54",
+  "commitLabel": "manual",
+  "note": "Fix sentiment fallback, set 3M LTF default, and map volume"
+}
