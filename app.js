@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 00:15";
+const APP_LAST_UPDATED = "2026-05-29 01:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -590,15 +590,112 @@ function compute4hRsiStatus(candles, period = 14){
     return { ok:false, value:null, prev:null, slope:null, regime:null, label:"4H RSI unavailable", reason:"compute_failed" };
   }
 }
+
+function normalizeMapZoneRow(row, currentPrice){
+  if(!row || !Number.isFinite(row.lower) || !Number.isFinite(row.upper)) return null;
+  const lower = Math.min(row.lower, row.upper);
+  const upper = Math.max(row.lower, row.upper);
+  const center = (lower + upper) / 2;
+  const distancePct = prepDistancePct(currentPrice, lower, upper);
+  const sourceRank = { h4_sr: 4, h4_fvg: 3, weekly_sr: 2, weekly_fvg: 1 }[row.source] || 0;
+  return {
+    ...row,
+    lower,
+    upper,
+    center,
+    sourceRank,
+    priorityScore: Number(row.priorityScore) || 0,
+    distancePct,
+    distanceText: distancePct===null ? '—' : `${f1(distancePct)}%`,
+    zoneText: `${usd(lower)}–${usd(upper)}`,
+    sources: [{ ...row, lower, upper, center }],
+    confluenceCount: 1,
+    confluenceLabel: row.label || row.source || 'Zone',
+    primarySource: row.source || 'unknown',
+  };
+}
+function getZoneOverlapRatio(a, b){
+  if(!a || !b) return 0;
+  const overlap = Math.max(0, Math.min(a.upper, b.upper) - Math.max(a.lower, b.lower));
+  const aw = Math.max(0, a.upper - a.lower);
+  const bw = Math.max(0, b.upper - b.lower);
+  const denom = Math.max(1e-9, Math.min(aw || 0, bw || 0));
+  return overlap / denom;
+}
+function zonesOverlap(a, b){ return getZoneOverlapRatio(a,b) > 0; }
+function getZoneGapPct(a, b, currentPrice){
+  if(!a || !b) return null;
+  const gap = a.upper < b.lower ? b.lower - a.upper : b.upper < a.lower ? a.lower - b.upper : 0;
+  const denom = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : Math.max(1, ((a.center || 0) + (b.center || 0)) / 2);
+  return gap / denom;
+}
+function shouldMergeMapRows(a, b, currentPrice){
+  if(!a || !b || a.side !== b.side) return false;
+  const denom = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : Math.max(1, ((a.center || 0) + (b.center || 0)) / 2);
+  const centerDistancePct = Math.abs(a.center - b.center) / denom;
+  const gapPct = getZoneGapPct(a, b, currentPrice);
+  return getZoneOverlapRatio(a,b) >= 0.35 || centerDistancePct < 0.0035 || (Number.isFinite(gapPct) && gapPct < 0.005);
+}
+function formatConfluenceQuality(row){
+  const labels = [...new Set((row.sources || []).map((s)=>s.label || s.source).filter(Boolean))];
+  return labels.length ? labels.join(' + ') : (row.quality || 'Confluence');
+}
+function mergeConfluenceRows(rows, currentPrice){
+  const normalized = (rows || []).map((r)=>normalizeMapZoneRow(r, currentPrice)).filter(Boolean);
+  const better = (a,b)=> (a.priorityScore - b.priorityScore) || (a.sourceRank - b.sourceRank) || ((b.distancePct ?? 999) - (a.distancePct ?? 999));
+  const sorted = normalized.sort((a,b)=>better(b,a));
+  const groups = [];
+  for(const row of sorted){
+    const group = groups.find((g)=>shouldMergeMapRows(g, row, currentPrice));
+    if(!group){ groups.push({ ...row, primary: row }); continue; }
+    group.sources.push(...row.sources);
+    group.lower = Math.min(group.lower, row.lower);
+    group.upper = Math.max(group.upper, row.upper);
+    group.center = (group.lower + group.upper) / 2;
+    if(better(row, group.primary) > 0) group.primary = row;
+  }
+  return groups.map((g)=>{
+    const uniqueSources=[];
+    const seen=new Set();
+    for(const src of g.sources){
+      const key=`${src.source}|${src.label}|${Number(src.lower).toFixed(2)}|${Number(src.upper).toFixed(2)}`;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      uniqueSources.push(src);
+    }
+    const distancePct = prepDistancePct(currentPrice, g.lower, g.upper);
+    const confluenceCount = uniqueSources.length;
+    const primary = g.primary || g;
+    const baseScore = Math.max(...uniqueSources.map((s)=>Number(s.priorityScore)||0), primary.priorityScore || 0);
+    const priorityScore = baseScore + Math.max(0, confluenceCount - 1) * 8 - (Number.isFinite(distancePct) ? Math.min(distancePct, 10) * 0.25 : 0);
+    const row = {
+      ...primary,
+      lower: g.lower,
+      upper: g.upper,
+      center: (g.lower + g.upper) / 2,
+      distancePct,
+      distanceText: distancePct===null ? '—' : `${f1(distancePct)}%`,
+      zoneText: `${usd(g.lower)}–${usd(g.upper)}`,
+      sources: uniqueSources,
+      confluenceCount,
+      confluenceLabel: uniqueSources.map((s)=>s.label || s.source).filter(Boolean).join(' + '),
+      primarySource: primary.source || 'unknown',
+      priorityScore,
+    };
+    if(confluenceCount > 1){
+      row.label = 'Confluence Zone';
+      row.quality = formatConfluenceQuality(row);
+      row.detail = row.confluenceLabel;
+    }
+    return row;
+  }).sort((a,b)=> (b.priorityScore-a.priorityScore) || ((a.distancePct ?? 999)-(b.distancePct ?? 999))).slice(0,3);
+}
+
 function buildMarketPreparationMap(){
   try{
     const price = marketPreparationState.currentPrice;
-    const mkRow = (base) => {
-      const dist = prepDistancePct(price, base.lower, base.upper);
-      return { ...base, distancePct: dist, distanceText: dist===null?'—':`${f1(dist)}%`, zoneText: `${usd(base.lower)}–${usd(base.upper)}` };
-    };
     const rows = [];
-    const add = (row) => { if(Number.isFinite(row.lower)&&Number.isFinite(row.upper)) rows.push(mkRow(row)); };
+    const add = (row) => { const normalized = normalizeMapZoneRow(row, price); if(normalized) rows.push(normalized); };
     (marketPreparationState.weekly.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'W Bullish FVG':'W Bearish FVG', quality: z.status||'Valid', source:'weekly_fvg', priorityScore:20, detail:'' }));
     const wsr = marketPreparationState.weekly.srSummary;
     if(wsr?.support) add({ side:'downside', symbol:'▼', lower:wsr.support.lower, upper:wsr.support.upper, label:'W Support', quality:wsr.support.strength||'Strong', source:'weekly_sr', priorityScore:25, detail:'' });
@@ -607,17 +704,8 @@ function buildMarketPreparationMap(){
     const h4sr = marketPreparationState.h4.srSummary;
     if(h4sr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:h4sr.support.nearest.lower, upper:h4sr.support.nearest.upper, label:'4H Support', quality:`Touch ${h4sr.support.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
     if(h4sr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:h4sr.resistance.nearest.lower, upper:h4sr.resistance.nearest.upper, label:'4H Resistance', quality:`Touch ${h4sr.resistance.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
-    const dedupe = (arr) => {
-      const out = [];
-      arr.sort((a,b)=>b.priorityScore-a.priorityScore).forEach((r)=>{
-        const c = (r.lower+r.upper)/2;
-        const exists = out.find((o)=>Math.abs(c-((o.lower+o.upper)/2))/Math.max(1, price||1) < 0.0035);
-        if(!exists) out.push(r);
-      });
-      return out.slice(0,3);
-    };
-    const upside = dedupe(rows.filter((r)=>r.side==='upside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)>price : true));
-    const downside = dedupe(rows.filter((r)=>r.side==='downside' && Number.isFinite(price) ? ((r.lower+r.upper)/2)<price : true));
+    const upside = mergeConfluenceRows(rows.filter((r)=>r.side==='upside' && (Number.isFinite(price) ? r.center>price : true)), price);
+    const downside = mergeConfluenceRows(rows.filter((r)=>r.side==='downside' && (Number.isFinite(price) ? r.center<price : true)), price);
     const h4RsiText = marketPreparationState.h4.rsiStatus?.ok ? ` | ${marketPreparationState.h4.rsiStatus.label}` : "";
     const currentRowText = Number.isFinite(price)
       ? `● ${usd(price)} | ${marketPreparationState.h4.structureStatus||'4H —'}${h4RsiText} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`

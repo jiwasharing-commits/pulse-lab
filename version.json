@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 00:15",
-  "version": "v0.1.54",
+  "lastUpdated": "2026-05-29 01:05",
+  "version": "v0.1.55",
   "commitLabel": "manual",
-  "note": "Fix sentiment fallback, set 3M LTF default, and map volume"
+  "note": "Merge overlapping Market Preparation Map rows into confluence zones"
 }
