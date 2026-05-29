@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-29 03:50",
-  "version": "v0.1.61",
+  "lastUpdated": "2026-05-29 04:15",
+  "version": "v0.1.62",
   "commitLabel": "manual",
-  "note": "Add printable PDF report preview without chart snapshots"
+  "note": "Add chart snapshots to printable PDF report"
 }

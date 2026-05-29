@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 03:50";
+const APP_LAST_UPDATED = "2026-05-29 04:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -44,6 +44,7 @@ let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
 let weeklySrSummaryForOverlay = null;
+let weeklyDatasetCache = [];
 let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
@@ -1177,11 +1178,43 @@ function buildPdfChartRangeContext(){
   const h4Range = getCandleDateRange(latest4hCandles);
   const h1Range = getCandleDateRange(latest1hCandles);
   return {
-    weekly: { title:"Weekly Chart Snapshot", meta:"48 weekly candles / ±1 year", purpose:"Big bias, major FVG, major S/R", placeholder:"Chart image will be added in a later PDF phase." },
-    daily: { title:"Daily Chart Snapshot", meta: dailyRange.count ? `follows selected 3M range · ${dailyRange.first} → ${dailyRange.last} · ${dailyRange.count} candles` : "range unavailable", purpose:"Larger lower-timeframe context", placeholder:"Daily chart snapshot placeholder." },
-    h4: { title:"4H Chart Snapshot", meta: h4Range.count ? `follows selected 3M range · ${h4Range.first} → ${h4Range.last} · ${h4Range.count} candles` : "range unavailable", purpose:"Reaction / validation timeframe", placeholder:"4H chart snapshot placeholder." },
-    h1: { title:"1H Chart Snapshot", meta: h1Range.count ? `capped for timing · latest ${h1Range.count} candles · ${h1Range.first} → ${h1Range.last}` : "capped for timing · latest 336 candles · range unavailable", purpose:"Short-term timing layer", placeholder:"1H chart snapshot placeholder." },
+    weekly: { title:"Weekly Chart Snapshot", meta:"48 weekly candles / ±1 year", purpose:"Big bias, major FVG, major S/R", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
+    daily: { title:"Daily Chart Snapshot", meta: dailyRange.count ? `follows selected 3M range · ${dailyRange.first} → ${dailyRange.last} · ${dailyRange.count} candles` : "range unavailable", purpose:"Larger lower-timeframe context", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
+    h4: { title:"4H Chart Snapshot", meta: h4Range.count ? `follows selected 3M range · ${h4Range.first} → ${h4Range.last} · ${h4Range.count} candles` : "range unavailable", purpose:"Reaction / validation timeframe", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
+    h1: { title:"1H Chart Snapshot", meta: h1Range.count ? `capped for timing · latest ${h1Range.count} candles · ${h1Range.first} → ${h1Range.last}` : "capped for timing · latest 336 candles · range unavailable", purpose:"Short-term timing layer", imageDataUrl:null, placeholder:"Chart snapshot unavailable" },
   };
+}
+function getChartSnapshotTarget(chartKey){
+  const ids = { weekly:"weeklyPriceChartWrapper", daily:"lowerDailyChartWrapper", h4:"lower4hChartWrapper", h1:"lower1hChartWrapper" };
+  return document.getElementById(ids[chartKey]);
+}
+function waitForSnapshotFrame(ms = 120){
+  return new Promise((resolve)=>requestAnimationFrame(()=>setTimeout(resolve, ms)));
+}
+async function captureChartSnapshot(chartKey){
+  try{
+    if(typeof window.html2canvas !== "function") return null;
+    if(chartKey === "weekly") { try { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []); scheduleTrendlineRedraw("weekly"); } catch(_){} }
+    if(chartKey === "h4") { try { schedule4hFvgOverlayRedraw(latest4hCandles); schedule4hSrOverlayRedraw(latest4hCandles); scheduleTrendlineRedraw("h4"); } catch(_){} }
+    await waitForSnapshotFrame();
+    const target = getChartSnapshotTarget(chartKey);
+    if(!target || target.clientWidth <= 0 || target.clientHeight <= 0) return null;
+    const canvas = await window.html2canvas(target, { scale:2, backgroundColor:"#0b1120", useCORS:true, logging:false });
+    return canvas.toDataURL("image/png", 0.92);
+  }catch(error){
+    console.warn("Chart snapshot capture failed", chartKey, error);
+    return null;
+  }
+}
+async function captureAllReportChartSnapshots(){
+  const entries = await Promise.all(["weekly","daily","h4","h1"].map(async (key)=>[key, await captureChartSnapshot(key)]));
+  return Object.fromEntries(entries);
+}
+function injectChartSnapshotsIntoReport(reportData, snapshots){
+  Object.entries(snapshots || {}).forEach(([key, imageDataUrl])=>{
+    if(reportData.charts?.[key]) reportData.charts[key].imageDataUrl = imageDataUrl || null;
+  });
+  return reportData;
 }
 function buildPdfReportData(){
   const mapData = buildMarketPreparationMap();
@@ -1215,6 +1248,12 @@ function renderPdfRows(rows){
 function renderPdfCards(cards){
   return cards.map((card)=>`<article class="pdf-card"><h3>${escapeHtml(card.title)}</h3>${card.lines.map((line)=>`<p>${escapeHtml(line)}</p>`).join("")}</article>`).join("");
 }
+function renderPdfChartBlock(chart){
+  const image = chart.imageDataUrl
+    ? `<img class="pdf-chart-img" src="${chart.imageDataUrl}" alt="${escapeHtml(chart.title)}" />`
+    : `<div class="pdf-chart-unavailable">${escapeHtml(chart.placeholder || "Chart snapshot unavailable")}</div>`;
+  return `<section class="pdf-chart-block"><h3>${escapeHtml(chart.title)}</h3><p><strong>Range:</strong> ${escapeHtml(chart.meta)}</p><p><strong>Purpose:</strong> ${escapeHtml(chart.purpose)}</p>${image}</section>`;
+}
 function renderPdfReportPreview(report){
   if(!els.pdfReportRoot) return;
   const d = report.detail;
@@ -1230,7 +1269,8 @@ function renderPdfReportPreview(report){
     { title:"Preparation", lines:[d.preparation.note] },
   ];
   const keyRows = report.keyLevels.length ? report.keyLevels.map((row)=>`<tr><td>${escapeHtml(row.side)}</td><td>${escapeHtml(row.zone)}</td><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.distance)}</td><td>${escapeHtml(row.note)}</td></tr>`).join("") : '<tr><td colspan="7">No key levels available.</td></tr>';
-  const chartBlocks = Object.values(report.charts).map((chart)=>`<section class="pdf-chart-placeholder"><h3>${escapeHtml(chart.title)}</h3><p><strong>Range:</strong> ${escapeHtml(chart.meta)}</p><p><strong>Purpose:</strong> ${escapeHtml(chart.purpose)}</p><div>${escapeHtml(chart.placeholder)}</div></section>`).join("");
+  const weeklyDailyCharts = [report.charts.weekly, report.charts.daily].map(renderPdfChartBlock).join("");
+  const lowerTfCharts = [report.charts.h4, report.charts.h1].map(renderPdfChartBlock).join("");
   els.pdfReportRoot.innerHTML = `
     <div class="pdf-report-actions"><button id="pdfPrintBtn" class="refresh-btn" type="button">Print / Save PDF</button><button id="pdfCloseBtn" class="refresh-btn secondary" type="button">Close</button></div>
     <article class="pdf-report">
@@ -1246,7 +1286,10 @@ function renderPdfReportPreview(report){
         <section class="pdf-section avoid-break"><h2>Preparation Scenario</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Bullish Scenario",lines:[report.scenarios.bullish]},{title:"Bearish Scenario",lines:[report.scenarios.bearish]},{title:"Caution / Invalidation",lines:[report.scenarios.caution]}])}</div></section>
       </section>
       <section class="pdf-page">
-        <section class="pdf-section"><h2>Chart Snapshot Placeholder / Range Context</h2><div class="pdf-chart-grid">${chartBlocks}</div></section>
+        <section class="pdf-section"><h2>Chart Snapshots & Range Context</h2><div class="pdf-chart-grid">${weeklyDailyCharts}</div></section>
+      </section>
+      <section class="pdf-page">
+        <section class="pdf-section"><h2>Lower Timeframe Chart Snapshots</h2><div class="pdf-chart-grid">${lowerTfCharts}</div></section>
         <section class="pdf-section avoid-break"><h2>Data Notes</h2><ul>${report.notes.map((note)=>`<li>${escapeHtml(note)}</li>`).join("")}</ul></section>
       </section>
     </article>`;
@@ -1254,11 +1297,19 @@ function renderPdfReportPreview(report){
   document.getElementById("pdfPrintBtn")?.addEventListener("click", ()=>window.print());
   document.getElementById("pdfCloseBtn")?.addEventListener("click", closePdfReportPreview);
 }
-function openPdfReportPreview(){ renderPdfReportPreview(buildPdfReportData()); }
+async function openPdfReportPreview(){
+  const report = buildPdfReportData();
+  const snapshots = await captureAllReportChartSnapshots();
+  renderPdfReportPreview(injectChartSnapshotsIntoReport(report, snapshots));
+}
 function closePdfReportPreview(){ if(els.pdfReportRoot){ els.pdfReportRoot.hidden = true; els.pdfReportRoot.innerHTML = ""; } }
-function exportMarketReportPdf(){
-  try { openPdfReportPreview(); }
+async function exportMarketReportPdf(){
+  try {
+    if(els.exportPdfBtn) { els.exportPdfBtn.disabled = true; els.exportPdfBtn.textContent = "Preparing PDF..."; }
+    await openPdfReportPreview();
+  }
   catch(error){ console.error("PDF report export failed", error); window.alert("Report export unavailable. Please wait for dashboard data to finish loading and try again."); }
+  finally { if(els.exportPdfBtn) { els.exportPdfBtn.disabled = false; els.exportPdfBtn.textContent = "Export PDF"; } }
 }
 
 function togglePriceChartError(msg=""){ if(!els.priceChartError) return; els.priceChartError.hidden = !msg; if(msg) els.priceChartError.textContent = msg; }
@@ -2747,6 +2798,7 @@ async function loadDashboard(){
   if(klinesRes.status === "fulfilled"){
     try {
       const dataset = buildWeeklyDataset(klinesRes.value);
+      weeklyDatasetCache = dataset;
       const metrics = renderSummaryCards(dataset);
       renderDivergenceStatus(dataset, metrics);
       renderPotentialBiasScanner(dataset, metrics);

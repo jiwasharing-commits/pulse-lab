@@ -6,6 +6,7 @@
     <title>Pulse Lab</title>
     <link rel="stylesheet" href="style.css" />
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -129,7 +130,7 @@
                   <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
                   <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
                   <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
-                  <div class="chart-wrap compact"><div id="priceChart" role="img"></div><div id="weeklyTrendlineOverlay" class="trendline-overlay-layer"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
+                  <div class="chart-wrap compact" id="weeklyPriceChartWrapper"><div id="priceChart" role="img"></div><div id="weeklyTrendlineOverlay" class="trendline-overlay-layer"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
                 </section>
                 <section class="panel weekly-chart-card weekly-rsi-card">
                   <div class="panel-header"><h2>Weekly RSI</h2></div>
@@ -241,7 +242,7 @@
                 <div class="panel-header compact-header"><div><h3>1H Candlestick</h3><p id="lower1hMeta" class="meta">1H Timing: waiting</p></div></div>
                 <div class="ltf-chart-card-grid">
                   <div class="ltf-chart-main">
-                    <div class="chart-wrap compact"><div id="lower1hChart" class="lower-chart" role="img"></div><div id="lower1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
+                    <div class="chart-wrap compact" id="lower1hChartWrapper"><div id="lower1hChart" class="lower-chart" role="img"></div><div id="lower1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
                   </div>
                   <div class="ltf-chart-explanation internal-data-panel">
                     <section class="panel mini-panel ltf-mini-card ltf-analysis-card-compact"><h3>1H Analysis</h3><p class="mini-line ltf-analysis-row"><strong>Timing:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hTiming">1H Timing: use sweep + structure context</p><p class="mini-line ltf-analysis-row"><strong>Liquidity Sweep:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hSweepSummary" title="Liquidity Sweep = price takes liquidity above/below swing then returns">1H Liquidity Sweep: loading</p><p class="mini-line ltf-analysis-row"><strong>Structure:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hStructureSummary" title="CHoCH = Change of Character, BOS = Break of Structure">1H Structure: loading</p></section>
