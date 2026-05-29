@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 01:35";
+const APP_LAST_UPDATED = "2026-05-29 02:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -85,13 +85,14 @@ const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: n
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], srSummary: null },
+  daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, meta: { rangeMode: null, candleCount: 0, updatedAt: null } },
   h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null },
   h1: { sweepStatus: null, structureStatus: null },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
   sentiment: { value: null, label: null, updatedAt: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
-  meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, h4: false, h1: false } },
+  meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
@@ -600,7 +601,7 @@ function normalizeMapZoneRow(row, currentPrice){
   const upper = Math.max(row.lower, row.upper);
   const center = (lower + upper) / 2;
   const distancePct = prepDistancePct(currentPrice, lower, upper);
-  const sourceRank = { h4_sr: 4, h4_fvg: 3, weekly_sr: 2, weekly_fvg: 1 }[row.source] || 0;
+  const sourceRank = { daily_sr: 6, daily_fvg: 5, h4_sr: 4, h4_fvg: 3, weekly_sr: 2, weekly_fvg: 1 }[row.source] || 0;
   return {
     ...row,
     lower,
@@ -703,6 +704,10 @@ function buildMarketPreparationMap(){
     const wsr = marketPreparationState.weekly.srSummary;
     if(wsr?.support) add({ side:'downside', symbol:'▼', lower:wsr.support.lower, upper:wsr.support.upper, label:'W Support', quality:wsr.support.strength||'Strong', source:'weekly_sr', priorityScore:25, detail:'' });
     if(wsr?.resistance) add({ side:'upside', symbol:'▲', lower:wsr.resistance.lower, upper:wsr.resistance.upper, label:'W Resistance', quality:wsr.resistance.strength||'Strong', source:'weekly_sr', priorityScore:25, detail:'' });
+    (marketPreparationState.daily.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'Daily Bullish FVG':'Daily Bearish FVG', quality: z.status||'Valid', source:'daily_fvg', priorityScore:36, detail:'' }));
+    const dsr = marketPreparationState.daily.srSummary;
+    if(dsr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:dsr.support.nearest.lower, upper:dsr.support.nearest.upper, label:'Daily Support', quality:`Touch ${dsr.support.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
+    if(dsr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:dsr.resistance.nearest.lower, upper:dsr.resistance.nearest.upper, label:'Daily Resistance', quality:`Touch ${dsr.resistance.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
     (marketPreparationState.h4.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'4H Bullish FVG':'4H Bearish FVG', quality: z.status||'High Prob', source:'h4_fvg', priorityScore:32, detail:'' }));
     const h4sr = marketPreparationState.h4.srSummary;
     if(h4sr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:h4sr.support.nearest.lower, upper:h4sr.support.nearest.upper, label:'4H Support', quality:`Touch ${h4sr.support.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
@@ -1468,6 +1473,46 @@ function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.t
 function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Visual confirmation layer'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
 function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles,280); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent=`Daily candles: ${candles.length}`; return r; }
+function scanDailyFvg(candles){
+  try{
+    if(!Array.isArray(candles) || candles.length < 3) return [];
+    return scan4hFvg(candles).map((f)=>({ ...f, type: f.type.replace('4H', 'Daily'), timeframe: '1D' }));
+  }catch(e){
+    console.error('Daily FVG scan failed:', e);
+    return [];
+  }
+}
+function scanDailySupportResistance(candles){
+  try{
+    return scan4hSupportResistance(candles);
+  }catch(e){
+    console.error('Daily S/R scan failed:', e);
+    return { ok:false, reason:'scan_failed', currentPrice:candles?.[candles.length-1]?.close??null, candleCount:Array.isArray(candles)?candles.length:0, support:{nearest:null,strongest:null}, resistance:{nearest:null,strongest:null}, meta:{swingHighCount:0,swingLowCount:0,supportZoneCount:0,resistanceZoneCount:0,activeSupportCount:0,activeResistanceCount:0,tolerancePct:0,avgRangeAbs:0} };
+  }
+}
+function updateDailyMarketContext(candles, mode){
+  try{
+    if(!Array.isArray(candles) || !candles.length){
+      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, meta: { rangeMode: mode, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+      renderMarketPreparationMap(buildMarketPreparationMap());
+      return;
+    }
+    const current = candles[candles.length-1]?.close;
+    const fvgZones = scanDailyFvg(candles).filter(f=>f.status!=='Filled').map((f)=>{
+      const inside = current>=f.lower && current<=f.upper;
+      const nearest = current>f.upper ? f.upper : f.lower;
+      const distance = inside ? 0 : Math.abs(current-nearest)/current*100;
+      return { ...f, distancePct: distance };
+    }).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct) || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1)) || b.index-a.index);
+    const srSummary = scanDailySupportResistance(candles);
+    updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, meta: { rangeMode: mode, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
+  }catch(e){
+    console.error('Daily market context update failed:', e);
+    updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, meta: { rangeMode: mode, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
+  }
+}
 function destroyLtfCharts(){ destroyDailyChart(); if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); clearTrendlineOverlay("h4"); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); if(trendlineDrawMode.chartKey==='h4') disableTrendlineDrawMode(); }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
@@ -1531,16 +1576,18 @@ async function renderLowerTimeframeMode(mode="3M"){
   if(daily.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(daily.value, hasRange ? undefined : limitDaily);
-      if(!candles.length) toggleLtfError(els.lowerDailyError,'No Daily candles found for selected range.');
+      if(!candles.length) { toggleLtfError(els.lowerDailyError,'No Daily candles found for selected range.'); updateDailyMarketContext([], mode); }
       else {
         renderDailyTimeframeChart(candles);
         ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
         ltfDailyChart.timeScale().fitContent();
+        updateDailyMarketContext(candles, mode);
       }
     }
-    catch(e){ console.error('Daily chart render failed:', e); toggleLtfError(els.lowerDailyError,'Daily chart unavailable.'); }
+    catch(e){ console.error('Daily chart render failed:', e); toggleLtfError(els.lowerDailyError,'Daily chart unavailable.'); updateDailyMarketContext([], mode); }
   } else {
     toggleLtfError(els.lowerDailyError,'Daily chart unavailable.');
+    updateDailyMarketContext([], mode);
   }
   if(h4.status==='fulfilled'){
     try {
