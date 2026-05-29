@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 04:55";
+const APP_LAST_UPDATED = "2026-05-29 05:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -1269,8 +1269,10 @@ function renderPdfReportPreview(report){
     { title:"Preparation", lines:[d.preparation.note] },
   ];
   const keyRows = report.keyLevels.length ? report.keyLevels.map((row)=>`<tr><td>${escapeHtml(row.side)}</td><td>${escapeHtml(row.zone)}</td><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.distance)}</td><td>${escapeHtml(row.note)}</td></tr>`).join("") : '<tr><td colspan="7">No key levels available.</td></tr>';
-  const weeklyDailyCharts = [report.charts.weekly, report.charts.daily].map(renderPdfChartBlock).join("");
-  const lowerTfCharts = [report.charts.h4, report.charts.h1].map(renderPdfChartBlock).join("");
+  const weeklyChartBlock = renderPdfChartBlock(report.charts.weekly);
+  const dailyChartBlock = renderPdfChartBlock(report.charts.daily);
+  const h4ChartBlock = renderPdfChartBlock(report.charts.h4);
+  const h1ChartBlock = renderPdfChartBlock(report.charts.h1);
   els.pdfReportRoot.innerHTML = `
     <div class="pdf-report-actions"><button id="pdfPrintBtn" class="refresh-btn" type="button">Print / Save PDF</button><button id="pdfDownloadBtn" class="refresh-btn" type="button">Download PDF</button><button id="pdfCloseBtn" class="refresh-btn secondary" type="button">Close</button></div>
     <article class="pdf-report">
@@ -1286,10 +1288,16 @@ function renderPdfReportPreview(report){
         <section class="pdf-section avoid-break"><h2>Preparation Scenario</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Bullish Scenario",lines:[report.scenarios.bullish]},{title:"Bearish Scenario",lines:[report.scenarios.bearish]},{title:"Caution / Invalidation",lines:[report.scenarios.caution]}])}</div></section>
       </section>
       <section class="pdf-page">
-        <section class="pdf-section"><h2>Chart Snapshots & Range Context</h2><div class="pdf-chart-grid">${weeklyDailyCharts}</div></section>
+        <section class="pdf-section"><h2>Weekly Chart Snapshot</h2><div class="pdf-chart-grid">${weeklyChartBlock}</div></section>
       </section>
       <section class="pdf-page">
-        <section class="pdf-section"><h2>Lower Timeframe Chart Snapshots</h2><div class="pdf-chart-grid">${lowerTfCharts}</div></section>
+        <section class="pdf-section"><h2>Daily Chart Snapshot</h2><div class="pdf-chart-grid">${dailyChartBlock}</div></section>
+      </section>
+      <section class="pdf-page">
+        <section class="pdf-section"><h2>4H Chart Snapshot</h2><div class="pdf-chart-grid">${h4ChartBlock}</div></section>
+      </section>
+      <section class="pdf-page">
+        <section class="pdf-section"><h2>1H Chart Snapshot</h2><div class="pdf-chart-grid">${h1ChartBlock}</div></section>
         <section class="pdf-section avoid-break"><h2>Data Notes</h2><ul>${report.notes.map((note)=>`<li>${escapeHtml(note)}</li>`).join("")}</ul></section>
       </section>
     </article>`;
@@ -1427,9 +1435,12 @@ function renderPriceChart(dataset){
   weeklySrOverlayLayer = null;
   const candles = dataset.map(d=>({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close }));
   if(!candles.length) throw new Error("No valid OHLC candle data.");
-  priceChart = LightweightCharts.createChart(els.priceChart, { width: Math.max(els.priceChart.clientWidth||0,320), height: 300, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
+  const priceChartWidth = Math.max(els.priceChart.clientWidth||0,320);
+  const priceChartHeight = Math.max(els.priceChart.clientHeight||0,460);
+  priceChart = LightweightCharts.createChart(els.priceChart, { width: priceChartWidth, height: priceChartHeight, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
   candleSeries = priceChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e", borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
   candleSeries.setData(candles);
+  priceChart.resize(priceChartWidth, priceChartHeight);
   attachWeeklyPlacementListener();
   applyManualLinesToWeeklyChart();
   renderTrendlinesForChart("weekly");
@@ -1930,7 +1941,7 @@ function setupCollapsibleSections(){
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
 function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
-function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles,280); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
+function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles, els.lowerDailyChart?.clientHeight || 400); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
 function scanDailyFvg(candles){
   try{
     if(!Array.isArray(candles) || candles.length < 3) return [];
@@ -2088,7 +2099,7 @@ async function renderLowerTimeframeMode(mode="3M"){
       if(!candles.length) { setLtfMeta(els.lower4hMeta, '4H Reaction · range unavailable'); toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
       else {
         setLtfMeta(els.lower4hMeta, formatLtfRangeMeta({ role:'4H Reaction', mode:selectedModeLabel, candles, isCustom:hasRange }));
-        const r=renderSingleLtfChart(els.lower4hChart,candles,280);
+        const r=renderSingleLtfChart(els.lower4hChart,candles, els.lower4hChart?.clientHeight || 400);
         ltf4hChart=r.chart; ltf4hSeries=r.series;
         attach4hPlacementListener();
         ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
@@ -2114,7 +2125,7 @@ async function renderLowerTimeframeMode(mode="3M"){
       else {
         latest1hCandles = candles;
         setLtfMeta(els.lower1hMeta, formatLtfRangeMeta({ role:'1H Timing', mode:selectedModeLabel, candles, isCapped:!hasRange && (preset==='1m' || preset==='3m'), isCustom:hasRange, capLabel:hasRange ? 'max 1000 candles' : h1CapLabelByPreset[preset] }));
-        const r1=renderSingleLtfChart(els.lower1hChart,candles,280);
+        const r1=renderSingleLtfChart(els.lower1hChart,candles, els.lower1hChart?.clientHeight || 360);
         ltf1hChart=r1.chart; ltf1hSeries=r1.series;
         ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
         ltf1hChart.timeScale().fitContent();
@@ -2930,6 +2941,11 @@ bindCurrentPriceDetailEvents();
 closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
+  if(priceChart && els.priceChart) {
+    priceChart.resize(els.priceChart.clientWidth, els.priceChart.clientHeight);
+    renderFvgFilledOverlay();
+    if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
+  }
   if(ltfDailyChart && els.lowerDailyChart) ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
