@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-28 16:20";
+const APP_LAST_UPDATED = "2026-05-29 00:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -59,9 +59,9 @@ let latest4hSrSummary = null;
 let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
-let activeLowerTfMode = "1M";
+let activeLowerTfMode = "3M";
 let ltfVisible = false;
-let ltfPreset = "1m";
+let ltfPreset = "3m";
 let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
@@ -93,6 +93,7 @@ const marketPreparationState = {
 
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
+function toNullableNumber(value){ if(value === null || value === undefined || value === "") return null; const n = Number(value); return Number.isFinite(n) ? n : null; }
 const classifyRsi=(r)=>r<30?"Deep Weak Zone":r<45?"Weak Zone":r<55?"Neutral Zone":r<=70?"Strong Zone":"Heated Zone";
 const getRegime=(w0)=>w0<30?"Deep Weakness":w0<45?"Recovery Attempt":w0<50?"Neutral Below Midline":w0<55?"Neutral Above Midline":w0<=70?"Momentum Strength":"Heated Momentum";
 const getDirection=(w0,w1,w4,w12)=>w0>w1&&w0>w4&&w0>w12?"Strong Rising":w0>w4&&w0>w12?"Rising":w0>w12&&w0<w4?"Long-term Improving, Short-term Cooling":w0<w12&&w0>w4?"Short-term Bounce, Long-term Weak":w0<w4&&w0<w12?"Weakening":"Mixed / Sideways";
@@ -720,7 +721,7 @@ function buildCurrentPriceDetailDataV2(mapData){
       ? `● ${usd(price)} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
       : "● Price unavailable | Waiting for ticker/4H/1H context",
     price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable", change24hPct: Number.isFinite(change24hPct) ? change24hPct : null },
-    sentiment: { value: Number.isFinite(Number(sentiment.value)) ? Number(sentiment.value) : null, label: sentiment.label || null, meaning: getSentimentMeaning(Number(sentiment.value), sentiment.label) },
+    sentiment: { value: toNullableNumber(sentiment.value), label: sentiment.label || null, meaning: getSentimentMeaning(toNullableNumber(sentiment.value), sentiment.label) },
     weekly: { bias: weeklyBias, fvg: weeklyFvgText, sr: weeklySrText, meaning: weeklyBias !== "Unavailable" ? "Weekly context still defines the main reaction zones." : "Weekly context unavailable." },
     h4Structure: { status: h4Status, brokenLevel: null, latestClose: null, meaning: h4Meaning },
     h4Rsi: { ok: !!h4Rsi.ok, value: Number.isFinite(h4Rsi.value) ? h4Rsi.value : null, regime: h4Rsi.regime || null, slope: h4Rsi.slope || null, label: h4Rsi.label || "4H RSI unavailable", meaning: h4RsiMeaning },
@@ -998,6 +999,7 @@ function renderFearGreed(data){
   if(!l){
     if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable";
     updateMarketPreparationState({ sentiment: { value: null, label: null, updatedAt: null } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
     return;
   }
   const ts=Number(l.timestamp)*1000;
@@ -1006,7 +1008,8 @@ function renderFearGreed(data){
     els.leftFearGreed.textContent=`Fear & Greed: ${l.value} ${l.value_classification}`;
     els.leftFearGreed.title=`Updated: ${t}`;
   }
-  updateMarketPreparationState({ sentiment: { value: Number(l.value), label: l.value_classification || null, updatedAt: Number.isFinite(ts) ? ts : null } });
+  updateMarketPreparationState({ sentiment: { value: toNullableNumber(l.value), label: l.value_classification || null, updatedAt: Number.isFinite(ts) ? ts : null } });
+  renderMarketPreparationMap(buildMarketPreparationMap());
 }
 
 
@@ -1344,7 +1347,7 @@ function setLtfPresetUI(preset){
 }
 
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('1m'); renderLowerTimeframeMode('1M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderLowerTimeframeMode(m[ltfPreset] || '1M'); } }); } else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setLtfPresetUI('3m'); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
   els.fvgViewDetailsBtn?.addEventListener('click', ()=>{ setToggleState('fvg', true); document.getElementById('fvgPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
@@ -1355,7 +1358,7 @@ function setupCollapsibleSections(){
   els.ltfPreset3m?.addEventListener('click', ()=>{ setLtfPresetUI('3m'); if(ltfVisible) { lowerTimeframeLoaded=true; renderLowerTimeframeMode('3M'); } });
   els.ltfPresetCustom?.addEventListener('click', ()=>{ setLtfPresetUI('custom'); });
   els.ltfApplyBtn?.addEventListener('click', ()=>{ lowerTimeframeLoaded=true; renderLowerTimeframeMode('CUSTOM'); });
-  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('1m'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
+  els.ltfResetBtn?.addEventListener('click', ()=>{ if(els.ltfStartDate) els.ltfStartDate.value=''; if(els.ltfEndDate) els.ltfEndDate.value=''; setLtfPresetUI('3m'); lowerTimeframeLoaded=true; if(ltfVisible) renderLowerTimeframeMode('RESET'); });
   els.weeklyAddLineBtn?.addEventListener('click', ()=>handleAddLine('weekly'));
   els.weeklyDrawLineBtn?.addEventListener('click', ()=>enableManualLinePlacement('weekly'));
   els.weeklyDrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('weekly'));
@@ -1365,16 +1368,16 @@ function setupCollapsibleSections(){
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); } });
-  setLtfPresetUI('1m');
+  setLtfPresetUI('3m');
   restoreToggleState();
-  if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('1M'); lowerTimeframeLoaded=true; }); }
+  if(ltfVisible){ requestAnimationFrame(()=>{ renderLowerTimeframeMode('3M'); lowerTimeframeLoaded=true; }); }
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
 function destroyLtfCharts(){ if(ltf4hChart){ ltf4hChart.remove(); ltf4hChart=null; } if(ltf1hChart){ ltf1hChart.remove(); ltf1hChart=null; } ltf4hSeries=null; ltf1hSeries=null; clear4hFvgOverlay(); clear4hSrOverlay(); clearTrendlineOverlay("h4"); if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML=""; if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML=""; if(manualLinePlacement.chartKey==='h4') disableManualLinePlacement(); if(trendlineDrawMode.chartKey==='h4') disableTrendlineDrawMode(); }
 function mapKlinesToCandles(klines, limit){
   const src = typeof limit === "number" ? klines.slice(-limit) : klines;
-  return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]) }))
+  return src.map((k)=>({ time:Math.floor(Number(k[0]) / 1000), open:parseFloat(k[1]), high:parseFloat(k[2]), low:parseFloat(k[3]), close:parseFloat(k[4]), volume:parseFloat(k[5]) }))
     .filter((c)=>Number.isFinite(c.time) && Number.isFinite(c.open)&&Number.isFinite(c.high)&&Number.isFinite(c.low)&&Number.isFinite(c.close));
 }
 async function fetchLtfKlines(interval, startTime, endTime, limitOverride){
@@ -1395,7 +1398,7 @@ function renderSingleLtfChart(container, candles, height){
   const s=chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   s.setData(candles); chart.timeScale().fitContent(); return { chart, series: s };
 }
-async function renderLowerTimeframeMode(mode="1W"){
+async function renderLowerTimeframeMode(mode="3M"){
   activeLowerTfMode = mode;
   console.log("Lower TF mode:", activeLowerTfMode);
   if(!ltfVisible) return;
@@ -1411,12 +1414,12 @@ async function renderLowerTimeframeMode(mode="1W"){
   if(els.lower4hFvgOverlay) els.lower4hFvgOverlay.innerHTML='';
   if(els.lower4hSrOverlay) els.lower4hSrOverlay.innerHTML='';
 
-  let st=null, et=null, preset='1m';
+  let st=null, et=null, preset='3m';
   if(mode==='2W') preset='2w';
   if(mode==='1M') preset='1m';
   if(mode==='3M') preset='3m';
   if(mode==='CUSTOM') preset='custom';
-  if(mode==='RESET') preset='1m';
+  if(mode==='RESET') preset='3m';
   const hasRange = preset==='custom' && els.ltfStartDate.value && els.ltfEndDate.value;
   if(hasRange){
     st = new Date(`${els.ltfStartDate.value}T00:00:00`).getTime();
@@ -2237,7 +2240,11 @@ async function loadDashboard(){
   }
 
   if(fgRes.status === "fulfilled") renderFearGreed(fgRes.value);
-  else { if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable"; }
+  else {
+    if(els.leftFearGreed) els.leftFearGreed.textContent="Fear & Greed: unavailable";
+    updateMarketPreparationState({ sentiment: { value: null, label: null, updatedAt: null } });
+    renderMarketPreparationMap(buildMarketPreparationMap());
+  }
 
   if(els.dataRefreshed) els.dataRefreshed.textContent = `Data Refreshed: ${new Date().toLocaleString()}`;
 

@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-28 16:20",
-  "version": "v0.1.53",
+  "lastUpdated": "2026-05-29 00:15",
+  "version": "v0.1.54",
   "commitLabel": "manual",
-  "note": "Hide redundant Section 1 top status cards"
+  "note": "Fix sentiment fallback, set 3M LTF default, and map volume"
 }
