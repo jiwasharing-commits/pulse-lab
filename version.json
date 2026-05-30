@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 16:00",
-  "version": "v0.1.87",
+  "lastUpdated": "2026-05-30 17:00",
+  "version": "v0.1.88",
   "commitLabel": "manual",
-  "note": "Add FVG quality score v1"
+  "note": "Integrate FVG interpretation into map and PDF"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 16:00";
+const APP_LAST_UPDATED = "2026-05-30 17:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -964,6 +964,70 @@ function formatConfluenceSources(row, maxDisplay = 3){
   const more = labels.length - shown.length;
   return more > 0 ? `${shown.join(" + ")} + ${more} more` : shown.join(" + ");
 }
+function isFvgMapSource(source){
+  const key = String(source?.source || source?.primarySource || "").toLowerCase();
+  const label = String(source?.label || source?.type || source?.quality || "").toLowerCase();
+  return key.includes("fvg") || label.includes("fvg");
+}
+function isFvgMapRow(row){ return getConfluenceSourceList(row).some(isFvgMapSource); }
+function getMapSourceTimeframe(source){
+  const text = `${source?.source || ""} ${source?.primarySource || ""} ${source?.label || ""}`.toLowerCase();
+  if(text.includes("weekly") || text.includes("weekly_fvg")) return "Weekly";
+  if(text.includes("daily") || text.includes("daily_fvg")) return "Daily";
+  if(text.includes("4h") || text.includes("h4")) return "4H";
+  return null;
+}
+function findFvgDetailForMapSource(source){
+  if(!isFvgMapSource(source)) return null;
+  const sourceZone = getFvgDetailZone(source);
+  const timeframe = getMapSourceTimeframe(source);
+  const direction = getFvgDirection(source);
+  const pools = [
+    ...(marketPreparationState.weekly?.fvgDetails || []),
+    ...(marketPreparationState.daily?.fvgDetails || []),
+    ...(marketPreparationState.h4?.fvgDetails || []),
+  ];
+  return pools.map((detail)=>({ detail, zone:getFvgDetailZone(detail) })).filter(({detail, zone})=>{
+    if(!zone) return false;
+    if(timeframe && detail.timeframe !== timeframe) return false;
+    const detailDirection = detail.direction || getFvgDirection(detail.sourceZone || detail);
+    if(direction && detailDirection && direction !== detailDirection) return false;
+    if(sourceZone && getZoneOverlapRatio(sourceZone, zone) <= 0 && getFvgDistancePctFromPrice(zone, sourceZone.center || ((sourceZone.lower + sourceZone.upper) / 2)) > 2) return false;
+    return true;
+  }).sort((a,b)=>{
+    const ao = sourceZone ? getZoneOverlapRatio(sourceZone, a.zone) : 0;
+    const bo = sourceZone ? getZoneOverlapRatio(sourceZone, b.zone) : 0;
+    return bo - ao || ((a.detail.distancePct ?? 999) - (b.detail.distancePct ?? 999));
+  })[0]?.detail || null;
+}
+function getMapRowFvgStatus(row){
+  const statuses = getConfluenceSourceList(row).map(findFvgDetailForMapSource).filter(Boolean).map((detail)=>detail.detailStatus || detail.baseStatus).filter(Boolean);
+  if(statuses.includes("Broken")) return "Broken";
+  if(statuses.includes("Filled")) return "Filled";
+  if(statuses.includes("50% Mitigated")) return "50% CE";
+  if(statuses.includes("Partially Mitigated")) return "Partial";
+  if(statuses.includes("Touched")) return "Touched";
+  if(statuses.includes("Fresh")) return "Fresh";
+  return null;
+}
+function getMapRowFvgQuality(row){
+  if(!isFvgMapRow(row)) return null;
+  const conflict = marketPreparationState.fvgMtfContext?.conflict;
+  if(conflict?.ok){
+    if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") return "Under Pressure";
+    if(conflict.label === "Conflict / Wait Confirmation") return "Conflict";
+    if(conflict.label === "Parent FVG Broken") return "Broken";
+  }
+  const quality = marketPreparationState.fvgQuality;
+  return quality?.label && quality.label !== "Unavailable" ? quality.label : null;
+}
+function formatMapRowFvgBadges(row){
+  if(!isFvgMapRow(row)) return null;
+  const status = getMapRowFvgStatus(row);
+  const quality = getMapRowFvgQuality(row);
+  if(!status && !quality) return null;
+  return [status ? `Status: ${status}` : null, quality ? `Quality: ${quality}` : null].filter(Boolean).join(" · ");
+}
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
   if(text.includes("fvg")) return "FVG";
@@ -981,13 +1045,15 @@ function getConfluenceType(row){
   return inferSingleZoneType(row);
 }
 function formatMapRowForDisplay(row){
+  const fvgBadges = formatMapRowFvgBadges(row);
   const fullSources = row?.confluenceLabel || row?.detail || (Array.isArray(row?.sources) ? row.sources.map(formatSourceLabel).filter(Boolean).join(" + ") : "") || row?.quality || "";
   return {
     zone: row?.zoneText || "—",
     type: getConfluenceType(row),
     sources: formatConfluenceSources(row, 3),
+    fvgBadges,
     distance: row?.distanceText || "—",
-    fullSources,
+    fullSources: [fullSources, fvgBadges].filter(Boolean).join(" | "),
   };
 }
 function renderMarketMapHeader(){
@@ -997,7 +1063,8 @@ function renderMarketMapGrid(rows){
   return (rows || []).map((r)=>{
     const display = formatMapRowForDisplay(r);
     const title = escapeHtml(display.fullSources || display.sources);
-    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${escapeHtml(display.sources)}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
+    const sourceHtml = `${escapeHtml(display.sources)}${display.fvgBadges ? `<span class="prep-map-row-badges">${escapeHtml(display.fvgBadges)}</span>` : ""}`;
+    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
   }).join("");
 }
 function mergeConfluenceRows(rows, currentPrice){
@@ -1346,6 +1413,19 @@ function formatCurrentPositionLabel(position){
 function formatRecentReactionLabel(reaction){
   return reaction?.label || reaction?.lastReactionLabel || "No clear recent reaction";
 }
+function formatFvgZoneSummary(zone, fallback = "—"){
+  if(!zone) return fallback;
+  const label = zone.label || getFvgDetailLabel(zone) || "FVG";
+  const normalized = getFvgDetailZone(zone);
+  return normalized ? `${label} ${usd(normalized.lower)}–${usd(normalized.upper)}` : label;
+}
+function formatFvgMtfContextSummary(context = marketPreparationState.fvgMtfContext){
+  const relation = context?.relation || "No clear MTF FVG overlap";
+  const parent = formatFvgZoneSummary(context?.parentZone, "Parent zone unavailable");
+  const core = context?.coreZone || context?.overlapZone;
+  const coreText = core?.lower && core?.upper ? `${usd(core.lower)}–${usd(core.upper)}` : "Core zone unavailable";
+  return { relation, parent, core: coreText, reason: context?.conflict?.ok ? context.conflict.reason : (context?.reason || "No clear MTF FVG overlap.") };
+}
 function getFvgDetailZone(detail){
   const zone = detail?.sourceZone || detail;
   const lower = Number(zone?.lower);
@@ -1522,6 +1602,7 @@ function getKeyZonePositionContext(mapData, state){
     recentFvgReaction: formatRecentFvgReactionText(getMostRecentFvgReactionMemory()),
     conflict: marketPreparationState.fvgMtfContext?.conflict || createEmptyFvgConflictState(),
     quality: marketPreparationState.fvgQuality || createEmptyFvgQualityState(),
+    mtfContext: formatFvgMtfContextSummary(marketPreparationState.fvgMtfContext),
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -1663,6 +1744,9 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-kv">FVG Reaction: ${detail.keyZone.recentFvgReaction || detail.keyZone.fvg?.recentReaction || detail.keyZone.fvg?.reason || "No FVG reaction"}</p>
         ${detail.keyZone.conflict?.ok ? `<p class="prep-current-detail-kv">FVG Conflict: ${detail.keyZone.conflict.label} · wait confirmation</p>` : ""}
         <p class="prep-current-detail-kv">FVG Quality: ${formatFvgQualitySummary(detail.keyZone.quality)}</p>
+        <p class="prep-current-detail-kv">FVG MTF Context: ${detail.keyZone.mtfContext?.relation || "No clear MTF FVG overlap"}</p>
+        <p class="prep-current-detail-kv">Parent Zone: ${detail.keyZone.mtfContext?.parent || "Parent zone unavailable"}</p>
+        <p class="prep-current-detail-kv">Core Zone: ${detail.keyZone.mtfContext?.core || "Core zone unavailable"}</p>
         <p class="prep-current-detail-kv">Recent Reaction: ${detail.keyZone.recentReaction}</p>
       </article>
       <article class="prep-current-detail-card prep-current-detail-preparation">
@@ -1751,6 +1835,8 @@ function formatPdfTypeShort(row){
   return row?.label || "—";
 }
 function formatPdfStatusShort(row){
+  const fvgStatus = getMapRowFvgStatus(row);
+  if(fvgStatus) return fvgStatus;
   const sourceQualities = Array.isArray(row?.sources) ? row.sources.map((s)=>s.quality || s.status).join(" ") : "";
   const text = `${row?.quality || ""} ${row?.status || ""} ${sourceQualities}`;
   if(/broken/i.test(text)) return "Broken";
@@ -1765,7 +1851,9 @@ function formatPdfNote(row){
   const sourceDetails = Array.isArray(row?.sources) && row.sources.length
     ? [...new Set(row.sources.map((s)=>s.label || s.source).filter(Boolean))].join(" + ")
     : "";
-  return row?.detail || row?.confluenceLabel || sourceDetails || row?.quality || "—";
+  const base = row?.detail || row?.confluenceLabel || sourceDetails || row?.quality || "—";
+  const fvgBadges = formatMapRowFvgBadges(row);
+  return fvgBadges ? `${base} | ${fvgBadges}` : base;
 }
 function formatPdfZoneRow(row, side){
   return {
@@ -1812,6 +1900,13 @@ function buildPdfRecentReactionHistory(state){
     recentResistanceBroken: formatReactionMemoryItem(memory.lastBrokenResistance),
     lastReaction: memory.lastReactionLabel || "No clear recent reaction",
   };
+}
+function buildPdfFvgInterpretationSummary(detail, state){
+  const mtf = formatFvgMtfContextSummary(state?.fvgMtfContext);
+  const quality = formatFvgQualitySummary(state?.fvgQuality);
+  const position = detail?.keyZone?.fvg?.ok ? `${detail.keyZone.fvg.position} · ${detail.keyZone.fvg.zoneType}` : (detail?.keyZone?.fvg?.position || "No nearby active FVG");
+  const recent = detail?.keyZone?.recentFvgReaction || detail?.keyZone?.fvg?.recentReaction || detail?.keyZone?.fvg?.reason || "No recent FVG reaction";
+  return { context: mtf.relation, quality, position, recentReaction: recent, parent: mtf.parent, core: mtf.core };
 }
 function buildPdfScenarios(detail, mapData, state){
   const upside = mapData?.upside?.[0];
@@ -1951,7 +2046,7 @@ function buildPdfReportData(){
   const mainBias = getPdfMainBias(state, detail);
   return {
     meta: { title:"Pulse Lab Market Preparation Report", asset:"BTC/USDT", generatedAt:formatPdfDate(), context:"Weekly + Daily + 4H + 1H", lowerTimeframeDefault:"3M" },
-    executiveSummary: { currentPrice:priceText, change24h:changeText, marketStatus, mainBias, keyMessage:detail.preparation?.note || "Keep preparation neutral and wait for multi-timeframe confirmation." },
+    executiveSummary: { currentPrice:priceText, change24h:changeText, marketStatus, mainBias, keyMessage:detail.preparation?.note || "Keep preparation neutral and wait for multi-timeframe confirmation.", fvg: buildPdfFvgInterpretationSummary(detail, state) },
     marketMap: { upside:mapData.upside || [], current:detail.compactRowText || mapData.currentRowText, downside:mapData.downside || [] },
     detail,
     dailyContext: {
@@ -1964,12 +2059,16 @@ function buildPdfReportData(){
     recentHistory: buildPdfRecentReactionHistory(state),
     scenarios: buildPdfScenarios(detail, mapData, state),
     charts: buildPdfChartRangeContext(),
-    notes: ["Weekly uses 48 candles for the main momentum window.", `Daily follows selected Daily Range: ${marketPreparationState.daily?.meta?.rangeMode || activeDailyRange || "6M"}.`, "Daily Pattern is detected from selected Daily Range and used as preparation context.", `4H follows selected Intraday Range: ${ltfPreset === "custom" ? "Custom" : ({ "1w":"1W", "2w":"2W", "1m":"1M", "3m":"3M" }[ltfPreset] || "3M")}.`, "1H is capped for timing/performance.", "This report is for market preparation and monitoring context only."],
+    notes: ["Weekly uses 48 candles for the main momentum window.", `Daily follows selected Daily Range: ${marketPreparationState.daily?.meta?.rangeMode || activeDailyRange || "6M"}.`, "Daily Pattern is detected from selected Daily Range and used as preparation context.", "FVG status and quality are derived from existing FVG zones, current price position, recent reaction, and multi-timeframe overlap. They are preparation context, not buy/sell signals.", `4H follows selected Intraday Range: ${ltfPreset === "custom" ? "Custom" : ({ "1w":"1W", "2w":"2W", "1m":"1M", "3m":"3M" }[ltfPreset] || "3M")}.`, "1H is capped for timing/performance.", "This report is for market preparation and monitoring context only."],
   };
 }
 function renderPdfRows(rows){
   if(!rows?.length) return '<p class="pdf-muted">No rows available.</p>';
-  return rows.map((r)=>`<div class="pdf-ladder-row"><strong>${escapeHtml(r.zoneText || "—")}</strong><span>${escapeHtml(r.label || "—")}</span><span>${escapeHtml(r.quality || "—")}</span><span>${escapeHtml(r.distanceText || "—")}</span></div>`).join("");
+  return rows.map((r)=>{
+    const badges = formatMapRowFvgBadges(r);
+    const quality = [r.quality || "—", badges].filter(Boolean).join(" | ");
+    return `<div class="pdf-ladder-row"><strong>${escapeHtml(r.zoneText || "—")}</strong><span>${escapeHtml(r.label || "—")}</span><span>${escapeHtml(quality)}</span><span>${escapeHtml(r.distanceText || "—")}</span></div>`;
+  }).join("");
 }
 function renderPdfCards(cards){
   return cards.map((card)=>`<article class="pdf-card"><h3>${escapeHtml(card.title)}</h3>${card.lines.map((line)=>`<p>${escapeHtml(line)}</p>`).join("")}</article>`).join("");
@@ -1992,7 +2091,7 @@ function renderPdfReportPreview(report){
     { title:"Daily Context", lines:[`FVG: ${report.dailyContext.fvg}`, `S/R: ${report.dailyContext.sr}`, `Pattern: ${report.dailyContext.pattern.pattern}`, `Status: ${report.dailyContext.pattern.status}`, `Position: ${report.dailyContext.pattern.position}`, `Touches: ${report.dailyContext.pattern.touches}`, report.dailyContext.pattern.reason, dailyMeta.count ? `${dailyMeta.first} → ${dailyMeta.last} · ${dailyMeta.count} candles` : "Range unavailable"] },
     { title:"4H Context", lines:[`Structure: ${d.h4Structure.status}`, `RSI: ${d.h4Rsi.ok ? `${d.h4Rsi.value} · ${d.h4Rsi.regime} · ${d.h4Rsi.slope}` : "—"}`, `Volume: ${d.h4Volume.label ? `${d.h4Volume.label} (${f1(d.h4Volume.ratio)}x)` : "—"}`] },
     { title:"1H Timing", lines:[`Sweep: ${d.h1Sweep.status}`, `Structure: ${d.h1Structure.status}`, `Stochastic: ${d.h1Stochastic.ok ? `${d.h1Stochastic.label} · K ${d.h1Stochastic.k} / D ${d.h1Stochastic.d}` : "—"}`] },
-    { title:"Key Zone Position", lines:[`Upside: ${d.keyZone.nearestUpside}`, `Downside: ${d.keyZone.nearestDownside}`, `Position: ${d.keyZone.position}`, `Recent: ${d.keyZone.recentReaction}`] },
+    { title:"Key Zone Position", lines:[`Upside: ${d.keyZone.nearestUpside}`, `Downside: ${d.keyZone.nearestDownside}`, `Position: ${d.keyZone.position}`, `FVG Context: ${d.keyZone.mtfContext?.relation || "No clear MTF FVG overlap"}`, `FVG Quality: ${formatFvgQualitySummary(d.keyZone.quality)}`, `Recent: ${d.keyZone.recentReaction}`] },
     { title:"Preparation", lines:[d.preparation.note] },
   ];
   const keyRows = report.keyLevels.length ? report.keyLevels.map((row)=>`<tr><td>${escapeHtml(row.side)}</td><td>${escapeHtml(row.zone)}</td><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.distance)}</td><td>${escapeHtml(row.note)}</td></tr>`).join("") : '<tr><td colspan="7">No key levels available.</td></tr>';
@@ -2005,7 +2104,7 @@ function renderPdfReportPreview(report){
     <article class="pdf-report">
       <section class="pdf-page">
         <header class="pdf-report-header"><p>Pulse Lab</p><h1>${escapeHtml(report.meta.title)}</h1><div class="pdf-report-meta"><span>Asset: ${escapeHtml(report.meta.asset)}</span><span>Generated: ${escapeHtml(report.meta.generatedAt)}</span><span>Context: ${escapeHtml(report.meta.context)}</span><span>Lower TF Default: ${escapeHtml(report.meta.lowerTimeframeDefault)}</span></div></header>
-        <section class="pdf-section"><h2>Executive Summary</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Current Price",lines:[report.executiveSummary.currentPrice, `24H: ${report.executiveSummary.change24h}`]},{title:"Market Status",lines:[report.executiveSummary.marketStatus]},{title:"Main Bias",lines:[report.executiveSummary.mainBias]},{title:"Key Message",lines:[report.executiveSummary.keyMessage]}])}</div></section>
+        <section class="pdf-section"><h2>Executive Summary</h2><div class="pdf-card-grid">${renderPdfCards([{title:"Current Price",lines:[report.executiveSummary.currentPrice, `24H: ${report.executiveSummary.change24h}`]},{title:"Market Status",lines:[report.executiveSummary.marketStatus]},{title:"Main Bias",lines:[report.executiveSummary.mainBias]},{title:"Key Message",lines:[report.executiveSummary.keyMessage]},{title:"FVG Interpretation",lines:[`Context: ${report.executiveSummary.fvg.context}`, `Quality: ${report.executiveSummary.fvg.quality}`, `Position: ${report.executiveSummary.fvg.position}`, `Recent: ${report.executiveSummary.fvg.recentReaction}`]}])}</div></section>
         <section class="pdf-section avoid-break"><h2>Market Preparation Map</h2><div class="pdf-map"><h3>Upside Watch</h3>${renderPdfRows(report.marketMap.upside)}<h3>Current Price</h3><p class="pdf-current-row">${escapeHtml(report.marketMap.current)}</p><h3>Downside Watch</h3>${renderPdfRows(report.marketMap.downside)}</div></section>
         <section class="pdf-section"><h2>Current Price Detail</h2><div class="pdf-card-grid pdf-card-grid-4">${renderPdfCards(detailCards)}</div></section>
       </section>
