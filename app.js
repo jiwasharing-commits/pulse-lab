@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 10:00";
+const APP_LAST_UPDATED = "2026-05-30 11:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -976,11 +976,14 @@ function formatMapRowForDisplay(row){
     fullSources,
   };
 }
+function renderMarketMapHeader(){
+  return `<div class="prep-map-header-row" aria-hidden="true"><span>Zone</span><span>Type</span><span>Sources</span><span>Distance</span></div>`;
+}
 function renderMarketMapGrid(rows){
   return (rows || []).map((r)=>{
     const display = formatMapRowForDisplay(r);
     const title = escapeHtml(display.fullSources || display.sources);
-    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources">${escapeHtml(display.sources)}</span><span class="prep-map-row-distance">${escapeHtml(display.distance)}</span></div>`;
+    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${escapeHtml(display.sources)}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
   }).join("");
 }
 function mergeConfluenceRows(rows, currentPrice){
@@ -1442,6 +1445,22 @@ function buildCurrentPriceDetailDataV2(mapData){
     preparation: { note: prepNote }
   };
 }
+function renderCurrentPriceChips(detail){
+  if(!detail) return escapeHtml("● Price unavailable");
+  const priceText = detail.price?.text || "Price unavailable";
+  const h4Text = detail.h4Structure?.status || "4H unavailable";
+  const rsiText = detail.h4Rsi?.ok ? (detail.h4Rsi.label || "RSI available") : "RSI unavailable";
+  const sweepText = detail.h1Sweep?.status || "Sweep unavailable";
+  const h1Text = detail.h1Structure?.status || "1H unavailable";
+  const chips = [
+    ["Price", priceText],
+    ["4H", h4Text],
+    ["RSI", rsiText],
+    ["1H Sweep", sweepText],
+    ["1H Structure", h1Text],
+  ];
+  return `<div class="prep-current-chip-row" aria-label="Current price market context">${chips.map(([label, value])=>`<span class="prep-current-chip"><strong>${escapeHtml(label)}</strong> ${escapeHtml(value)}</span>`).join("")}</div>`;
+}
 function renderCurrentPriceDetailCards(detail){
   if(!els.prepCurrentDetailContent) return;
   const nPct = (v)=>Number.isFinite(v) ? `${v>=0?"+":""}${f1(v)}%` : "—";
@@ -1532,10 +1551,10 @@ function renderMarketPreparationMap(mapData){
   };
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? renderMarketMapGrid(safeMap.upside) : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? renderMarketMapGrid(safeMap.downside) : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? renderMarketMapHeader() + renderMarketMapGrid(safeMap.upside) : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? renderMarketMapHeader() + renderMarketMapGrid(safeMap.downside) : '<p class="prep-map-empty">No downside watch levels available.</p>';
   const detail = buildCurrentPriceDetailDataV2(safeMap);
-  if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
+  if(els.prepCurrentRow) els.prepCurrentRow.innerHTML = renderCurrentPriceChips(detail) || escapeHtml(detail.compactRowText || "● Price unavailable");
   renderCurrentPriceDetailCards(detail);
   applyH1LayerVisibility();
   setCurrentPriceDetailState(prepCurrentDetailOpen);
