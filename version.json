@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 02:00",
-  "version": "v0.1.73",
+  "lastUpdated": "2026-05-30 03:00",
+  "version": "v0.1.74",
   "commitLabel": "manual",
-  "note": "Add per-chart chart layer visibility presets"
+  "note": "Add global chart layer preset controls"
 }

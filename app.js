@@ -6,10 +6,10 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 02:00";
+const APP_LAST_UPDATED = "2026-05-30 03:00";
 
 const els = {
-  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
+  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"),
   btcPrice: document.getElementById("btcPrice"), btc24hInline: document.getElementById("btc24hInline"), btcPriceMeta: document.getElementById("btcPriceMeta"),
   rsiCurrent: document.getElementById("rsiCurrent"), rsiStatus: document.getElementById("rsiStatus"), rsiRegime: document.getElementById("rsiRegime"),
   rsiChangeLines: document.getElementById("rsiChangeLines"), rsiRefs: document.getElementById("rsiRefs"), rsiSlope: document.getElementById("rsiSlope"),
@@ -194,6 +194,18 @@ function applyLayerPreset(chartKey, presetName){
   updateLayerControlChecklist(chartKey);
   applyChartLayerVisibility(chartKey);
 }
+function applyLayerPresetToAll(presetName){
+  if(!chartLayerState) chartLayerState = loadChartLayerState();
+  Object.keys(DEFAULT_CHART_LAYER_STATE).forEach((chartKey)=>{
+    const preset = getLayerPreset(chartKey, presetName);
+    if(preset) chartLayerState[chartKey] = { ...DEFAULT_CHART_LAYER_STATE[chartKey], ...preset };
+  });
+  saveChartLayerState();
+  updateAllLayerControlChecklists();
+  applyAllChartLayerVisibility();
+  closeChartLayerMenus();
+}
+function resetAllChartLayers(){ applyLayerPresetToAll("default"); }
 function renderLayerPresetButtons(chartKey){
   const menu = getLayerMenu(chartKey);
   if(!menu || menu.querySelector(".layer-preset-section")) return;
@@ -211,21 +223,30 @@ function updateLayerControlChecklist(chartKey){
     input.checked = getChartLayer(input.dataset.chartKey, input.dataset.layerKey);
   });
 }
-function syncChartLayerControls(){ updateLayerControlChecklist(); }
-function getLayerMenu(chartKey){ return { weekly: els.weeklyLayerMenu, daily: els.dailyLayerMenu, h4: els.h4LayerMenu, h1: els.h1LayerMenu }[chartKey] || null; }
-function getLayerToggleButton(chartKey){ return { weekly: els.weeklyLayerToggleBtn, daily: els.dailyLayerToggleBtn, h4: els.h4LayerToggleBtn, h1: els.h1LayerToggleBtn }[chartKey] || null; }
+function updateAllLayerControlChecklists(){ updateLayerControlChecklist(); }
+function syncChartLayerControls(){ updateAllLayerControlChecklists(); }
+function getLayerMenu(chartKey){ return { weekly: els.weeklyLayerMenu, daily: els.dailyLayerMenu, h4: els.h4LayerMenu, h1: els.h1LayerMenu, global: els.globalLayerMenu }[chartKey] || null; }
+function getLayerToggleButton(chartKey){ return { weekly: els.weeklyLayerToggleBtn, daily: els.dailyLayerToggleBtn, h4: els.h4LayerToggleBtn, h1: els.h1LayerToggleBtn, global: els.globalLayerToggleBtn }[chartKey] || null; }
 function setLayerMenuOpen(chartKey, open){
   const menu = getLayerMenu(chartKey);
   const btn = getLayerToggleButton(chartKey);
   if(menu) menu.hidden = !open;
   if(btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
-function closeChartLayerMenus(){ Object.keys(DEFAULT_CHART_LAYER_STATE).forEach((chartKey)=>setLayerMenuOpen(chartKey, false)); }
+function closeChartLayerMenus(){ [...Object.keys(DEFAULT_CHART_LAYER_STATE), "global"].forEach((chartKey)=>setLayerMenuOpen(chartKey, false)); }
 function toggleChartLayerMenu(chartKey){
   const menu = getLayerMenu(chartKey);
   const nextOpen = Boolean(menu?.hidden);
   closeChartLayerMenus();
   setLayerMenuOpen(chartKey, nextOpen);
+}
+function bindGlobalLayerControls(){
+  els.globalLayerToggleBtn?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleChartLayerMenu("global"); });
+  els.globalLayerMenu?.addEventListener("click", (e)=>e.stopPropagation());
+  document.querySelectorAll("[data-global-layer-preset]").forEach((btn)=>{
+    btn.addEventListener("click", ()=>applyLayerPresetToAll(btn.dataset.globalLayerPreset));
+  });
+  els.resetAllLayersBtn?.addEventListener("click", resetAllChartLayers);
 }
 function bindChartLayerControls(){
   Object.keys(DEFAULT_CHART_LAYER_STATE).forEach(renderLayerPresetButtons);
@@ -241,6 +262,7 @@ function bindChartLayerControls(){
   document.querySelectorAll('[data-layer-reset]').forEach((btn)=>{
     btn.addEventListener("click", ()=>resetChartLayers(btn.dataset.layerReset));
   });
+  bindGlobalLayerControls();
   document.addEventListener("click", closeChartLayerMenus);
   syncChartLayerControls();
   applyAllChartLayerVisibility();
