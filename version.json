@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 15:00",
-  "version": "v0.1.86",
+  "lastUpdated": "2026-05-30 16:00",
+  "version": "v0.1.87",
   "commitLabel": "manual",
-  "note": "Add formal FVG conflict labels"
+  "note": "Add FVG quality score v1"
 }
