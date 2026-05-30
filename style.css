@@ -95,12 +95,15 @@
 #lowerDailyChart,#lower4hChart{width:100%;height:400px;min-height:360px}
 #lower1hChart{width:100%;height:360px;min-height:320px}
 #lowerDailyFvgOverlay.fvg-overlay-layer{z-index:3}
+#lowerDailySrOverlay.ltf-sr-overlay-layer{z-index:4}
 #lower4hFvgOverlay.fvg-overlay-layer{z-index:5}
 .fvg-zone{box-sizing:border-box}
 .daily-fvg-zone{overflow:hidden;box-shadow:0 1px 8px rgba(2,6,23,.18)}
 .daily-fvg-zone.bullish{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.70)}
 .daily-fvg-zone.bearish{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.70)}
 .daily-fvg-label{position:absolute;left:6px;top:4px;max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:700;color:#e8ecf8;text-shadow:0 1px 2px rgba(2,6,23,.9)}
+.daily-sr-zone{overflow:hidden;box-shadow:0 1px 8px rgba(2,6,23,.14)}
+.daily-sr-label{position:absolute;left:6px;top:4px;max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:800;color:#f8fafc;text-shadow:0 1px 2px rgba(2,6,23,.9)}
 .ltf-sr-overlay-layer{position:absolute;inset:0;pointer-events:none;z-index:4}
 .ltf-sr-zone{position:absolute;border-radius:4px;box-sizing:border-box;border:1px solid}
 .ltf-sr-zone.support{background:rgba(56, 189, 248, 0.10);border-color:rgba(56, 189, 248, 0.75)}
