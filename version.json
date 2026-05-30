@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 17:00",
-  "version": "v0.1.88",
+  "lastUpdated": "2026-05-30 18:00",
+  "version": "v0.1.89",
   "commitLabel": "manual",
-  "note": "Integrate FVG interpretation into map and PDF"
+  "note": "Tune row-specific FVG map quality"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 17:00";
+const APP_LAST_UPDATED = "2026-05-30 18:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -972,54 +972,157 @@ function isFvgMapSource(source){
 function isFvgMapRow(row){ return getConfluenceSourceList(row).some(isFvgMapSource); }
 function getMapSourceTimeframe(source){
   const text = `${source?.source || ""} ${source?.primarySource || ""} ${source?.label || ""}`.toLowerCase();
-  if(text.includes("weekly") || text.includes("weekly_fvg")) return "Weekly";
-  if(text.includes("daily") || text.includes("daily_fvg")) return "Daily";
+  if(text.includes("weekly") || text.includes("weekly_fvg") || /^w\b/.test(text)) return "Weekly";
+  if(text.includes("daily") || text.includes("daily_fvg") || text.includes("1d")) return "Daily";
   if(text.includes("4h") || text.includes("h4")) return "4H";
   return null;
+}
+function getMapSourceDirection(source){
+  const direction = getFvgDirection(source);
+  if(direction) return direction;
+  const text = `${source?.label || ""} ${source?.type || ""} ${source?.quality || ""}`.toLowerCase();
+  if(text.includes("bullish")) return "bullish";
+  if(text.includes("bearish")) return "bearish";
+  return null;
+}
+function getAllFvgDetailsForMapRows(){
+  return [
+    ...(marketPreparationState.weekly?.fvgDetails || []),
+    ...(marketPreparationState.daily?.fvgDetails || []),
+    ...(marketPreparationState.h4?.fvgDetails || []),
+  ].filter((detail)=>getFvgDetailZone(detail));
 }
 function findFvgDetailForMapSource(source){
   if(!isFvgMapSource(source)) return null;
   const sourceZone = getFvgDetailZone(source);
   const timeframe = getMapSourceTimeframe(source);
-  const direction = getFvgDirection(source);
-  const pools = [
-    ...(marketPreparationState.weekly?.fvgDetails || []),
-    ...(marketPreparationState.daily?.fvgDetails || []),
-    ...(marketPreparationState.h4?.fvgDetails || []),
-  ];
-  return pools.map((detail)=>({ detail, zone:getFvgDetailZone(detail) })).filter(({detail, zone})=>{
+  const direction = getMapSourceDirection(source);
+  if(!sourceZone && !timeframe) return null;
+  const sourceCenter = sourceZone ? ((sourceZone.lower + sourceZone.upper) / 2) : null;
+  return getAllFvgDetailsForMapRows().map((detail)=>({ detail, zone:getFvgDetailZone(detail) })).filter(({detail, zone})=>{
     if(!zone) return false;
     if(timeframe && detail.timeframe !== timeframe) return false;
     const detailDirection = detail.direction || getFvgDirection(detail.sourceZone || detail);
     if(direction && detailDirection && direction !== detailDirection) return false;
-    if(sourceZone && getZoneOverlapRatio(sourceZone, zone) <= 0 && getFvgDistancePctFromPrice(zone, sourceZone.center || ((sourceZone.lower + sourceZone.upper) / 2)) > 2) return false;
-    return true;
+    if(!sourceZone) return false;
+    const overlap = getZoneOverlapRatio(sourceZone, zone);
+    const distance = getFvgDistancePctFromPrice(zone, sourceCenter);
+    return overlap >= 0.35 || (Number.isFinite(distance) && distance <= 0.75);
   }).sort((a,b)=>{
     const ao = sourceZone ? getZoneOverlapRatio(sourceZone, a.zone) : 0;
     const bo = sourceZone ? getZoneOverlapRatio(sourceZone, b.zone) : 0;
-    return bo - ao || ((a.detail.distancePct ?? 999) - (b.detail.distancePct ?? 999));
+    const ad = sourceCenter ? getFvgDistancePctFromPrice(a.zone, sourceCenter) : 999;
+    const bd = sourceCenter ? getFvgDistancePctFromPrice(b.zone, sourceCenter) : 999;
+    return bo - ao || ((ad ?? 999) - (bd ?? 999));
   })[0]?.detail || null;
 }
+function getMapRowMatchedFvgDetails(row){
+  const matched = [];
+  const seen = new Set();
+  getConfluenceSourceList(row).forEach((source)=>{
+    const detail = findFvgDetailForMapSource(source);
+    if(!detail) return;
+    const key = detail.key || getFvgKey(getFvgDetailZone(detail), detail.timeframe);
+    if(seen.has(key)) return;
+    seen.add(key);
+    matched.push(detail);
+  });
+  return matched;
+}
 function getMapRowFvgStatus(row){
-  const statuses = getConfluenceSourceList(row).map(findFvgDetailForMapSource).filter(Boolean).map((detail)=>detail.detailStatus || detail.baseStatus).filter(Boolean);
-  if(statuses.includes("Broken")) return "Broken";
-  if(statuses.includes("Filled")) return "Filled";
-  if(statuses.includes("50% Mitigated")) return "50% CE";
-  if(statuses.includes("Partially Mitigated")) return "Partial";
-  if(statuses.includes("Touched")) return "Touched";
-  if(statuses.includes("Fresh")) return "Fresh";
+  const details = getMapRowMatchedFvgDetails(row);
+  if(details.length){
+    const statuses = details.map((detail)=>detail.detailStatus || detail.baseStatus).filter(Boolean);
+    if(statuses.includes("Broken")) return "Broken";
+    if(statuses.length && statuses.every((status)=>status === "Filled")) return "Filled";
+    if(statuses.includes("50% Mitigated")) return "50% Mitigated";
+    if(statuses.includes("Partially Mitigated")) return "Partially Mitigated";
+    if(statuses.includes("Touched")) return "Touched";
+    if(statuses.length && statuses.every((status)=>status === "Fresh")) return "Fresh";
+    if(statuses.includes("Fresh")) return "Fresh";
+  }
+  const fallback = `${row?.status || ""} ${row?.quality || ""}`;
+  if(/broken/i.test(fallback)) return "Broken";
+  if(/filled/i.test(fallback) && !/unfilled/i.test(fallback)) return "Filled";
+  if(/partial/i.test(fallback)) return "Partially Mitigated";
+  if(/touched|touch/i.test(fallback)) return "Touched";
+  if(/fresh|unfilled|active/i.test(fallback)) return "Active";
   return null;
+}
+function getMatchedFvgDirections(details){ return [...new Set((details || []).map((detail)=>detail.direction || getFvgDirection(detail.sourceZone || detail)).filter(Boolean))]; }
+function detailsHaveOppositeFvgOverlap(details){
+  for(let i=0;i<(details || []).length;i++){
+    for(let j=i+1;j<details.length;j++){
+      const a = details[i], b = details[j];
+      if(!hasOppositeDirection(a, b)) continue;
+      const az = getFvgDetailZone(a), bz = getFvgDetailZone(b);
+      if(az && bz && (getZoneOverlapRatio(az, bz) > 0 || isFvgNear(az, bz, 0.01))) return true;
+    }
+  }
+  return false;
+}
+function rowMatchesFvgConflict(details){
+  if(!Array.isArray(details) || details.length < 2) return null;
+  const weekly = details.find((detail)=>detail.timeframe === "Weekly");
+  const weeklyZone = getFvgDetailZone(weekly);
+  const lowerOpposite = weekly && weeklyZone ? details.filter((detail)=>{
+    if(detail === weekly || !hasOppositeDirection(weekly, detail)) return false;
+    const zone = getFvgDetailZone(detail);
+    return zone && (getZoneOverlapRatio(zone, weeklyZone) > 0 || isFvgNested(zone, weeklyZone) || isFvgNear(zone, weeklyZone, 0.01));
+  }) : [];
+  if(weekly && lowerOpposite.length){
+    const dir = weekly.direction || getFvgDirection(weekly.sourceZone || weekly);
+    return { label: dir === "bullish" ? "Under Pressure" : "Under Pressure", reason: "HTF parent FVG is challenged by lower-timeframe opposite FVG." };
+  }
+  if(detailsHaveOppositeFvgOverlap(details)) return { label: "Conflict", reason: "Matched FVG sources have opposite directions in the same/near zone." };
+  return null;
+}
+function hasRowFvgTimingConfirmation(details, row){
+  const directions = getMatchedFvgDirections(details);
+  if(directions.length !== 1) return false;
+  const direction = directions[0];
+  const text = `${marketPreparationState.h4?.structureStatus || ""} ${marketPreparationState.h1?.structureStatus || ""} ${marketPreparationState.h1?.sweepStatus || ""}`;
+  const alignedTiming = direction === "bullish" ? /Bullish/i.test(text) : /Bearish/i.test(text);
+  const recent = [marketPreparationState.daily?.recentFvgReaction, marketPreparationState.h4?.recentFvgReaction]
+    .map(getLatestFvgReaction).filter(Boolean)
+    .some((reaction)=>reaction.direction === direction && !["Broken", "Filled"].includes(reaction.reactionType));
+  const rowDistance = Number(row?.distancePct);
+  const relevantPosition = Number.isFinite(rowDistance) ? rowDistance <= 1.5 : false;
+  return (alignedTiming || recent) && relevantPosition;
+}
+function buildFvgQualityScoreForDetails(details, rowContext = {}){
+  const activeDetails = (details || []).filter(Boolean);
+  if(!activeDetails.length) return null;
+  const statuses = activeDetails.map((detail)=>detail.detailStatus || detail.baseStatus).filter(Boolean);
+  if(statuses.includes("Broken")) return "Broken";
+  if(statuses.length && statuses.every((status)=>status === "Filled")) return "Weak";
+  const conflict = rowMatchesFvgConflict(activeDetails);
+  if(conflict) return conflict.label;
+  const directions = getMatchedFvgDirections(activeDetails);
+  const timeframes = [...new Set(activeDetails.map((detail)=>detail.timeframe).filter(Boolean))];
+  const aligned = directions.length === 1;
+  const multiTf = timeframes.length >= 2;
+  const confluenceCount = Number(rowContext?.confluenceCount) || getConfluenceSourceList(rowContext).length;
+  const hasOverlap = multiTf && activeDetails.some((a, idx)=>activeDetails.slice(idx + 1).some((b)=>{
+    const az = getFvgDetailZone(a), bz = getFvgDetailZone(b);
+    return az && bz && getZoneOverlapRatio(az, bz) > 0;
+  }));
+  if(aligned && multiTf && hasOverlap && hasRowFvgTimingConfirmation(activeDetails, rowContext)) return "High-Probability";
+  if(aligned && (multiTf || confluenceCount > 1) && (hasOverlap || confluenceCount > 1)) return "Strong";
+  if(statuses.includes("50% Mitigated") || statuses.includes("Partially Mitigated") || statuses.includes("Touched") || statuses.includes("Fresh")) return confluenceCount > 1 ? "Valid" : "Weak";
+  return "Valid";
 }
 function getMapRowFvgQuality(row){
   if(!isFvgMapRow(row)) return null;
-  const conflict = marketPreparationState.fvgMtfContext?.conflict;
-  if(conflict?.ok){
-    if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") return "Under Pressure";
-    if(conflict.label === "Conflict / Wait Confirmation") return "Conflict";
-    if(conflict.label === "Parent FVG Broken") return "Broken";
-  }
-  const quality = marketPreparationState.fvgQuality;
-  return quality?.label && quality.label !== "Unavailable" ? quality.label : null;
+  const details = getMapRowMatchedFvgDetails(row);
+  if(details.length) return buildFvgQualityScoreForDetails(details, row);
+  const fallback = String(row?.quality || row?.status || "");
+  if(/broken/i.test(fallback)) return "Broken";
+  if(/conflict/i.test(fallback)) return "Conflict";
+  if(/under pressure/i.test(fallback)) return "Under Pressure";
+  if(/strong/i.test(fallback)) return "Strong";
+  if(/valid|active|unfilled|partial|touched/i.test(fallback)) return "Valid";
+  return null;
 }
 function formatMapRowFvgBadges(row){
   if(!isFvgMapRow(row)) return null;
@@ -1204,7 +1307,7 @@ function buildMarketPreparationMap(){
     if(dsr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:dsr.support.nearest.lower, upper:dsr.support.nearest.upper, label:'Daily Support', quality:`Touch ${dsr.support.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
     if(dsr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:dsr.resistance.nearest.lower, upper:dsr.resistance.nearest.upper, label:'Daily Resistance', quality:`Touch ${dsr.resistance.nearest.touchCount}x`, source:'daily_sr', priorityScore:44, detail:'' });
     addDailyPatternMapRows(add, price);
-    (marketPreparationState.h4.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'4H Bullish FVG':'4H Bearish FVG', quality: z.status||'High Prob', source:'h4_fvg', priorityScore:32, detail:'' }));
+    (marketPreparationState.h4.fvgZones||[]).forEach((z)=>add({ side: z.type?.includes("Bullish")?'downside':'upside', symbol: z.type?.includes("Bullish")?'▼':'▲', lower: z.lower, upper: z.upper, label: z.type?.includes("Bullish")?'4H Bullish FVG':'4H Bearish FVG', quality: z.status||'Active', source:'h4_fvg', priorityScore:32, detail:'' }));
     const h4sr = marketPreparationState.h4.srSummary;
     if(h4sr?.support?.nearest) add({ side:'downside', symbol:'▼', lower:h4sr.support.nearest.lower, upper:h4sr.support.nearest.upper, label:'4H Support', quality:`Touch ${h4sr.support.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
     if(h4sr?.resistance?.nearest) add({ side:'upside', symbol:'▲', lower:h4sr.resistance.nearest.lower, upper:h4sr.resistance.nearest.upper, label:'4H Resistance', quality:`Touch ${h4sr.resistance.nearest.touchCount}x`, source:'h4_sr', priorityScore:40, detail:'' });
