@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 12:00",
-  "version": "v0.1.83",
+  "lastUpdated": "2026-05-30 13:00",
+  "version": "v0.1.84",
   "commitLabel": "manual",
-  "note": "Add current price FVG position analysis"
+  "note": "Add recent FVG reaction memory"
 }
