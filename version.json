@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 05:00",
-  "version": "v0.1.76",
+  "lastUpdated": "2026-05-30 06:00",
+  "version": "v0.1.77",
   "commitLabel": "manual",
-  "note": "Disable chart wheel zoom to preserve page scroll"
+  "note": "Add global Chart Zoom Mode toggle"
 }

@@ -6,10 +6,10 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 05:00";
+const APP_LAST_UPDATED = "2026-05-30 06:00";
 
 const els = {
-  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"),
+  statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
   btcPrice: document.getElementById("btcPrice"), btc24hInline: document.getElementById("btc24hInline"), btcPriceMeta: document.getElementById("btcPriceMeta"),
   rsiCurrent: document.getElementById("rsiCurrent"), rsiStatus: document.getElementById("rsiStatus"), rsiRegime: document.getElementById("rsiRegime"),
   rsiChangeLines: document.getElementById("rsiChangeLines"), rsiRefs: document.getElementById("rsiRefs"), rsiSlope: document.getElementById("rsiSlope"),
@@ -70,7 +70,7 @@ let ltfVisible = false;
 let dailyPreset = "6m";
 let ltfPreset = "3m";
 const DAILY_PRESET_LIMITS = { "3m": 92, "6m": 183, "1y": 365 };
-const CHART_SCROLL_SAFE_INTERACTION_OPTIONS = {
+const CHART_ZOOM_OFF_INTERACTION_OPTIONS = {
   handleScroll: {
     mouseWheel: false,
     pressedMouseMove: true,
@@ -83,6 +83,20 @@ const CHART_SCROLL_SAFE_INTERACTION_OPTIONS = {
     axisPressedMouseMove: true,
   },
 };
+const CHART_ZOOM_ON_INTERACTION_OPTIONS = {
+  handleScroll: {
+    mouseWheel: true,
+    pressedMouseMove: true,
+    horzTouchDrag: true,
+    vertTouchDrag: false,
+  },
+  handleScale: {
+    mouseWheel: true,
+    pinch: true,
+    axisPressedMouseMove: true,
+  },
+};
+let chartZoomMode = false;
 let lowerTimeframeLoaded = false;
 let fvgOpen=false;
 let biasOpen=false;
@@ -260,6 +274,27 @@ function bindGlobalLayerControls(){
     btn.addEventListener("click", ()=>applyLayerPresetToAll(btn.dataset.globalLayerPreset));
   });
   els.resetAllLayersBtn?.addEventListener("click", resetAllChartLayers);
+}
+function getChartInteractionOptions(){ return chartZoomMode ? CHART_ZOOM_ON_INTERACTION_OPTIONS : CHART_ZOOM_OFF_INTERACTION_OPTIONS; }
+function getActiveChartInstances(){ return [priceChart, rsiChart, ltfDailyChart, ltf4hChart, ltf1hChart].filter(Boolean); }
+function applyChartZoomModeToCharts(){
+  const options = getChartInteractionOptions();
+  getActiveChartInstances().forEach((chart)=>{ try { chart.applyOptions(options); } catch(_){} });
+}
+function updateChartZoomToggleUI(){
+  if(!els.chartZoomToggleBtn) return;
+  els.chartZoomToggleBtn.textContent = chartZoomMode ? "Chart Zoom: ON" : "Chart Zoom: OFF";
+  els.chartZoomToggleBtn.classList.toggle("is-active", chartZoomMode);
+  els.chartZoomToggleBtn.setAttribute("aria-pressed", String(chartZoomMode));
+}
+function setChartZoomMode(enabled){
+  chartZoomMode = Boolean(enabled);
+  applyChartZoomModeToCharts();
+  updateChartZoomToggleUI();
+}
+function bindChartZoomToggle(){
+  updateChartZoomToggleUI();
+  els.chartZoomToggleBtn?.addEventListener("click", ()=>setChartZoomMode(!chartZoomMode));
 }
 function bindChartLayerControls(){
   Object.keys(DEFAULT_CHART_LAYER_STATE).forEach(renderLayerPresetButtons);
@@ -1950,7 +1985,7 @@ function renderPriceChart(dataset){
   if(!candles.length) throw new Error("No valid OHLC candle data.");
   const priceChartWidth = Math.max(els.priceChart.clientWidth||0,320);
   const priceChartHeight = Math.max(els.priceChart.clientHeight||0,460);
-  priceChart = LightweightCharts.createChart(els.priceChart, { ...CHART_SCROLL_SAFE_INTERACTION_OPTIONS, width: priceChartWidth, height: priceChartHeight, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
+  priceChart = LightweightCharts.createChart(els.priceChart, { ...getChartInteractionOptions(), width: priceChartWidth, height: priceChartHeight, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)"}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
   candleSeries = priceChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderUpColor: "#22c55e", borderDownColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
   candleSeries.setData(candles);
   priceChart.resize(priceChartWidth, priceChartHeight);
@@ -1968,7 +2003,7 @@ function renderRsiChart(dataset){
   els.rsiChart.innerHTML = "";
   const points = dataset.filter(d=>Number.isFinite(d.rsi)).map(d=>({ time:d.time, value:d.rsi }));
   if(!points.length) throw new Error("No valid RSI chart data.");
-  rsiChart = LightweightCharts.createChart(els.rsiChart, { ...CHART_SCROLL_SAFE_INTERACTION_OPTIONS, width: Math.max(els.rsiChart.clientWidth||0,320), height: 240, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)", scaleMargins:{top:0.05,bottom:0.05}}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
+  rsiChart = LightweightCharts.createChart(els.rsiChart, { ...getChartInteractionOptions(), width: Math.max(els.rsiChart.clientWidth||0,320), height: 240, layout:{background:{type:"solid",color:"transparent"},textColor:"#cbd5e1"}, grid:{vertLines:{color:"rgba(148,163,184,0.12)"},horzLines:{color:"rgba(148,163,184,0.12)"}}, rightPriceScale:{borderColor:"rgba(148,163,184,0.2)", scaleMargins:{top:0.05,bottom:0.05}}, timeScale:{borderColor:"rgba(148,163,184,0.2)",timeVisible:true,tickMarkFormatter:(time)=>weekLabelMap.get(timeKey(time))||""} });
   const line = rsiChart.addLineSeries({ color:'#6f8cff', lineWidth:2 });
   line.setData(points);
   line.createPriceLine({ price:30, color:'rgba(239,68,68,.65)', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'30' });
@@ -2742,7 +2777,7 @@ async function fetchLtfKlines(interval, startTime, endTime, limitOverride){
   return data;
 }
 function renderSingleLtfChart(container, candles, height){
-  const chart = LightweightCharts.createChart(container, { ...CHART_SCROLL_SAFE_INTERACTION_OPTIONS, width: Math.max(container.clientWidth||0,320), height, layout:{background:{type:'solid',color:'transparent'},textColor:'#cbd5e1'}, grid:{vertLines:{color:'rgba(148,163,184,0.12)'},horzLines:{color:'rgba(148,163,184,0.12)'}}, rightPriceScale:{borderColor:'rgba(148,163,184,0.2)'}, timeScale:{borderColor:'rgba(148,163,184,0.2)',timeVisible:true} });
+  const chart = LightweightCharts.createChart(container, { ...getChartInteractionOptions(), width: Math.max(container.clientWidth||0,320), height, layout:{background:{type:'solid',color:'transparent'},textColor:'#cbd5e1'}, grid:{vertLines:{color:'rgba(148,163,184,0.12)'},horzLines:{color:'rgba(148,163,184,0.12)'}}, rightPriceScale:{borderColor:'rgba(148,163,184,0.2)'}, timeScale:{borderColor:'rgba(148,163,184,0.2)',timeVisible:true} });
   const s=chart.addCandlestickSeries({ upColor:'#22c55e', downColor:'#ef4444', borderUpColor:'#22c55e', borderDownColor:'#ef4444', wickUpColor:'#22c55e', wickDownColor:'#ef4444' });
   s.setData(candles); chart.timeScale().fitContent(); return { chart, series: s };
 }
@@ -3767,6 +3802,7 @@ setupCollapsibleSections();
 bindDrawingManagerEvents();
 bindCurrentPriceDetailEvents();
 bindChartLayerControls();
+bindChartZoomToggle();
 closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
