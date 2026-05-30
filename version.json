@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 11:00",
-  "version": "v0.1.82",
+  "lastUpdated": "2026-05-30 12:00",
+  "version": "v0.1.83",
   "commitLabel": "manual",
-  "note": "Polish Market Preparation Map headers and current price chips"
+  "note": "Add current price FVG position analysis"
 }

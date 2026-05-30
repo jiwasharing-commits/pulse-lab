@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 11:00";
+const APP_LAST_UPDATED = "2026-05-30 12:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -153,7 +153,7 @@ const marketPreparationState = {
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
   sentiment: { value: null, label: null, updatedAt: null },
-  currentPricePosition: { currentPosition: null, nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, timeframe: "4H", updatedAt: null },
+  currentPricePosition: { currentPosition: null, nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, fvg: { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: null, ceStatus: null, distancePct: null, recentReaction: null, reason: null, updatedAt: null }, timeframe: "4H", updatedAt: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
@@ -1332,6 +1332,133 @@ function formatCurrentPositionLabel(position){
 function formatRecentReactionLabel(reaction){
   return reaction?.label || reaction?.lastReactionLabel || "No clear recent reaction";
 }
+function getFvgDetailZone(detail){
+  const zone = detail?.sourceZone || detail;
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) return null;
+  return { ...zone, lower, upper };
+}
+function getFvgDetailLabel(detail){
+  const tf = detail?.timeframe || detail?.sourceZone?.timeframe || "FVG";
+  const direction = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const dirLabel = direction === "bullish" ? "Bullish" : (direction === "bearish" ? "Bearish" : "");
+  return `${tf} ${dirLabel} FVG`.replace(/\s+/g, " ").trim();
+}
+function getFvgRecentCandles(timeframe){
+  const tf = String(timeframe || "").toLowerCase();
+  if(tf.includes("daily") || tf === "1d") return (marketPreparationState.daily?.candles?.length ? marketPreparationState.daily.candles : latestDailyCandles) || [];
+  if(tf.includes("4h")) return latest4hCandles || [];
+  if(tf.includes("weekly") || tf.includes("week")) return weeklyDatasetCache || [];
+  return latest4hCandles?.length ? latest4hCandles : ((marketPreparationState.daily?.candles?.length ? marketPreparationState.daily.candles : latestDailyCandles) || []);
+}
+function getImportantFvgDetailsForPosition(){
+  const sources = [
+    { timeframe: "Daily", details: marketPreparationState.daily?.fvgDetails, zones: marketPreparationState.daily?.fvgZones, candles: marketPreparationState.daily?.candles?.length ? marketPreparationState.daily.candles : latestDailyCandles, priority: 300 },
+    { timeframe: "4H", details: marketPreparationState.h4?.fvgDetails, zones: marketPreparationState.h4?.fvgZones, candles: latest4hCandles, priority: 200 },
+    { timeframe: "Weekly", details: marketPreparationState.weekly?.fvgDetails, zones: marketPreparationState.weekly?.fvgZones, candles: weeklyDatasetCache, priority: 100 },
+  ];
+  return sources.flatMap((src)=>{
+    const details = Array.isArray(src.details) && src.details.length ? src.details : buildFvgDetailsForTimeframe(src.zones || [], src.candles || [], src.timeframe);
+    return (details || []).map((detail)=>({ ...detail, __priority: src.priority }));
+  }).filter((detail)=>getFvgDetailZone(detail));
+}
+function getFvgDistancePctFromPrice(zone, currentPrice){
+  if(!zone || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+  if(currentPrice >= zone.lower && currentPrice <= zone.upper) return 0;
+  const boundary = currentPrice > zone.upper ? zone.upper : zone.lower;
+  return Math.abs(currentPrice - boundary) / currentPrice * 100;
+}
+function isMovingTowardFvg(zone, currentPrice, recentCandles){
+  if(!zone || !Number.isFinite(currentPrice) || !Array.isArray(recentCandles) || recentCandles.length < 3) return false;
+  const last = recentCandles.slice(-3).map((c)=>Number(c?.close)).filter(Number.isFinite);
+  if(last.length < 3) return false;
+  if(currentPrice < zone.lower) return last[last.length - 1] > last[0];
+  if(currentPrice > zone.upper) return last[last.length - 1] < last[0];
+  return false;
+}
+function getFvgRecentBoundaryReaction(detail, zone, recentCandles){
+  const direction = detail?.direction || getFvgDirection(zone);
+  if(!direction || !zone || !Array.isArray(recentCandles) || recentCandles.length < 2) return null;
+  const recent = recentCandles.slice(-3);
+  const touched = recent.some((c)=>Number(c?.high) >= zone.lower && Number(c?.low) <= zone.upper);
+  const last = recent[recent.length - 1];
+  const prev = recent[recent.length - 2];
+  const lastClose = Number(last?.close), prevClose = Number(prev?.close);
+  if(!touched || !Number.isFinite(lastClose) || !Number.isFinite(prevClose)) return null;
+  if(direction === "bullish" && lastClose > prevClose && lastClose >= zone.lower) return { position: "Bounced from FVG", reaction: "Bounced from bullish FVG" };
+  if(direction === "bearish" && lastClose < prevClose && lastClose <= zone.upper) return { position: "Rejected from FVG", reaction: "Rejected from bearish FVG" };
+  return null;
+}
+function classifyCurrentPriceVsFvg(detail, currentPrice, recentCandles){
+  const zone = getFvgDetailZone(detail);
+  if(!zone || !Number.isFinite(currentPrice)) return null;
+  const cePrice = Number.isFinite(detail?.cePrice) ? detail.cePrice : getFvgCePrice(zone);
+  const width = Math.max(1e-9, zone.upper - zone.lower);
+  const toleranceAbs = Math.max(currentPrice * 0.005, width * 0.25);
+  const ceToleranceAbs = Math.max(currentPrice * 0.003, width * 0.18);
+  const distancePct = getFvgDistancePctFromPrice(zone, currentPrice);
+  let position = currentPrice > zone.upper ? "Above FVG" : (currentPrice < zone.lower ? "Below FVG" : "Inside FVG");
+  let ceStatus = null;
+  let recentReaction = detail?.recentReaction || null;
+  if(detail?.detailStatus === "Broken") position = "Broke through FVG";
+  else if(Number.isFinite(cePrice) && Math.abs(currentPrice - cePrice) <= ceToleranceAbs){ position = "Testing CE"; ceStatus = "Testing CE"; }
+  else {
+    const boundaryReaction = getFvgRecentBoundaryReaction(detail, zone, recentCandles);
+    if(boundaryReaction){ position = boundaryReaction.position; recentReaction = boundaryReaction.reaction; }
+    else if(currentPrice < zone.lower && zone.lower - currentPrice <= toleranceAbs) position = "Near FVG";
+    else if(currentPrice > zone.upper && currentPrice - zone.upper <= toleranceAbs) position = "Near FVG";
+    else if(position !== "Inside FVG" && isMovingTowardFvg(zone, currentPrice, recentCandles)) position = "Approaching FVG";
+  }
+  const label = getFvgDetailLabel(detail);
+  const zoneRange = `${usd(zone.lower)}–${usd(zone.upper)}`;
+  return {
+    ok: true,
+    timeframe: detail?.timeframe || null,
+    zoneType: label,
+    zoneRange,
+    detailStatus: detail?.detailStatus || detail?.baseStatus || null,
+    position,
+    ceStatus,
+    distancePct,
+    recentReaction,
+    reason: `${position}: ${label} ${zoneRange}`,
+    updatedAt: Date.now(),
+    __priority: detail.__priority || 0,
+  };
+}
+function getNearestFvgPosition(currentPrice){
+  const details = getImportantFvgDetailsForPosition();
+  if(!Number.isFinite(currentPrice) || !details.length) return null;
+  const candidates = details.map((detail)=>{
+    const recentCandles = getFvgRecentCandles(detail.timeframe);
+    const status = classifyCurrentPriceVsFvg(detail, currentPrice, recentCandles);
+    return status ? { ...status, detail } : null;
+  }).filter(Boolean);
+  const rankPosition = (p)=>{
+    if(p.position === "Broke through FVG") return 6;
+    if(p.position === "Testing CE") return 5;
+    if(p.position === "Inside FVG") return 4;
+    if(p.position === "Rejected from FVG" || p.position === "Bounced from FVG") return 3;
+    if(p.position === "Near FVG") return 2;
+    if(p.position === "Approaching FVG") return 1;
+    return 0;
+  };
+  return candidates.sort((a,b)=>
+    (rankPosition(b) - rankPosition(a))
+    || ((b.__priority || 0) - (a.__priority || 0))
+    || ((a.distancePct ?? 999) - (b.distancePct ?? 999))
+  )[0] || null;
+}
+function buildCurrentFvgPositionStatus(){
+  const currentPrice = marketPreparationState.currentPrice;
+  if(!Number.isFinite(currentPrice)) return { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: "FVG position unavailable", ceStatus: null, distancePct: null, recentReaction: null, reason: "Current price unavailable.", updatedAt: Date.now() };
+  const nearest = getNearestFvgPosition(currentPrice);
+  if(!nearest) return { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: "No nearby active FVG", ceStatus: null, distancePct: null, recentReaction: null, reason: "No important active FVG is available near current price.", updatedAt: Date.now() };
+  const activePositions = new Set(["Inside FVG", "Near FVG", "Approaching FVG", "Testing CE", "Rejected from FVG", "Bounced from FVG", "Broke through FVG"]);
+  if(!activePositions.has(nearest.position)) nearest.position = "Between key zones";
+  return nearest;
+}
 function buildCurrentPricePositionStatus(state, mapData){
   try{
     const currentPrice = state?.currentPrice;
@@ -1358,11 +1485,12 @@ function buildCurrentPricePositionStatus(state, mapData){
       nearestDownsideZone: downside ? { ...downside, text: getMapZoneText(downside, "below") } : null,
       recentReaction,
       recentReactionMemory: memory,
+      fvg: buildCurrentFvgPositionStatus(),
       timeframe: "4H",
       updatedAt: Date.now(),
     };
   }catch{
-    return { currentPosition: "Current position unavailable", nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, recentReactionMemory: marketPreparationState.h4?.recentReaction || null, timeframe: "4H", updatedAt: Date.now() };
+    return { currentPosition: "Current position unavailable", nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, recentReactionMemory: marketPreparationState.h4?.recentReaction || null, fvg: { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: "FVG position unavailable", ceStatus: null, distancePct: null, recentReaction: null, reason: "FVG position unavailable.", updatedAt: Date.now() }, timeframe: "4H", updatedAt: Date.now() };
   }
 }
 function getKeyZonePositionContext(mapData, state){
@@ -1376,6 +1504,7 @@ function getKeyZonePositionContext(mapData, state){
     nearestDownside: status.nearestDownsideZone?.text || "Nearest downside unavailable",
     position: patternContext.currentPosition || status.currentPosition || "Current position unavailable",
     recentReaction,
+    fvg: status.fvg || buildCurrentFvgPositionStatus(),
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -1513,6 +1642,8 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-kv">Nearest Upside: ${detail.keyZone.nearestUpside}</p>
         <p class="prep-current-detail-kv">Nearest Downside: ${detail.keyZone.nearestDownside}</p>
         <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
+        <p class="prep-current-detail-kv">FVG Position: ${detail.keyZone.fvg?.ok ? `${detail.keyZone.fvg.position} · ${detail.keyZone.fvg.zoneType} · ${detail.keyZone.fvg.detailStatus || "Status unavailable"}` : (detail.keyZone.fvg?.position || "No nearby active FVG")}</p>
+        <p class="prep-current-detail-kv">FVG Reaction: ${detail.keyZone.fvg?.recentReaction || detail.keyZone.fvg?.reason || "No FVG reaction"}</p>
         <p class="prep-current-detail-kv">Recent Reaction: ${detail.keyZone.recentReaction}</p>
       </article>
       <article class="prep-current-detail-card prep-current-detail-preparation">
@@ -1546,6 +1677,7 @@ function renderMarketPreparationMap(mapData){
     nearestUpsideZone: positionStatus.nearestUpsideZone,
     nearestDownsideZone: positionStatus.nearestDownsideZone,
     recentReaction: positionStatus.recentReaction,
+    fvg: positionStatus.fvg || buildCurrentFvgPositionStatus(),
     timeframe: positionStatus.timeframe,
     updatedAt: positionStatus.updatedAt,
   };
