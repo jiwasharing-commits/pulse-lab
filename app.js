@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 06:00";
+const APP_LAST_UPDATED = "2026-05-30 07:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -27,7 +27,7 @@ const els = {
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
-  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
+  lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyFvgOverlay: document.getElementById("lowerDailyFvgOverlay"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"), dailyLayerToggleBtn: document.getElementById("dailyLayerToggleBtn"), dailyLayerMenu: document.getElementById("dailyLayerMenu"), h4LayerToggleBtn: document.getElementById("h4LayerToggleBtn"), h4LayerMenu: document.getElementById("h4LayerMenu"), h1LayerToggleBtn: document.getElementById("h1LayerToggleBtn"), h1LayerMenu: document.getElementById("h1LayerMenu"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
@@ -56,6 +56,7 @@ let current4hFvgPriceLines = [];
 let current4hFvgOverlays = [];
 let ltf4hFvgLayer = null;
 let fvgRedrawPending = false;
+let dailyFvgRedrawPending = false;
 let active4hFvgs = [];
 let latestDailyCandles = [];
 let latest4hCandles = [];
@@ -1683,6 +1684,7 @@ function redrawSnapshotLayers(chartKey){
       scheduleTrendlineRedraw("weekly");
     }
     if(chartKey === "daily"){
+      renderDailyFvgOverlay();
       renderDailyPatternOverlay();
     }
     if(chartKey === "h4"){
@@ -2506,7 +2508,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; clearDailyPatternOverlay(); if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
+function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; clearDailyFvgOverlay(); clearDailyPatternOverlay(); if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
 function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles, els.lowerDailyChart?.clientHeight || 400); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
 function scanDailyFvg(candles){
@@ -2731,6 +2733,7 @@ function updateDailyMarketContext(candles, mode){
     if(!Array.isArray(candles) || !candles.length){
       const pattern = createEmptyDailyPattern(mode, "Daily pattern unavailable.");
       setDailyPatternSummary(pattern);
+      clearDailyFvgOverlay();
       updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
       renderMarketPreparationMap(buildMarketPreparationMap());
       return;
@@ -2746,12 +2749,14 @@ function updateDailyMarketContext(candles, mode){
     const pattern = detectDailyPattern(candles, mode);
     setDailyPatternSummary(pattern);
     updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    scheduleDailyFvgOverlayRedraw();
     renderDailyPatternOverlay();
     renderMarketPreparationMap(buildMarketPreparationMap());
   }catch(e){
     console.error('Daily market context update failed:', e);
     const pattern = createEmptyDailyPattern(mode, "Daily pattern unavailable.");
     setDailyPatternSummary(pattern);
+    clearDailyFvgOverlay();
     updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
   }
@@ -2810,6 +2815,92 @@ function formatLtfRangeMeta({ role, mode, candles, isCapped = false, isCustom = 
 }
 
 
+function clearDailyFvgOverlay(){ if(els.lowerDailyFvgOverlay) els.lowerDailyFvgOverlay.innerHTML = ""; }
+function getSelectedDailyFvgs(fvgZones, currentPrice, maxTotal = 5){
+  const price = Number(currentPrice);
+  const hasPrice = Number.isFinite(price) && price > 0;
+  const statusRank = (status)=>String(status || "").toLowerCase().includes("unfilled") ? 0 : (String(status || "").toLowerCase().includes("partial") ? 1 : 2);
+  const decorated = (Array.isArray(fvgZones) ? fvgZones : [])
+    .filter((z)=>z && Number.isFinite(z.lower) && Number.isFinite(z.upper) && z.upper > z.lower && String(z.status || "").toLowerCase() !== "filled")
+    .map((z, order)=>{
+      const typeText = String(z.type || "");
+      const isBullish = typeText.includes("Bullish");
+      const isBearish = typeText.includes("Bearish");
+      const inside = hasPrice && price >= z.lower && price <= z.upper;
+      const nearest = !hasPrice ? z.midpoint : (price > z.upper ? z.upper : (price < z.lower ? z.lower : price));
+      const distancePct = Number.isFinite(z.distancePct) ? Math.abs(z.distancePct) : (hasPrice ? Math.abs(price - nearest) / price * 100 : Number.MAX_SAFE_INTEGER);
+      return { ...z, __order: order, __isBullish: isBullish, __isBearish: isBearish, __inside: inside, __distancePct: distancePct, __statusRank: statusRank(z.status) };
+    })
+    .sort((a,b)=>Number(!a.__inside)-Number(!b.__inside) || a.__distancePct-b.__distancePct || a.__statusRank-b.__statusRank || (Number(b.sizePercent)||0)-(Number(a.sizePercent)||0) || (Number(b.index)||0)-(Number(a.index)||0) || a.__order-b.__order);
+  const selected = [];
+  const counts = { bullish: 0, bearish: 0 };
+  const addZone = (zone)=>{
+    if(!zone || selected.includes(zone) || selected.length >= maxTotal) return false;
+    selected.push(zone);
+    if(zone.__isBullish) counts.bullish += 1;
+    if(zone.__isBearish) counts.bearish += 1;
+    return true;
+  };
+  decorated.forEach((zone)=>{
+    if(selected.length >= Math.min(maxTotal, 4)) return;
+    if(zone.__isBullish && counts.bullish >= 2) return;
+    if(zone.__isBearish && counts.bearish >= 2) return;
+    addZone(zone);
+  });
+  decorated.forEach((zone)=>{ if(selected.length < maxTotal) addZone(zone); });
+  return selected.map(({ __order, __isBullish, __isBearish, __inside, __distancePct, __statusRank, ...zone })=>zone);
+}
+function renderDailyFvgOverlay(){
+  try{
+    if(!getChartLayer("daily", "fvg")){ clearDailyFvgOverlay(); return; }
+    const layer = els.lowerDailyFvgOverlay;
+    const candles = marketPreparationState.daily?.candles?.length ? marketPreparationState.daily.candles : latestDailyCandles;
+    if(!layer || !ltfDailyChart || !ltfDailySeries || !els.lowerDailyChart || !Array.isArray(candles) || !candles.length){ clearDailyFvgOverlay(); return; }
+    const currentPrice = candles[candles.length - 1]?.close;
+    const zones = getSelectedDailyFvgs(marketPreparationState.daily?.fvgZones || [], currentPrice, 5);
+    layer.innerHTML = "";
+    if(!zones.length) return;
+    const lastTime = candles[candles.length - 1]?.time;
+    const rightLimit = Math.max(1, (els.lowerDailyChart.clientWidth || layer.clientWidth || 0) - 40);
+    if(lastTime == null) return;
+    zones.forEach((zone)=>{
+      const bull = String(zone.type || "").includes("Bullish");
+      const x1 = ltfDailyChart.timeScale().timeToCoordinate(zone.startTime);
+      const x2 = ltfDailyChart.timeScale().timeToCoordinate(lastTime);
+      const yUpper = ltfDailySeries.priceToCoordinate(zone.upper);
+      const yLower = ltfDailySeries.priceToCoordinate(zone.lower);
+      if([x1,x2,yUpper,yLower].some((v)=>!Number.isFinite(v))) return;
+      const left = Math.max(0, Math.min(x1, x2));
+      const width = Math.max(1, Math.min(Math.abs(x2 - x1), rightLimit - left));
+      const center = (yUpper + yLower) / 2;
+      const height = Math.max(10, Math.abs(yLower - yUpper));
+      const top = Math.max(0, center - (height / 2));
+      const el = document.createElement("div");
+      el.className = `fvg-zone daily-fvg-zone ${bull ? "bullish" : "bearish"}`;
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.width = `${width}px`;
+      el.style.height = `${height}px`;
+      el.title = `${bull ? "Daily Bullish FVG" : "Daily Bearish FVG"} · ${zone.status || "Active"} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const label = document.createElement("span");
+      label.className = "daily-fvg-label";
+      label.textContent = `${bull ? "Daily Bullish FVG" : "Daily Bearish FVG"} · ${String(zone.status || "Active").replace("Partially Filled", "Partial")}`;
+      el.appendChild(label);
+      layer.appendChild(el);
+    });
+  }catch(_){
+    clearDailyFvgOverlay();
+  }
+}
+function scheduleDailyFvgOverlayRedraw(){
+  if(!getChartLayer("daily", "fvg")){ clearDailyFvgOverlay(); return; }
+  if(dailyFvgRedrawPending) return;
+  dailyFvgRedrawPending = true;
+  requestAnimationFrame(()=>{
+    dailyFvgRedrawPending = false;
+    renderDailyFvgOverlay();
+  });
+}
 function clearDailyPatternOverlay(){ if(els.lowerDailyPatternOverlay) els.lowerDailyPatternOverlay.innerHTML = ""; }
 function lineToSvgCoords(chart, series, line, startIndex, endIndex, candles){
   if(!chart || !series || !line || !Array.isArray(candles) || !candles.length) return null;
@@ -2903,8 +2994,8 @@ async function renderDailyRangeMode(mode = activeDailyRange || "6M"){
     renderDailyTimeframeChart(candles);
     ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
     ltfDailyChart.timeScale().fitContent();
-    ltfDailyChart.timeScale().subscribeVisibleTimeRangeChange(()=>renderDailyPatternOverlay());
-    ltfDailyChart.timeScale().subscribeVisibleLogicalRangeChange(()=>renderDailyPatternOverlay());
+    ltfDailyChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); renderDailyPatternOverlay(); });
+    ltfDailyChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); renderDailyPatternOverlay(); });
     updateDailyMarketContext(candles, mode);
   }catch(e){
     console.error('Daily chart render failed:', e);
@@ -3811,7 +3902,7 @@ window.addEventListener("resize", ()=>{
     renderFvgFilledOverlay();
     if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
   }
-  if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); renderDailyPatternOverlay(); }
+  if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); scheduleDailyFvgOverlayRedraw(); renderDailyPatternOverlay(); }
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
   scheduleTrendlineRedraw("weekly");
