@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 03:00",
-  "version": "v0.1.74",
+  "lastUpdated": "2026-05-30 04:00",
+  "version": "v0.1.75",
   "commitLabel": "manual",
-  "note": "Add global chart layer preset controls"
+  "note": "Format Market Preparation Map confluence display rows"
 }

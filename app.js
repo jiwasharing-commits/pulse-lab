@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 03:00";
+const APP_LAST_UPDATED = "2026-05-30 04:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"),
@@ -864,6 +864,71 @@ function formatConfluenceQuality(row){
   const labels = [...new Set((row.sources || []).map((s)=>s.label || s.source).filter(Boolean))];
   return labels.length ? labels.join(' + ') : (row.quality || 'Confluence');
 }
+function getConfluenceSourceList(row){
+  return Array.isArray(row?.sources) && row.sources.length ? row.sources : [row].filter(Boolean);
+}
+function getDisplaySourcePriority(source){
+  const key = String(source?.source || source?.primarySource || "").toLowerCase();
+  const label = String(source?.label || "").toLowerCase();
+  const text = `${key} ${label}`;
+  if(key === "weekly_fvg" || (text.includes("weekly") && text.includes("fvg")) || (text.includes("w ") && text.includes("fvg"))) return 100;
+  if(key === "weekly_sr" || text.includes("w support") || text.includes("w resistance") || text.includes("weekly support") || text.includes("weekly resistance")) return 95;
+  if(key === "daily_fvg" || (text.includes("daily") && text.includes("fvg"))) return 90;
+  if(key === "daily_sr" || text.includes("daily support") || text.includes("daily resistance")) return 85;
+  if(key === "h4_fvg" || key === "4h_fvg" || (text.includes("4h") && text.includes("fvg"))) return 80;
+  if(key === "h4_sr" || key === "4h_sr" || text.includes("4h support") || text.includes("4h resistance")) return 75;
+  if(key.includes("daily_pattern") || text.includes("channel") || text.includes("range boundary")) return 70;
+  if(text.includes("manual")) return 60;
+  return 0;
+}
+function rankConfluenceSources(sources){
+  return [...(sources || [])].sort((a,b)=>
+    (getDisplaySourcePriority(b)-getDisplaySourcePriority(a))
+    || ((Number(b.priorityScore)||0)-(Number(a.priorityScore)||0))
+    || ((a.distancePct ?? 999)-(b.distancePct ?? 999))
+  );
+}
+function formatSourceLabel(source){ return source?.label || source?.source || "Source"; }
+function formatConfluenceSources(row, maxDisplay = 3){
+  const labels = [...new Set(rankConfluenceSources(getConfluenceSourceList(row)).map(formatSourceLabel).filter(Boolean))];
+  if(!labels.length) return row?.quality || row?.label || "—";
+  const shown = labels.slice(0, maxDisplay);
+  const more = labels.length - shown.length;
+  return more > 0 ? `${shown.join(" + ")} + ${more} more` : shown.join(" + ");
+}
+function inferSingleZoneType(row){
+  const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
+  if(text.includes("fvg")) return "FVG";
+  if(text.includes("support")) return "Support";
+  if(text.includes("resistance")) return "Resistance";
+  if(text.includes("range")) return "Range Boundary";
+  if(text.includes("daily_pattern") || text.includes("channel")) return "Channel Boundary";
+  return row?.label || "Zone";
+}
+function getConfluenceType(row){
+  const count = Number(row?.confluenceCount) || getConfluenceSourceList(row).length;
+  if(count >= 4) return "Major Confluence";
+  if(count === 3) return "Strong Confluence";
+  if(count === 2) return "Confluence";
+  return inferSingleZoneType(row);
+}
+function formatMapRowForDisplay(row){
+  const fullSources = row?.confluenceLabel || row?.detail || (Array.isArray(row?.sources) ? row.sources.map(formatSourceLabel).filter(Boolean).join(" + ") : "") || row?.quality || "";
+  return {
+    zone: row?.zoneText || "—",
+    type: getConfluenceType(row),
+    sources: formatConfluenceSources(row, 3),
+    distance: row?.distanceText || "—",
+    fullSources,
+  };
+}
+function renderMarketMapGrid(rows){
+  return (rows || []).map((r)=>{
+    const display = formatMapRowForDisplay(r);
+    const title = escapeHtml(display.fullSources || display.sources);
+    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources">${escapeHtml(display.sources)}</span><span class="prep-map-row-distance">${escapeHtml(display.distance)}</span></div>`;
+  }).join("");
+}
 function mergeConfluenceRows(rows, currentPrice){
   const normalized = (rows || []).map((r)=>normalizeMapZoneRow(r, currentPrice)).filter(Boolean);
   const better = (a,b)=> (a.priorityScore - b.priorityScore) || (a.sourceRank - b.sourceRank) || ((b.distancePct ?? 999) - (a.distancePct ?? 999));
@@ -1413,9 +1478,8 @@ function renderMarketPreparationMap(mapData){
   };
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
-  const row = (r)=>`<div class="prep-map-row"><span class="prep-map-row-symbol">${r.symbol}</span><span class="prep-map-row-zone">${r.zoneText}</span><span class="prep-map-row-label">${r.label}</span><span class="prep-map-row-quality">${r.quality}</span><span class="prep-map-row-distance">${r.distanceText}</span></div>`;
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? safeMap.upside.map(row).join('') : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? safeMap.downside.map(row).join('') : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? renderMarketMapGrid(safeMap.upside) : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? renderMarketMapGrid(safeMap.downside) : '<p class="prep-map-empty">No downside watch levels available.</p>';
   const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
   renderCurrentPriceDetailCards(detail);
