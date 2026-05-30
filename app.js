@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 13:00";
+const APP_LAST_UPDATED = "2026-05-30 14:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -155,11 +155,15 @@ const marketPreparationState = {
   sentiment: { value: null, label: null, updatedAt: null },
   currentPricePosition: { currentPosition: null, nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, fvg: { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: null, ceStatus: null, distancePct: null, recentReaction: null, reason: null, updatedAt: null }, timeframe: "4H", updatedAt: null },
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
+  fvgMtfContext: createEmptyFvgMtfContext(),
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
 
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
+}
+function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
+  return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: null, overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, qualityHint: null, reason, updatedAt: Date.now() };
 }
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -2678,6 +2682,135 @@ function getMostRecentFvgReactionMemory(){
   const latest = memories.map(getLatestFvgReaction).filter(Boolean).sort((a,b)=>(Number(b.reactionTime)||0)-(Number(a.reactionTime)||0) || (getFvgReactionPriority(b.reactionType) - getFvgReactionPriority(a.reactionType)))[0] || null;
   return latest ? { latestReaction: latest } : createEmptyRecentFvgReactionMemory();
 }
+function normalizeFvgDetailForMtf(detail){
+  const zone = getFvgDetailZone(detail);
+  const direction = detail?.direction || getFvgDirection(zone);
+  const status = detail?.detailStatus || detail?.baseStatus || null;
+  if(!zone || !direction || ["Broken", "Filled"].includes(status)) return null;
+  const timeframe = detail?.timeframe || zone.timeframe || "FVG";
+  const tf = String(timeframe).toLowerCase();
+  const role = tf.includes("weekly") ? "parent" : (tf.includes("daily") || tf === "1d" ? "active" : (tf.includes("4h") ? "reaction" : "timing"));
+  const currentPrice = marketPreparationState.currentPrice;
+  return {
+    key: detail.key || getFvgKey(zone, timeframe),
+    timeframe,
+    role,
+    type: detail.sourceZone?.type || zone.type || getFvgDetailLabel(detail),
+    direction,
+    lower: zone.lower,
+    upper: zone.upper,
+    cePrice: Number.isFinite(detail.cePrice) ? detail.cePrice : getFvgCePrice(zone),
+    detailStatus: status,
+    distancePct: getFvgDistancePctFromPrice(zone, currentPrice),
+    label: getFvgDetailLabel(detail),
+    sourceDetail: detail,
+  };
+}
+function getActiveFvgDetailsForMtf(){
+  return [
+    ...(marketPreparationState.weekly?.fvgDetails || []),
+    ...(marketPreparationState.daily?.fvgDetails || []),
+    ...(marketPreparationState.h4?.fvgDetails || []),
+  ].map(normalizeFvgDetailForMtf).filter(Boolean);
+}
+function calculateFvgOverlap(zones){
+  const valid = (zones || []).filter((z)=>Number.isFinite(z?.lower) && Number.isFinite(z?.upper) && z.upper > z.lower);
+  if(valid.length < 2) return null;
+  const lower = Math.max(...valid.map((z)=>z.lower));
+  const upper = Math.min(...valid.map((z)=>z.upper));
+  if(lower >= upper) return null;
+  return { lower, upper, zoneRange: `${usd(lower)}–${usd(upper)}` };
+}
+function calculateFvgOverlapRatio(a, b){
+  if(!a || !b) return 0;
+  const low = Math.max(a.lower, b.lower), high = Math.min(a.upper, b.upper);
+  const overlap = Math.max(0, high - low);
+  const denom = Math.max(1e-9, Math.min(a.upper - a.lower, b.upper - b.lower));
+  return overlap / denom;
+}
+function isFvgNested(child, parent){
+  return !!child && !!parent && child.lower >= parent.lower && child.upper <= parent.upper;
+}
+function isFvgNear(a, b, tolerancePct = 0.01){
+  if(!a || !b) return false;
+  if(calculateFvgOverlapRatio(a,b) > 0) return true;
+  const gap = a.upper < b.lower ? b.lower - a.upper : (b.upper < a.lower ? a.lower - b.upper : 0);
+  const ref = Number.isFinite(marketPreparationState.currentPrice) && marketPreparationState.currentPrice > 0 ? marketPreparationState.currentPrice : Math.max(1, (a.lower + a.upper + b.lower + b.upper) / 4);
+  return gap / ref <= tolerancePct;
+}
+function groupFvgDetailsByDirection(details){
+  return (details || []).reduce((acc, detail)=>{ if(detail?.direction) (acc[detail.direction] ||= []).push(detail); return acc; }, {});
+}
+function getMtfRoleZone(details, role){
+  return (details || [])
+    .filter((d)=>d.role === role)
+    .sort((a,b)=>(a.distancePct ?? 999) - (b.distancePct ?? 999))[0] || null;
+}
+function sortFvgMtfCandidates(details){
+  const roleRank = { parent: 3, active: 2, reaction: 1, timing: 0 };
+  return [...(details || [])].sort((a,b)=>(roleRank[b.role] || 0) - (roleRank[a.role] || 0) || ((a.distancePct ?? 999) - (b.distancePct ?? 999)));
+}
+function buildMtfContextPayload({ ok = true, direction = null, relation = null, details = [], overlapZone = null, conflictReason = null, qualityHint = null, reason = null }){
+  const sorted = sortFvgMtfCandidates(details);
+  const parentZone = getMtfRoleZone(sorted, "parent") || getMtfRoleZone(sorted, "active") || sorted[0] || null;
+  const activeZone = getMtfRoleZone(sorted, "active");
+  const reactionZone = getMtfRoleZone(sorted, "reaction");
+  const precisionZone = reactionZone && parentZone && (isFvgNested(reactionZone, parentZone) || (activeZone && isFvgNested(reactionZone, activeZone))) ? reactionZone : null;
+  return { ok, direction, relation, parentZone, activeZone, reactionZone, timingZone: null, overlapZone, coreZone: overlapZone, precisionZone, sources: sorted.map((d)=>d.label), conflictReason, qualityHint, reason, updatedAt: Date.now() };
+}
+function buildAlignedFvgMtfContext(details, direction){
+  const aligned = sortFvgMtfCandidates(details || []);
+  if(aligned.length < 2) return null;
+  const overlapAll = calculateFvgOverlap(aligned);
+  const nested = aligned.some((child)=>aligned.some((parent)=>child !== parent && isFvgNested(child, parent)));
+  const dirLabel = direction === "bullish" ? "Bullish" : "Bearish";
+  if(overlapAll){
+    return buildMtfContextPayload({ direction, relation: nested ? `Nested Multi-Timeframe ${dirLabel} FVG` : `${dirLabel} FVG Confluence`, details: aligned, overlapZone: overlapAll, qualityHint: aligned.length >= 3 ? "Strong" : "Valid", reason: `${aligned.map((d)=>d.timeframe).join(", ")} ${direction} FVGs overlap.` });
+  }
+  let bestPair = null;
+  for(let i=0;i<aligned.length;i++) for(let j=i+1;j<aligned.length;j++){
+    const overlap = calculateFvgOverlap([aligned[i], aligned[j]]);
+    if(overlap && (!bestPair || calculateFvgOverlapRatio(aligned[i], aligned[j]) > bestPair.ratio)) bestPair = { pair:[aligned[i], aligned[j]], overlap, ratio: calculateFvgOverlapRatio(aligned[i], aligned[j]) };
+  }
+  if(bestPair) return buildMtfContextPayload({ direction, relation: `Partial ${dirLabel} FVG Overlap`, details: bestPair.pair, overlapZone: bestPair.overlap, qualityHint: "Valid", reason: `${bestPair.pair.map((d)=>d.timeframe).join(" and ")} ${direction} FVGs partially overlap.` });
+  const nearPair = aligned.find((a, idx)=>aligned.slice(idx+1).some((b)=>isFvgNear(a,b,0.01)));
+  if(nearPair) return buildMtfContextPayload({ direction, relation: `Near ${dirLabel} FVG Cluster`, details: aligned, overlapZone: null, qualityHint: "Watch", reason: `${dirLabel} FVGs are near each other but do not overlap.` });
+  return null;
+}
+function buildConflictFvgMtfContext(details){
+  const active = sortFvgMtfCandidates(details || []);
+  if(active.length < 2) return null;
+  for(const a of active){
+    for(const b of active){
+      if(a === b || a.direction === b.direction) continue;
+      if(!isFvgNear(a,b,0.01)) continue;
+      const weekly = [a,b].find((z)=>z.role === "parent");
+      const other = weekly ? ([a,b].find((z)=>z !== weekly)) : null;
+      let relation = "Conflict / wait confirmation";
+      let conflictReason = "Opposing FVG directions are overlapping or clustered nearby.";
+      if(weekly?.direction === "bullish" && other?.direction === "bearish") { relation = "HTF Support Under Pressure"; conflictReason = "Weekly bullish FVG is being challenged by bearish Daily/4H FVGs."; }
+      else if(weekly?.direction === "bearish" && other?.direction === "bullish") { relation = "HTF Resistance Under Pressure"; conflictReason = "Weekly bearish FVG is being challenged by bullish Daily/4H FVGs."; }
+      return buildMtfContextPayload({ direction: "mixed", relation, details: [a,b], overlapZone: calculateFvgOverlap([a,b]), conflictReason, qualityHint: "Conflict", reason: "Do not label as strong confluence." });
+    }
+  }
+  return null;
+}
+function buildFvgMtfContext(){
+  try{
+    const details = getActiveFvgDetailsForMtf();
+    if(!details.length) return createEmptyFvgMtfContext();
+    const conflict = buildConflictFvgMtfContext(details);
+    if(conflict) return conflict;
+    const grouped = groupFvgDetailsByDirection(details);
+    const bullish = buildAlignedFvgMtfContext(grouped.bullish || [], "bullish");
+    const bearish = buildAlignedFvgMtfContext(grouped.bearish || [], "bearish");
+    const ranked = [bullish, bearish].filter(Boolean).sort((a,b)=>(b.sources?.length || 0) - (a.sources?.length || 0) || (a.overlapZone ? -1 : 1))[0];
+    return ranked || createEmptyFvgMtfContext();
+  }catch(_){ return createEmptyFvgMtfContext("MTF FVG context unavailable."); }
+}
+function refreshFvgMtfContext(){
+  updateMarketPreparationState({ fvgMtfContext: buildFvgMtfContext() });
+}
 function renderFvgPanel(dataset){
   try {
     const active=getActiveFvgs(dataset);
@@ -3088,6 +3221,7 @@ function updateDailyMarketContext(candles, mode){
       clearDailyFvgOverlay();
       clearDailySrOverlay();
       updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+      refreshFvgMtfContext();
       renderMarketPreparationMap(buildMarketPreparationMap());
       return;
     }
@@ -3105,6 +3239,7 @@ function updateDailyMarketContext(candles, mode){
     const pattern = detectDailyPattern(candles, mode);
     setDailyPatternSummary(pattern);
     updateMarketPreparationState({ daily: { candles, fvgZones, fvgDetails, recentFvgReaction, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    refreshFvgMtfContext();
     scheduleDailyFvgOverlayRedraw();
     scheduleDailySrOverlayRedraw();
     renderDailyPatternOverlay();
@@ -3116,6 +3251,7 @@ function updateDailyMarketContext(candles, mode){
     clearDailyFvgOverlay();
     clearDailySrOverlay();
     updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+    refreshFvgMtfContext();
     renderMarketPreparationMap(buildMarketPreparationMap());
   }
 }
@@ -3829,7 +3965,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -3843,6 +3979,7 @@ function render4hFvgSummaryAndOverlay(candles){
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
     updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, recentFvgReaction, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
+    refreshFvgMtfContext();
     renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
@@ -4263,6 +4400,7 @@ async function loadDashboard(){
       renderWeeklyCandleCharacter(dataset);
       renderMtfSummary();
       updateMarketPreparationState({ weekly: { fvgZones: activeFvgs, fvgDetails: weeklyFvgDetails, recentFvgReaction: weeklyRecentFvgReaction, srSummary: weeklySrSummary }, meta: { sourcesReady: { weekly: true } } });
+      refreshFvgMtfContext();
       renderMarketPreparationMap(buildMarketPreparationMap());
       weeklyOk = true;
 

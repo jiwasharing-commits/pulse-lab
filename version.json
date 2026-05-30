@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 13:00",
-  "version": "v0.1.84",
+  "lastUpdated": "2026-05-30 14:00",
+  "version": "v0.1.85",
   "commitLabel": "manual",
-  "note": "Add recent FVG reaction memory"
+  "note": "Add MTF FVG overlap context engine"
 }
