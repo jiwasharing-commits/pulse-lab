@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 04:00",
-  "version": "v0.1.75",
+  "lastUpdated": "2026-05-30 05:00",
+  "version": "v0.1.76",
   "commitLabel": "manual",
-  "note": "Format Market Preparation Map confluence display rows"
+  "note": "Disable chart wheel zoom to preserve page scroll"
 }
