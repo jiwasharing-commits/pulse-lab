@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 08:00";
+const APP_LAST_UPDATED = "2026-05-30 09:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -109,26 +109,26 @@ const MAX_MANUAL_DRAWINGS_PER_CHART = 30;
 const CHART_LAYER_STORAGE_KEY = "pulseLab.chartLayers.v1";
 const DEFAULT_CHART_LAYER_STATE = {
   weekly: { fvg: true, sr: true, manualLines: true, trendlines: true, rsiPanel: true },
-  daily: { patternSummary: true, patternLines: true },
+  daily: { fvg: true, sr: true, patternLines: true, patternSummary: true },
   h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
   h1: { sweepMarkers: true, structureMarkers: true, stochasticText: true },
 };
 const CHART_LAYER_PRESETS = {
   clean: {
     weekly: { fvg: false, sr: false, manualLines: true, trendlines: true, rsiPanel: true },
-    daily: { patternSummary: true, patternLines: false },
+    daily: { fvg: false, sr: false, patternLines: false, patternSummary: true },
     h4: { fvg: false, sr: false, manualLines: true, trendlines: true },
     h1: { sweepMarkers: false, structureMarkers: false, stochasticText: true },
   },
   manual: {
     weekly: { fvg: false, sr: false, manualLines: true, trendlines: true, rsiPanel: false },
-    daily: { patternSummary: false, patternLines: false },
+    daily: { fvg: false, sr: false, patternLines: false, patternSummary: false },
     h4: { fvg: false, sr: false, manualLines: true, trendlines: true },
     h1: { sweepMarkers: false, structureMarkers: false, stochasticText: false },
   },
   preparation: {
     weekly: { fvg: true, sr: true, manualLines: true, trendlines: true, rsiPanel: true },
-    daily: { patternSummary: true, patternLines: true },
+    daily: { fvg: true, sr: true, patternLines: true, patternSummary: true },
     h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
     h1: { sweepMarkers: true, structureMarkers: true, stochasticText: true },
   },
@@ -336,6 +336,10 @@ function applyWeeklyLayerVisibility(){
   if(els.weeklyRsiCard) els.weeklyRsiCard.hidden = !getChartLayer("weekly", "rsiPanel");
 }
 function applyDailyLayerVisibility(){
+  if(getChartLayer("daily", "fvg")) scheduleDailyFvgOverlayRedraw();
+  else clearDailyFvgOverlay();
+  if(getChartLayer("daily", "sr")) scheduleDailySrOverlayRedraw();
+  else clearDailySrOverlay();
   if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.hidden = !getChartLayer("daily", "patternSummary");
   if(getChartLayer("daily", "patternLines")) renderDailyPatternOverlay();
   else clearDailyPatternOverlay();
