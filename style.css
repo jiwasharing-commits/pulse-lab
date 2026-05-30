@@ -15,8 +15,16 @@
 .panel{margin-bottom:.48rem}.weekly-left-col .panel,.weekly-right-col .panel{margin-bottom:.45rem}.panel-header{display:flex;justify-content:space-between;align-items:baseline;gap:.55rem;margin-bottom:.3rem}.compact-header{align-items:center}
 .panel-header h2{margin:0;font-size:.95rem}.panel-header p{margin:0;color:var(--muted);font-size:.76rem}.panel-note{margin:.3rem 0 0;color:var(--muted);font-size:.76rem}
 .chart-tools{display:flex;gap:.35rem;margin-left:auto;flex-wrap:wrap}
+.chart-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:.4rem;margin-left:auto;flex-wrap:wrap}
 .chart-tool-btn{padding:.24rem .5rem;font-size:.7rem}
 .chart-tool-btn.active-draw{outline:2px solid rgba(111,140,255,.6);background:#33498a;color:#fff}
+.layer-control{position:relative;display:inline-flex}
+.layer-toggle-btn{white-space:nowrap}
+.layer-menu{position:absolute;right:0;top:calc(100% + .35rem);z-index:30;min-width:190px;padding:.45rem;background:linear-gradient(145deg,var(--panel),var(--panel-alt));border:1px solid var(--border);border-radius:.55rem;box-shadow:0 14px 30px rgba(2,6,23,.42)}
+.layer-menu[hidden]{display:none!important}
+.layer-row{display:flex;align-items:center;gap:.42rem;padding:.28rem .2rem;color:#dbe4ff;font-size:.75rem;line-height:1.2;cursor:pointer}
+.layer-row input{accent-color:var(--accent)}
+.layer-reset-btn{width:100%;margin-top:.35rem;text-align:center}
 .trendline-overlay-layer{position:absolute;inset:0;pointer-events:none;z-index:6}
 .trendline-overlay-layer svg{width:100%;height:100%;display:block}
 .trendline-overlay-layer .trendline{stroke-width:1.6}
@@ -241,6 +249,7 @@
 .pdf-report li{margin:3px 0;font-size:9.8px;line-height:1.35;color:#334155}
 .avoid-break{break-inside:avoid;page-break-inside:avoid}
 @media print{
+  .layer-control{display:none!important}
   @page{size:A4 portrait;margin:0}
   html,body{width:210mm;background:#fff !important}
   body{margin:0 !important;color:#0f172a !important}

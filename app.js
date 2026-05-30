@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-29 07:20";
+const APP_LAST_UPDATED = "2026-05-30 00:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -29,7 +29,7 @@ const els = {
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
-  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"),
+  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"), dailyLayerToggleBtn: document.getElementById("dailyLayerToggleBtn"), dailyLayerMenu: document.getElementById("dailyLayerMenu"), h4LayerToggleBtn: document.getElementById("h4LayerToggleBtn"), h4LayerMenu: document.getElementById("h4LayerMenu"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
   exportPdfBtn: document.getElementById("exportPdfBtn"), pdfReportRoot: document.getElementById("pdfReportRoot"), drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
   weeklyTrendlineOverlay: document.getElementById("weeklyTrendlineOverlay"), h4TrendlineOverlay: document.getElementById("h4TrendlineOverlay"),
@@ -77,6 +77,12 @@ const MANUAL_LINES_KEY = "pl_manual_chart_lines_v1";
 const MANUAL_DRAWINGS_KEY = "pl_manual_chart_drawings_v1";
 const MAX_MANUAL_LINES_PER_CHART = 30;
 const MAX_MANUAL_DRAWINGS_PER_CHART = 30;
+const CHART_LAYER_STORAGE_KEY = "pulseLab.chartLayers.v1";
+const DEFAULT_CHART_LAYER_STATE = {
+  daily: { patternSummary: true, patternLines: true },
+  h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
+};
+let chartLayerState = null;
 let manualChartLines = { weekly: [], h4: [] };
 let manualChartDrawings = { weekly: [], h4: [] };
 const manualLineHandles = { weekly: [], h4: [] };
@@ -104,6 +110,116 @@ const marketPreparationState = {
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
 function toNullableNumber(value){ if(value === null || value === undefined || value === "") return null; const n = Number(value); return Number.isFinite(n) ? n : null; }
+function cloneDefaultChartLayers(){ return JSON.parse(JSON.stringify(DEFAULT_CHART_LAYER_STATE)); }
+function mergeChartLayerDefaults(saved){
+  const merged = cloneDefaultChartLayers();
+  if(!saved || typeof saved !== "object") return merged;
+  Object.keys(DEFAULT_CHART_LAYER_STATE).forEach((chartKey)=>{
+    const src = saved[chartKey];
+    if(!src || typeof src !== "object") return;
+    Object.keys(DEFAULT_CHART_LAYER_STATE[chartKey]).forEach((layerKey)=>{
+      if(typeof src[layerKey] === "boolean") merged[chartKey][layerKey] = src[layerKey];
+    });
+  });
+  return merged;
+}
+function loadChartLayerState(){
+  try{
+    const raw = localStorage.getItem(CHART_LAYER_STORAGE_KEY);
+    if(!raw) return cloneDefaultChartLayers();
+    return mergeChartLayerDefaults(JSON.parse(raw));
+  }catch(e){
+    console.warn("Chart layer settings reset to defaults:", e);
+    return cloneDefaultChartLayers();
+  }
+}
+function saveChartLayerState(){
+  try{ localStorage.setItem(CHART_LAYER_STORAGE_KEY, JSON.stringify(mergeChartLayerDefaults(chartLayerState))); }
+  catch(e){ console.warn("Chart layer settings could not be saved:", e); }
+}
+function getChartLayer(chartKey, layerKey){
+  if(!chartLayerState) chartLayerState = loadChartLayerState();
+  const defaultValue = DEFAULT_CHART_LAYER_STATE?.[chartKey]?.[layerKey];
+  if(typeof defaultValue !== "boolean") return true;
+  const value = chartLayerState?.[chartKey]?.[layerKey];
+  return typeof value === "boolean" ? value : defaultValue;
+}
+function setChartLayer(chartKey, layerKey, value){
+  if(!DEFAULT_CHART_LAYER_STATE?.[chartKey] || !(layerKey in DEFAULT_CHART_LAYER_STATE[chartKey])) return;
+  if(!chartLayerState) chartLayerState = loadChartLayerState();
+  chartLayerState[chartKey] = { ...DEFAULT_CHART_LAYER_STATE[chartKey], ...(chartLayerState[chartKey] || {}) };
+  chartLayerState[chartKey][layerKey] = Boolean(value);
+  saveChartLayerState();
+  syncChartLayerControls();
+  applyChartLayerVisibility(chartKey);
+}
+function resetChartLayers(chartKey){
+  if(!DEFAULT_CHART_LAYER_STATE?.[chartKey]) return;
+  if(!chartLayerState) chartLayerState = loadChartLayerState();
+  chartLayerState[chartKey] = { ...DEFAULT_CHART_LAYER_STATE[chartKey] };
+  saveChartLayerState();
+  syncChartLayerControls();
+  applyChartLayerVisibility(chartKey);
+}
+function syncChartLayerControls(){
+  document.querySelectorAll('[data-chart-key][data-layer-key]').forEach((input)=>{
+    input.checked = getChartLayer(input.dataset.chartKey, input.dataset.layerKey);
+  });
+}
+function setLayerMenuOpen(chartKey, open){
+  const menu = chartKey === "daily" ? els.dailyLayerMenu : els.h4LayerMenu;
+  const btn = chartKey === "daily" ? els.dailyLayerToggleBtn : els.h4LayerToggleBtn;
+  if(menu) menu.hidden = !open;
+  if(btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function closeChartLayerMenus(){ setLayerMenuOpen("daily", false); setLayerMenuOpen("h4", false); }
+function toggleChartLayerMenu(chartKey){
+  const menu = chartKey === "daily" ? els.dailyLayerMenu : els.h4LayerMenu;
+  const nextOpen = Boolean(menu?.hidden);
+  closeChartLayerMenus();
+  setLayerMenuOpen(chartKey, nextOpen);
+}
+function bindChartLayerControls(){
+  [[els.dailyLayerToggleBtn,"daily"],[els.h4LayerToggleBtn,"h4"]].forEach(([btn, chartKey])=>{
+    btn?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleChartLayerMenu(chartKey); });
+  });
+  [els.dailyLayerMenu, els.h4LayerMenu].forEach((menu)=>{
+    menu?.addEventListener("click", (e)=>e.stopPropagation());
+  });
+  document.querySelectorAll('[data-chart-key][data-layer-key]').forEach((input)=>{
+    input.addEventListener("change", ()=>setChartLayer(input.dataset.chartKey, input.dataset.layerKey, input.checked));
+  });
+  document.querySelectorAll('[data-layer-reset]').forEach((btn)=>{
+    btn.addEventListener("click", ()=>resetChartLayers(btn.dataset.layerReset));
+  });
+  document.addEventListener("click", closeChartLayerMenus);
+  syncChartLayerControls();
+  applyAllChartLayerVisibility();
+}
+function applyDailyLayerVisibility(){
+  if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.hidden = !getChartLayer("daily", "patternSummary");
+  if(getChartLayer("daily", "patternLines")) renderDailyPatternOverlay();
+  else clearDailyPatternOverlay();
+}
+function clearH4ManualLineHandles(){
+  (manualLineHandles.h4 || []).forEach((h)=>{ try { ltf4hSeries?.removePriceLine(h); } catch(_){} });
+  manualLineHandles.h4 = [];
+}
+function applyH4LayerVisibility(){
+  if(getChartLayer("h4", "fvg")) schedule4hFvgOverlayRedraw(latest4hCandles);
+  else clear4hFvgOverlay();
+  if(getChartLayer("h4", "sr")) schedule4hSrOverlayRedraw(latest4hCandles);
+  else clear4hSrOverlay();
+  if(getChartLayer("h4", "manualLines")) applyManualLinesTo4hChart();
+  else clearH4ManualLineHandles();
+  if(getChartLayer("h4", "trendlines")) renderTrendlinesForChart("h4");
+  else clearTrendlineOverlay("h4");
+}
+function applyChartLayerVisibility(chartKey){
+  if(chartKey === "daily") applyDailyLayerVisibility();
+  else if(chartKey === "h4") applyH4LayerVisibility();
+}
+function applyAllChartLayerVisibility(){ applyDailyLayerVisibility(); applyH4LayerVisibility(); }
 const classifyRsi=(r)=>r<30?"Deep Weak Zone":r<45?"Weak Zone":r<55?"Neutral Zone":r<=70?"Strong Zone":"Heated Zone";
 const getRegime=(w0)=>w0<30?"Deep Weakness":w0<45?"Recovery Attempt":w0<50?"Neutral Below Midline":w0<55?"Neutral Above Midline":w0<=70?"Momentum Strength":"Heated Momentum";
 const getDirection=(w0,w1,w4,w12)=>w0>w1&&w0>w4&&w0>w12?"Strong Rising":w0>w4&&w0>w12?"Rising":w0>w12&&w0<w4?"Long-term Improving, Short-term Cooling":w0<w12&&w0>w4?"Short-term Bounce, Long-term Weak":w0<w4&&w0<w12?"Weakening":"Mixed / Sideways";
@@ -238,6 +354,7 @@ function rebuildManualLines(chartKey){
   if(!series) return;
   (manualLineHandles[chartKey] || []).forEach((h)=>{ try { series.removePriceLine(h); } catch(_){} });
   manualLineHandles[chartKey] = [];
+  if(chartKey === "h4" && !getChartLayer("h4", "manualLines")) return;
   getManualLines(chartKey).forEach((line)=>{
     if(!Number.isFinite(Number(line.price))) return;
     try { manualLineHandles[chartKey].push(series.createPriceLine(buildPriceLineOptions(line))); } catch(_){}
@@ -361,6 +478,7 @@ function buildDrawingStyle(drawing){
 }
 function renderTrendlinesForChart(chartKey){
   try{
+    if(chartKey === "h4" && !getChartLayer("h4", "trendlines")){ clearTrendlineOverlay("h4"); return; }
     const layer = chartKey === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
     const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
     const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
@@ -2165,7 +2283,7 @@ function setupCollapsibleSections(){
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   els.exportPdfBtn?.addEventListener('click', exportMarketReportPdf);
-  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); } });
+  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); } });
   setDailyPresetUI('6m');
   setLtfPresetUI('3m');
   restoreToggleState();
@@ -2391,7 +2509,7 @@ function formatDailyPatternSummary(pattern){
   if(!pattern?.ok) return "Daily Pattern · No clear channel/range detected";
   return `Daily Pattern · ${pattern.type} · ${pattern.status} · ${pattern.currentPosition || "Position unavailable"} · Touches ${pattern.supportTouches}/${pattern.resistanceTouches}`;
 }
-function setDailyPatternSummary(pattern){ if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent = formatDailyPatternSummary(pattern); }
+function setDailyPatternSummary(pattern){ if(els.lowerDailyPatternSummary){ els.lowerDailyPatternSummary.textContent = formatDailyPatternSummary(pattern); els.lowerDailyPatternSummary.hidden = !getChartLayer("daily", "patternSummary"); } }
 
 function updateDailyMarketContext(candles, mode){
   try{
@@ -2511,6 +2629,7 @@ function renderPatternLineSvg({ coords, label, className }){
 }
 function renderDailyPatternOverlay(){
   try{
+    if(!getChartLayer("daily", "patternLines")){ clearDailyPatternOverlay(); return; }
     const layer = els.lowerDailyPatternOverlay;
     const pattern = marketPreparationState.daily?.pattern;
     if(!layer || !ltfDailyChart || !ltfDailySeries || !pattern?.ok){ clearDailyPatternOverlay(); return; }
@@ -2781,6 +2900,7 @@ function getSelected4hSrZones(srSummary){
 }
 
 function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
+  if(!getChartLayer("h4", "sr")){ clear4hSrOverlay(); return; }
   if(!chart || !series || !overlayLayer || !Array.isArray(candles) || !candles.length) return;
   clear4hSrOverlay();
   const zones=getSelected4hSrZones(srSummary);
@@ -2815,6 +2935,7 @@ function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
 }
 
 function schedule4hSrOverlayRedraw(candles){
+  if(!getChartLayer("h4", "sr")){ clear4hSrOverlay(); return; }
   if(srRedrawPending) return;
   srRedrawPending=true;
   requestAnimationFrame(()=>{
@@ -2870,7 +2991,8 @@ function selectClean4hFvgsByType(activeFvgs, currentPrice, { maxBullish=2, maxBe
 }
 
 function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candles, activeFvgs, maxBullish = 2, maxBearish = 2 }){
-  if(!chart || !series || !container || !overlayLayer) return { selected: [], visualMode: 'Failed' };
+  if(!getChartLayer("h4", "fvg")){ clear4hFvgOverlay(); return { selected: [], selectedBullish: [], selectedBearish: [], visualMode: 'Hidden' }; }
+  if(!chart || !series || !container || !overlayLayer) return { selected: [], selectedBullish: [], selectedBearish: [], visualMode: 'Failed' };
   clear4hFvgOverlay();
   const currentPrice=candles?.[candles.length-1]?.close||0;
   const picked = selectClean4hFvgsByType(activeFvgs,currentPrice,{maxBullish,maxBearish});
@@ -2931,6 +3053,7 @@ function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candl
 
 
 function schedule4hFvgOverlayRedraw(candles){
+  if(!getChartLayer("h4", "fvg")){ clear4hFvgOverlay(); return; }
   if(fvgRedrawPending) return;
   fvgRedrawPending=true;
   requestAnimationFrame(()=>{
@@ -3462,6 +3585,7 @@ manualChartDrawings = loadManualChartDrawings();
 setupCollapsibleSections();
 bindDrawingManagerEvents();
 bindCurrentPriceDetailEvents();
+bindChartLayerControls();
 closeDrawingManager();
 
 window.addEventListener("resize", ()=>{
