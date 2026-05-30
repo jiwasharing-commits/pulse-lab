@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 01:00";
+const APP_LAST_UPDATED = "2026-05-30 02:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -84,6 +84,26 @@ const DEFAULT_CHART_LAYER_STATE = {
   h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
   h1: { sweepMarkers: true, structureMarkers: true, stochasticText: true },
 };
+const CHART_LAYER_PRESETS = {
+  clean: {
+    weekly: { fvg: false, sr: false, manualLines: true, trendlines: true, rsiPanel: true },
+    daily: { patternSummary: true, patternLines: false },
+    h4: { fvg: false, sr: false, manualLines: true, trendlines: true },
+    h1: { sweepMarkers: false, structureMarkers: false, stochasticText: true },
+  },
+  manual: {
+    weekly: { fvg: false, sr: false, manualLines: true, trendlines: true, rsiPanel: false },
+    daily: { patternSummary: false, patternLines: false },
+    h4: { fvg: false, sr: false, manualLines: true, trendlines: true },
+    h1: { sweepMarkers: false, structureMarkers: false, stochasticText: false },
+  },
+  preparation: {
+    weekly: { fvg: true, sr: true, manualLines: true, trendlines: true, rsiPanel: true },
+    daily: { patternSummary: true, patternLines: true },
+    h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
+    h1: { sweepMarkers: true, structureMarkers: true, stochasticText: true },
+  },
+};
 let chartLayerState = null;
 let manualChartLines = { weekly: [], h4: [] };
 let manualChartDrawings = { weekly: [], h4: [] };
@@ -156,18 +176,42 @@ function setChartLayer(chartKey, layerKey, value){
   applyChartLayerVisibility(chartKey);
 }
 function resetChartLayers(chartKey){
-  if(!DEFAULT_CHART_LAYER_STATE?.[chartKey]) return;
+  applyLayerPreset(chartKey, "default");
+}
+function getLayerPreset(chartKey, presetName){
+  if(!DEFAULT_CHART_LAYER_STATE?.[chartKey]) return null;
+  const normalized = String(presetName || "default").toLowerCase();
+  if(normalized === "default") return { ...DEFAULT_CHART_LAYER_STATE[chartKey] };
+  if(normalized === "full") return Object.fromEntries(Object.keys(DEFAULT_CHART_LAYER_STATE[chartKey]).map((key)=>[key, true]));
+  return CHART_LAYER_PRESETS?.[normalized]?.[chartKey] ? { ...DEFAULT_CHART_LAYER_STATE[chartKey], ...CHART_LAYER_PRESETS[normalized][chartKey] } : null;
+}
+function applyLayerPreset(chartKey, presetName){
+  const preset = getLayerPreset(chartKey, presetName);
+  if(!preset) return;
   if(!chartLayerState) chartLayerState = loadChartLayerState();
-  chartLayerState[chartKey] = { ...DEFAULT_CHART_LAYER_STATE[chartKey] };
+  chartLayerState[chartKey] = { ...DEFAULT_CHART_LAYER_STATE[chartKey], ...preset };
   saveChartLayerState();
-  syncChartLayerControls();
+  updateLayerControlChecklist(chartKey);
   applyChartLayerVisibility(chartKey);
 }
-function syncChartLayerControls(){
-  document.querySelectorAll('[data-chart-key][data-layer-key]').forEach((input)=>{
+function renderLayerPresetButtons(chartKey){
+  const menu = getLayerMenu(chartKey);
+  if(!menu || menu.querySelector(".layer-preset-section")) return;
+  const section = document.createElement("div");
+  section.className = "layer-preset-section";
+  section.innerHTML = '<span class="layer-preset-label">Preset:</span><div class="layer-preset-actions"><button type="button" data-layer-preset="default">Default</button><button type="button" data-layer-preset="clean">Clean</button><button type="button" data-layer-preset="full">Full</button><button type="button" data-layer-preset="manual">Manual</button><button type="button" data-layer-preset="preparation">Prep</button></div>';
+  section.querySelectorAll("[data-layer-preset]").forEach((btn)=>{
+    btn.addEventListener("click", ()=>applyLayerPreset(chartKey, btn.dataset.layerPreset));
+  });
+  menu.prepend(section);
+}
+function updateLayerControlChecklist(chartKey){
+  const selector = chartKey ? `[data-chart-key="${chartKey}"][data-layer-key]` : '[data-chart-key][data-layer-key]';
+  document.querySelectorAll(selector).forEach((input)=>{
     input.checked = getChartLayer(input.dataset.chartKey, input.dataset.layerKey);
   });
 }
+function syncChartLayerControls(){ updateLayerControlChecklist(); }
 function getLayerMenu(chartKey){ return { weekly: els.weeklyLayerMenu, daily: els.dailyLayerMenu, h4: els.h4LayerMenu, h1: els.h1LayerMenu }[chartKey] || null; }
 function getLayerToggleButton(chartKey){ return { weekly: els.weeklyLayerToggleBtn, daily: els.dailyLayerToggleBtn, h4: els.h4LayerToggleBtn, h1: els.h1LayerToggleBtn }[chartKey] || null; }
 function setLayerMenuOpen(chartKey, open){
@@ -184,6 +228,7 @@ function toggleChartLayerMenu(chartKey){
   setLayerMenuOpen(chartKey, nextOpen);
 }
 function bindChartLayerControls(){
+  Object.keys(DEFAULT_CHART_LAYER_STATE).forEach(renderLayerPresetButtons);
   [[els.weeklyLayerToggleBtn,"weekly"],[els.dailyLayerToggleBtn,"daily"],[els.h4LayerToggleBtn,"h4"],[els.h1LayerToggleBtn,"h1"]].forEach(([btn, chartKey])=>{
     btn?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleChartLayerMenu(chartKey); });
   });

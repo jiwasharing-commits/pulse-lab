@@ -25,6 +25,11 @@
 .layer-row{display:flex;align-items:center;gap:.42rem;padding:.28rem .2rem;color:#dbe4ff;font-size:.75rem;line-height:1.2;cursor:pointer}
 .layer-row input{accent-color:var(--accent)}
 .layer-reset-btn{width:100%;margin-top:.35rem;text-align:center}
+.layer-preset-section{border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:.35rem;padding-bottom:.35rem}
+.layer-preset-label{display:block;color:var(--muted);font-size:.68rem;margin:0 0 .25rem}
+.layer-preset-actions{display:flex;gap:.25rem;flex-wrap:wrap}
+.layer-preset-actions button{border:1px solid rgba(148,163,184,.28);border-radius:.38rem;background:#1f2c4d;color:#dbe4ff;font-size:.66rem;font-weight:700;padding:.2rem .34rem;cursor:pointer}
+.layer-preset-actions button:hover{background:#2a3a63}
 .trendline-overlay-layer{position:absolute;inset:0;pointer-events:none;z-index:6}
 .trendline-overlay-layer svg{width:100%;height:100%;display:block}
 .trendline-overlay-layer .trendline{stroke-width:1.6}
