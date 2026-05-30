@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 00:00";
+const APP_LAST_UPDATED = "2026-05-30 01:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"),
@@ -24,12 +24,12 @@ const els = {
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
   prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
-  priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"),
+  priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
   lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
-  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"), dailyLayerToggleBtn: document.getElementById("dailyLayerToggleBtn"), dailyLayerMenu: document.getElementById("dailyLayerMenu"), h4LayerToggleBtn: document.getElementById("h4LayerToggleBtn"), h4LayerMenu: document.getElementById("h4LayerMenu"),
+  ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"), dailyLayerToggleBtn: document.getElementById("dailyLayerToggleBtn"), dailyLayerMenu: document.getElementById("dailyLayerMenu"), h4LayerToggleBtn: document.getElementById("h4LayerToggleBtn"), h4LayerMenu: document.getElementById("h4LayerMenu"), h1LayerToggleBtn: document.getElementById("h1LayerToggleBtn"), h1LayerMenu: document.getElementById("h1LayerMenu"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
   exportPdfBtn: document.getElementById("exportPdfBtn"), pdfReportRoot: document.getElementById("pdfReportRoot"), drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
   weeklyTrendlineOverlay: document.getElementById("weeklyTrendlineOverlay"), h4TrendlineOverlay: document.getElementById("h4TrendlineOverlay"),
@@ -79,8 +79,10 @@ const MAX_MANUAL_LINES_PER_CHART = 30;
 const MAX_MANUAL_DRAWINGS_PER_CHART = 30;
 const CHART_LAYER_STORAGE_KEY = "pulseLab.chartLayers.v1";
 const DEFAULT_CHART_LAYER_STATE = {
+  weekly: { fvg: true, sr: true, manualLines: true, trendlines: true, rsiPanel: true },
   daily: { patternSummary: true, patternLines: true },
   h4: { fvg: true, sr: true, manualLines: true, trendlines: true },
+  h1: { sweepMarkers: true, structureMarkers: true, stochasticText: true },
 };
 let chartLayerState = null;
 let manualChartLines = { weekly: [], h4: [] };
@@ -166,24 +168,26 @@ function syncChartLayerControls(){
     input.checked = getChartLayer(input.dataset.chartKey, input.dataset.layerKey);
   });
 }
+function getLayerMenu(chartKey){ return { weekly: els.weeklyLayerMenu, daily: els.dailyLayerMenu, h4: els.h4LayerMenu, h1: els.h1LayerMenu }[chartKey] || null; }
+function getLayerToggleButton(chartKey){ return { weekly: els.weeklyLayerToggleBtn, daily: els.dailyLayerToggleBtn, h4: els.h4LayerToggleBtn, h1: els.h1LayerToggleBtn }[chartKey] || null; }
 function setLayerMenuOpen(chartKey, open){
-  const menu = chartKey === "daily" ? els.dailyLayerMenu : els.h4LayerMenu;
-  const btn = chartKey === "daily" ? els.dailyLayerToggleBtn : els.h4LayerToggleBtn;
+  const menu = getLayerMenu(chartKey);
+  const btn = getLayerToggleButton(chartKey);
   if(menu) menu.hidden = !open;
   if(btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
-function closeChartLayerMenus(){ setLayerMenuOpen("daily", false); setLayerMenuOpen("h4", false); }
+function closeChartLayerMenus(){ Object.keys(DEFAULT_CHART_LAYER_STATE).forEach((chartKey)=>setLayerMenuOpen(chartKey, false)); }
 function toggleChartLayerMenu(chartKey){
-  const menu = chartKey === "daily" ? els.dailyLayerMenu : els.h4LayerMenu;
+  const menu = getLayerMenu(chartKey);
   const nextOpen = Boolean(menu?.hidden);
   closeChartLayerMenus();
   setLayerMenuOpen(chartKey, nextOpen);
 }
 function bindChartLayerControls(){
-  [[els.dailyLayerToggleBtn,"daily"],[els.h4LayerToggleBtn,"h4"]].forEach(([btn, chartKey])=>{
+  [[els.weeklyLayerToggleBtn,"weekly"],[els.dailyLayerToggleBtn,"daily"],[els.h4LayerToggleBtn,"h4"],[els.h1LayerToggleBtn,"h1"]].forEach(([btn, chartKey])=>{
     btn?.addEventListener("click", (e)=>{ e.stopPropagation(); toggleChartLayerMenu(chartKey); });
   });
-  [els.dailyLayerMenu, els.h4LayerMenu].forEach((menu)=>{
+  [els.weeklyLayerMenu, els.dailyLayerMenu, els.h4LayerMenu, els.h1LayerMenu].forEach((menu)=>{
     menu?.addEventListener("click", (e)=>e.stopPropagation());
   });
   document.querySelectorAll('[data-chart-key][data-layer-key]').forEach((input)=>{
@@ -196,14 +200,28 @@ function bindChartLayerControls(){
   syncChartLayerControls();
   applyAllChartLayerVisibility();
 }
+function clearManualLineHandles(chartKey){
+  const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
+  (manualLineHandles[chartKey] || []).forEach((h)=>{ try { series?.removePriceLine(h); } catch(_){} });
+  manualLineHandles[chartKey] = [];
+}
+function applyWeeklyLayerVisibility(){
+  if(getChartLayer("weekly", "fvg")){
+    if(activeFvgZonesForOverlay.length && !fvgOverlayLines.length) renderFvgOverlay(activeFvgZonesForOverlay, weeklyDatasetCache || []);
+    else renderFvgFilledOverlay();
+  } else clearFvgOverlay();
+  if(getChartLayer("weekly", "sr")){ if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []); }
+  else clearWeeklySrOverlay();
+  if(getChartLayer("weekly", "manualLines")) applyManualLinesToWeeklyChart();
+  else clearManualLineHandles("weekly");
+  if(getChartLayer("weekly", "trendlines")) renderTrendlinesForChart("weekly");
+  else clearTrendlineOverlay("weekly");
+  if(els.weeklyRsiCard) els.weeklyRsiCard.hidden = !getChartLayer("weekly", "rsiPanel");
+}
 function applyDailyLayerVisibility(){
   if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.hidden = !getChartLayer("daily", "patternSummary");
   if(getChartLayer("daily", "patternLines")) renderDailyPatternOverlay();
   else clearDailyPatternOverlay();
-}
-function clearH4ManualLineHandles(){
-  (manualLineHandles.h4 || []).forEach((h)=>{ try { ltf4hSeries?.removePriceLine(h); } catch(_){} });
-  manualLineHandles.h4 = [];
 }
 function applyH4LayerVisibility(){
   if(getChartLayer("h4", "fvg")) schedule4hFvgOverlayRedraw(latest4hCandles);
@@ -211,15 +229,26 @@ function applyH4LayerVisibility(){
   if(getChartLayer("h4", "sr")) schedule4hSrOverlayRedraw(latest4hCandles);
   else clear4hSrOverlay();
   if(getChartLayer("h4", "manualLines")) applyManualLinesTo4hChart();
-  else clearH4ManualLineHandles();
+  else clearManualLineHandles("h4");
   if(getChartLayer("h4", "trendlines")) renderTrendlinesForChart("h4");
   else clearTrendlineOverlay("h4");
 }
-function applyChartLayerVisibility(chartKey){
-  if(chartKey === "daily") applyDailyLayerVisibility();
-  else if(chartKey === "h4") applyH4LayerVisibility();
+function set1hMarkers(markers){
+  const safeMarkers = Array.isArray(markers) ? markers : [];
+  if(typeof ltf1hSeries?.setMarkers === 'function') ltf1hSeries.setMarkers(safeMarkers);
+  else if(typeof ltf1hSeries?.createSeriesMarkers === 'function') ltf1hSeries.createSeriesMarkers(safeMarkers);
 }
-function applyAllChartLayerVisibility(){ applyDailyLayerVisibility(); applyH4LayerVisibility(); }
+function applyH1LayerVisibility(){
+  if(ltf1hSeries) render1hEventMarkers(latest1hCandles);
+  document.querySelectorAll('.h1-stochastic-layer').forEach((el)=>{ el.hidden = !getChartLayer("h1", "stochasticText"); });
+}
+function applyChartLayerVisibility(chartKey){
+  if(chartKey === "weekly") applyWeeklyLayerVisibility();
+  else if(chartKey === "daily") applyDailyLayerVisibility();
+  else if(chartKey === "h4") applyH4LayerVisibility();
+  else if(chartKey === "h1") applyH1LayerVisibility();
+}
+function applyAllChartLayerVisibility(){ applyWeeklyLayerVisibility(); applyDailyLayerVisibility(); applyH4LayerVisibility(); applyH1LayerVisibility(); }
 const classifyRsi=(r)=>r<30?"Deep Weak Zone":r<45?"Weak Zone":r<55?"Neutral Zone":r<=70?"Strong Zone":"Heated Zone";
 const getRegime=(w0)=>w0<30?"Deep Weakness":w0<45?"Recovery Attempt":w0<50?"Neutral Below Midline":w0<55?"Neutral Above Midline":w0<=70?"Momentum Strength":"Heated Momentum";
 const getDirection=(w0,w1,w4,w12)=>w0>w1&&w0>w4&&w0>w12?"Strong Rising":w0>w4&&w0>w12?"Rising":w0>w12&&w0<w4?"Long-term Improving, Short-term Cooling":w0<w12&&w0>w4?"Short-term Bounce, Long-term Weak":w0<w4&&w0<w12?"Weakening":"Mixed / Sideways";
@@ -354,7 +383,7 @@ function rebuildManualLines(chartKey){
   if(!series) return;
   (manualLineHandles[chartKey] || []).forEach((h)=>{ try { series.removePriceLine(h); } catch(_){} });
   manualLineHandles[chartKey] = [];
-  if(chartKey === "h4" && !getChartLayer("h4", "manualLines")) return;
+  if((chartKey === "weekly" || chartKey === "h4") && !getChartLayer(chartKey, "manualLines")) return;
   getManualLines(chartKey).forEach((line)=>{
     if(!Number.isFinite(Number(line.price))) return;
     try { manualLineHandles[chartKey].push(series.createPriceLine(buildPriceLineOptions(line))); } catch(_){}
@@ -478,7 +507,7 @@ function buildDrawingStyle(drawing){
 }
 function renderTrendlinesForChart(chartKey){
   try{
-    if(chartKey === "h4" && !getChartLayer("h4", "trendlines")){ clearTrendlineOverlay("h4"); return; }
+    if((chartKey === "weekly" || chartKey === "h4") && !getChartLayer(chartKey, "trendlines")){ clearTrendlineOverlay(chartKey); return; }
     const layer = chartKey === "weekly" ? els.weeklyTrendlineOverlay : els.h4TrendlineOverlay;
     const chart = chartKey === "weekly" ? priceChart : ltf4hChart;
     const series = chartKey === "weekly" ? candleSeries : ltf4hSeries;
@@ -1270,8 +1299,8 @@ function renderCurrentPriceDetailCards(detail){
         <h4 class="prep-current-detail-card-title">1H Timing</h4>
         <p class="prep-current-detail-kv">Sweep: ${detail.h1Sweep.status}</p>
         <p class="prep-current-detail-kv">Structure: ${detail.h1Structure.status}</p>
-        <p class="prep-current-detail-kv">Stochastic: ${detail.h1Stochastic.ok ? detail.h1Stochastic.label : "—"}</p>
-        <p class="prep-current-detail-kv">K/D: ${detail.h1Stochastic.ok ? `K ${nNum(detail.h1Stochastic.k)} · D ${nNum(detail.h1Stochastic.d)}` : "—"}</p>
+        <p class="prep-current-detail-kv h1-stochastic-layer">Stochastic: ${detail.h1Stochastic.ok ? detail.h1Stochastic.label : "—"}</p>
+        <p class="prep-current-detail-kv h1-stochastic-layer">K/D: ${detail.h1Stochastic.ok ? `K ${nNum(detail.h1Stochastic.k)} · D ${nNum(detail.h1Stochastic.d)}` : "—"}</p>
         <p class="prep-current-detail-meaning">${detail.h1TimingMeaning}</p>
       </article>
       <article class="prep-current-detail-card">
@@ -1323,6 +1352,7 @@ function renderMarketPreparationMap(mapData){
   const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.textContent = detail.compactRowText || "● Price unavailable";
   renderCurrentPriceDetailCards(detail);
+  applyH1LayerVisibility();
   setCurrentPriceDetailState(prepCurrentDetailOpen);
 }
 
@@ -2044,10 +2074,14 @@ function ensureWeeklySrOverlayLayer(){
   return layer;
 }
 
+function clearWeeklySrOverlay(){
+  try { if(weeklySrOverlayLayer) weeklySrOverlayLayer.innerHTML = ""; } catch(_){}
+}
 function renderWeeklySrOverlay(summary, dataset){
   try {
-    if(!priceChart || !candleSeries) return;
     weeklySrSummaryForOverlay = summary;
+    if(!getChartLayer("weekly", "sr")){ clearWeeklySrOverlay(); return; }
+    if(!priceChart || !candleSeries) return;
     const layer = ensureWeeklySrOverlayLayer();
     if(!layer) return;
     layer.innerHTML='';
@@ -2148,6 +2182,7 @@ function clearFvgFilledOverlay(){
 }
 function renderFvgFilledOverlay(){
   try {
+    if(!getChartLayer("weekly", "fvg")){ clearFvgFilledOverlay(); return; }
     if(!priceChart || !candleSeries || !activeFvgZonesForOverlay.length) return;
     const layer = ensureFvgOverlayLayer();
     if(!layer) return;
@@ -2206,6 +2241,7 @@ function renderFvgOverlay(activeFvgs, dataset){
   try {
     if(!candleSeries) return;
     clearFvgOverlay();
+    if(!getChartLayer("weekly", "fvg")){ render4hVsWeeklyFvgSummary(); return; }
     safeFvgs.forEach((f)=>{
       const bull = f.type === "Bullish FVG";
       const color = bull ? "rgba(34,197,94,0.38)" : "rgba(239,68,68,0.38)";
@@ -3258,42 +3294,43 @@ function detect1hStructure(candles){
 }
 
 function render1hEventMarkers(candles){
-  if(!ltf1hSeries || !Array.isArray(candles) || !candles.length) return;
+  if(!ltf1hSeries) return;
+  if(!Array.isArray(candles) || !candles.length){ set1hMarkers([]); return; }
   const markers=[];
-  const sweep=detect1hLiquiditySweep(candles);
-  if(sweep && sweep.status && sweep.status!=='No recent sweep'){
-    if(sweep.time==null){
-      console.warn('1H sweep marker skipped: missing time');
-    } else {
-      const bullish=sweep.status.includes('Bullish');
+  if(getChartLayer("h1", "sweepMarkers")){
+    const sweep=detect1hLiquiditySweep(candles);
+    if(sweep && sweep.status && sweep.status!=='No recent sweep'){
+      if(sweep.time==null){
+        console.warn('1H sweep marker skipped: missing time');
+      } else {
+        const bullish=sweep.status.includes('Bullish');
+        markers.push({
+          time: sweep.time,
+          position: bullish ? 'belowBar' : 'aboveBar',
+          color: bullish ? '#22c55e' : '#ef4444',
+          shape: bullish ? 'arrowUp' : 'arrowDown',
+          text: sweep.status,
+        });
+      }
+    }
+  }
+
+  if(getChartLayer("h1", "structureMarkers")){
+    const st=detect1hStructure(candles);
+    if(st && st.status && st.status!=='No clear 1H structure shift'){
+      const latestCandle=candles[candles.length-1];
+      const bullish=st.status.includes('Bullish');
       markers.push({
-        time: sweep.time,
+        time: latestCandle.time,
         position: bullish ? 'belowBar' : 'aboveBar',
         color: bullish ? '#22c55e' : '#ef4444',
         shape: bullish ? 'arrowUp' : 'arrowDown',
-        text: sweep.status,
+        text: st.status,
       });
     }
   }
 
-  const st=detect1hStructure(candles);
-  if(st && st.status && st.status!=='No clear 1H structure shift'){
-    const latestCandle=candles[candles.length-1];
-    const bullish=st.status.includes('Bullish');
-    markers.push({
-      time: latestCandle.time,
-      position: bullish ? 'belowBar' : 'aboveBar',
-      color: bullish ? '#22c55e' : '#ef4444',
-      shape: bullish ? 'arrowUp' : 'arrowDown',
-      text: st.status,
-    });
-  }
-
-  if(typeof ltf1hSeries.setMarkers==='function'){
-    ltf1hSeries.setMarkers(markers);
-  } else if(typeof ltf1hSeries.createSeriesMarkers==='function') {
-    ltf1hSeries.createSeriesMarkers(markers);
-  }
+  set1hMarkers(markers);
 }
 function update1hStochasticStatus(candles){
   const stochastic = compute1hStochasticStatus(candles, 14, 3);

@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 00:00",
-  "version": "v0.1.71",
+  "lastUpdated": "2026-05-30 01:00",
+  "version": "v0.1.72",
   "commitLabel": "manual",
-  "note": "Add Daily and 4H chart layer visibility controls"
+  "note": "Add Weekly and 1H chart layer visibility controls"
 }
