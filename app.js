@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 09:00";
+const APP_LAST_UPDATED = "2026-05-30 10:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -146,9 +146,9 @@ let prepCurrentDetailOpen = false;
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
 const marketPreparationState = {
   currentPrice: null,
-  weekly: { fvgZones: [], srSummary: null },
-  daily: { candles: [], fvgZones: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("6M"), meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
-  h4: { fvgZones: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
+  weekly: { fvgZones: [], fvgDetails: [], srSummary: null },
+  daily: { candles: [], fvgZones: [], fvgDetails: [], srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("6M"), meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
+  h4: { fvgZones: [], fvgDetails: [], srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
   h1: { sweepStatus: null, structureStatus: null, stochastic: { ok: false, k: null, d: null, prevK: null, prevD: null, label: "Stoch unavailable", reason: null, status: "idle" } },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
@@ -2332,6 +2332,124 @@ function fvgDistancePct(fvg,currentPrice){
   if(currentPrice<fvg.lower) return ((fvg.lower-currentPrice)/currentPrice)*100;
   return 0;
 }
+function clampNumber(value, min, max){
+  const n = Number(value);
+  if(!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+function getFvgKey(zone, timeframe){
+  if(!zone || typeof zone !== "object") return `${timeframe || "FVG"}:unavailable`;
+  return [timeframe || zone.timeframe || "FVG", zone.type || "Unknown", zone.startTime || zone.startLabel || "start", zone.endTime || zone.endLabel || "end", Number(zone.lower || 0).toFixed(2), Number(zone.upper || 0).toFixed(2)].join("|");
+}
+function getFvgDirection(zone){
+  const type = String(zone?.type || "").toLowerCase();
+  if(type.includes("bullish")) return "bullish";
+  if(type.includes("bearish")) return "bearish";
+  return null;
+}
+function getFvgCePrice(zone){
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  return (lower + upper) / 2;
+}
+function getCandlesAfterFvg(zone, candles){
+  if(!zone || !Array.isArray(candles) || !candles.length) return [];
+  const index = Number(zone.index);
+  if(Number.isInteger(index) && index >= 0 && index < candles.length) return candles.slice(index + 1);
+  const boundaryTime = zone.endTime ?? zone.startTime;
+  if(boundaryTime === null || boundaryTime === undefined) return [];
+  return candles.filter((c)=>c?.time !== undefined && c.time > boundaryTime);
+}
+const FVG_SHALLOW_TOUCH_FILL_THRESHOLD = 0.15;
+function calculateFvgFillStats(zone, candles){
+  const direction = getFvgDirection(zone);
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  const cePrice = getFvgCePrice(zone);
+  const height = upper - lower;
+  const after = getCandlesAfterFvg(zone, candles);
+  if(!direction || !Number.isFinite(lower) || !Number.isFinite(upper) || !Number.isFinite(height) || height <= 0 || cePrice === null){
+    return { fillPct: 0, touchedAt: null, mitigatedAt: null, ceTouchedAt: null, filledAt: null, brokenAt: null };
+  }
+  let fillPct = 0;
+  let touchedAt = null;
+  let mitigatedAt = null;
+  let ceTouchedAt = null;
+  let filledAt = null;
+  let brokenAt = null;
+  after.forEach((c)=>{
+    const time = c?.time ?? null;
+    const high = Number(c?.high);
+    const low = Number(c?.low);
+    const close = Number(c?.close);
+    if(direction === "bullish"){
+      if(Number.isFinite(low)){
+        const candleFill = clampNumber((upper - low) / height, 0, 1);
+        fillPct = Math.max(fillPct, candleFill);
+        if(low <= upper && !touchedAt) touchedAt = time;
+        if(low < upper && low > lower && !mitigatedAt) mitigatedAt = time;
+        if(low <= cePrice && low > lower && !ceTouchedAt) ceTouchedAt = time;
+        if(low <= lower && !filledAt) filledAt = time;
+      }
+      if(Number.isFinite(close) && close < lower && !brokenAt) brokenAt = time;
+    } else if(direction === "bearish"){
+      if(Number.isFinite(high)){
+        const candleFill = clampNumber((high - lower) / height, 0, 1);
+        fillPct = Math.max(fillPct, candleFill);
+        if(high >= lower && !touchedAt) touchedAt = time;
+        if(high > lower && high < upper && !mitigatedAt) mitigatedAt = time;
+        if(high >= cePrice && high < upper && !ceTouchedAt) ceTouchedAt = time;
+        if(high >= upper && !filledAt) filledAt = time;
+      }
+      if(Number.isFinite(close) && close > upper && !brokenAt) brokenAt = time;
+    }
+  });
+  return { fillPct: clampNumber(fillPct, 0, 1), touchedAt, mitigatedAt, ceTouchedAt, filledAt, brokenAt };
+}
+function getFvgDetailStatus(stats){
+  if(stats?.brokenAt) return "Broken";
+  if(stats?.filledAt) return "Filled";
+  if(stats?.ceTouchedAt) return "50% Mitigated";
+  if(stats?.mitigatedAt && Number(stats.fillPct) > FVG_SHALLOW_TOUCH_FILL_THRESHOLD) return "Partially Mitigated";
+  if(stats?.touchedAt) return "Touched";
+  return "Fresh";
+}
+function getFvgRecentReaction(detailStatus){
+  if(detailStatus === "Broken") return "Broken";
+  if(detailStatus === "Filled") return "Filled";
+  if(detailStatus === "50% Mitigated") return "CE touched";
+  if(detailStatus === "Partially Mitigated") return "Mitigated";
+  if(detailStatus === "Touched") return "Touched";
+  return "Fresh";
+}
+function buildFvgDetail(zone, candles, timeframe){
+  const direction = getFvgDirection(zone);
+  const cePrice = getFvgCePrice(zone);
+  const stats = calculateFvgFillStats(zone, candles);
+  const detailStatus = getFvgDetailStatus(stats);
+  return {
+    key: getFvgKey(zone, timeframe),
+    timeframe: timeframe || zone?.timeframe || null,
+    direction,
+    baseStatus: zone?.status || null,
+    detailStatus,
+    cePrice,
+    fillPct: stats.fillPct,
+    touchedAt: stats.touchedAt,
+    mitigatedAt: stats.mitigatedAt,
+    ceTouchedAt: stats.ceTouchedAt,
+    filledAt: stats.filledAt,
+    brokenAt: stats.brokenAt,
+    invalidationSide: direction === "bullish" ? "below" : (direction === "bearish" ? "above" : null),
+    recentReaction: getFvgRecentReaction(detailStatus),
+    sourceZone: zone && typeof zone === "object" ? { ...zone } : null,
+  };
+}
+function buildFvgDetailsForTimeframe(zones, candles, timeframe){
+  if(!Array.isArray(zones) || !zones.length || !Array.isArray(candles) || !candles.length) return [];
+  return zones.map((zone)=>buildFvgDetail(zone, candles, timeframe));
+}
 function renderFvgPanel(dataset){
   try {
     const active=getActiveFvgs(dataset);
@@ -2741,7 +2859,7 @@ function updateDailyMarketContext(candles, mode){
       setDailyPatternSummary(pattern);
       clearDailyFvgOverlay();
       clearDailySrOverlay();
-      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
       renderMarketPreparationMap(buildMarketPreparationMap());
       return;
     }
@@ -2752,10 +2870,11 @@ function updateDailyMarketContext(candles, mode){
       const distance = inside ? 0 : Math.abs(current-nearest)/current*100;
       return { ...f, distancePct: distance };
     }).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct) || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1)) || b.index-a.index);
+    const fvgDetails = buildFvgDetailsForTimeframe(fvgZones, candles, "Daily");
     const srSummary = scanDailySupportResistance(candles);
     const pattern = detectDailyPattern(candles, mode);
     setDailyPatternSummary(pattern);
-    updateMarketPreparationState({ daily: { candles, fvgZones, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    updateMarketPreparationState({ daily: { candles, fvgZones, fvgDetails, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
     scheduleDailyFvgOverlayRedraw();
     scheduleDailySrOverlayRedraw();
     renderDailyPatternOverlay();
@@ -2766,7 +2885,7 @@ function updateDailyMarketContext(candles, mode){
     setDailyPatternSummary(pattern);
     clearDailyFvgOverlay();
     clearDailySrOverlay();
-    updateMarketPreparationState({ daily: { candles: [], fvgZones: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+    updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
   }
 }
@@ -3477,7 +3596,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -3487,9 +3606,10 @@ function render4hFvgSummaryAndOverlay(candles){
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     const srSummary = scan4hSupportResistance(candles);
+    const fvgDetails = buildFvgDetailsForTimeframe(active4hFvgs, candles, "4H");
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
-    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
+    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
     renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
     renderLowerTfReactionSummary();
@@ -3904,10 +4024,11 @@ async function loadDashboard(){
       renderPotentialBiasScanner(dataset, metrics);
       const activeFvgs = renderFvgPanel(dataset);
       const weeklySrSummary = scanWeeklySupportResistance(dataset);
+      const weeklyFvgDetails = buildFvgDetailsForTimeframe(activeFvgs, dataset, "Weekly");
       renderWeeklySupportResistance(weeklySrSummary);
       renderWeeklyCandleCharacter(dataset);
       renderMtfSummary();
-      updateMarketPreparationState({ weekly: { fvgZones: activeFvgs, srSummary: weeklySrSummary }, meta: { sourcesReady: { weekly: true } } });
+      updateMarketPreparationState({ weekly: { fvgZones: activeFvgs, fvgDetails: weeklyFvgDetails, srSummary: weeklySrSummary }, meta: { sourcesReady: { weekly: true } } });
       renderMarketPreparationMap(buildMarketPreparationMap());
       weeklyOk = true;
 
