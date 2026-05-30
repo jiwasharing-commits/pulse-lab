@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 14:00";
+const APP_LAST_UPDATED = "2026-05-30 15:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -162,8 +162,11 @@ const marketPreparationState = {
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
 }
+function createEmptyFvgConflictState(reason = "No FVG direction conflict detected."){
+  return { ok: false, label: null, severity: null, htfDirection: null, ltfDirection: null, parentTimeframe: null, conflictTimeframes: [], reason, suggestedAction: null, updatedAt: Date.now() };
+}
 function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
-  return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: null, overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, qualityHint: null, reason, updatedAt: Date.now() };
+  return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: null, overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
 }
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -1513,6 +1516,7 @@ function getKeyZonePositionContext(mapData, state){
     recentReaction,
     fvg: status.fvg || buildCurrentFvgPositionStatus(),
     recentFvgReaction: formatRecentFvgReactionText(getMostRecentFvgReactionMemory()),
+    conflict: marketPreparationState.fvgMtfContext?.conflict || createEmptyFvgConflictState(),
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -1652,6 +1656,7 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
         <p class="prep-current-detail-kv">FVG Position: ${detail.keyZone.fvg?.ok ? `${detail.keyZone.fvg.position} · ${detail.keyZone.fvg.zoneType} · ${detail.keyZone.fvg.detailStatus || "Status unavailable"}` : (detail.keyZone.fvg?.position || "No nearby active FVG")}</p>
         <p class="prep-current-detail-kv">FVG Reaction: ${detail.keyZone.recentFvgReaction || detail.keyZone.fvg?.recentReaction || detail.keyZone.fvg?.reason || "No FVG reaction"}</p>
+        ${detail.keyZone.conflict?.ok ? `<p class="prep-current-detail-kv">FVG Conflict: ${detail.keyZone.conflict.label} · wait confirmation</p>` : ""}
         <p class="prep-current-detail-kv">Recent Reaction: ${detail.keyZone.recentReaction}</p>
       </article>
       <article class="prep-current-detail-card prep-current-detail-preparation">
@@ -2750,13 +2755,78 @@ function sortFvgMtfCandidates(details){
   const roleRank = { parent: 3, active: 2, reaction: 1, timing: 0 };
   return [...(details || [])].sort((a,b)=>(roleRank[b.role] || 0) - (roleRank[a.role] || 0) || ((a.distancePct ?? 999) - (b.distancePct ?? 999)));
 }
-function buildMtfContextPayload({ ok = true, direction = null, relation = null, details = [], overlapZone = null, conflictReason = null, qualityHint = null, reason = null }){
+function getFvgDirectionFromDetail(detail){
+  return detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+}
+function hasOppositeDirection(a, b){
+  const ad = getFvgDirectionFromDetail(a), bd = getFvgDirectionFromDetail(b);
+  return !!ad && !!bd && ad !== bd;
+}
+function isFvgInsideOrOverlapping(child, parent){
+  return !!child && !!parent && (isFvgNested(child, parent) || calculateFvgOverlapRatio(child, parent) > 0);
+}
+function normalizeFvgDetailForConflict(detail){
+  const zone = getFvgDetailZone(detail);
+  const direction = getFvgDirectionFromDetail(detail);
+  if(!zone || !direction) return null;
+  const timeframe = detail?.timeframe || zone.timeframe || "FVG";
+  const tf = String(timeframe).toLowerCase();
+  const role = tf.includes("weekly") ? "parent" : (tf.includes("daily") || tf === "1d" ? "active" : (tf.includes("4h") ? "reaction" : "timing"));
+  return { key: detail.key || getFvgKey(zone, timeframe), timeframe, role, type: detail.sourceZone?.type || zone.type || getFvgDetailLabel(detail), direction, lower: zone.lower, upper: zone.upper, cePrice: Number.isFinite(detail.cePrice) ? detail.cePrice : getFvgCePrice(zone), detailStatus: detail?.detailStatus || detail?.baseStatus || null, distancePct: getFvgDistancePctFromPrice(zone, marketPreparationState.currentPrice), label: getFvgDetailLabel(detail), sourceDetail: detail };
+}
+function getConflictFvgDetails(){
+  return [
+    ...(marketPreparationState.weekly?.fvgDetails || []),
+    ...(marketPreparationState.daily?.fvgDetails || []),
+    ...(marketPreparationState.h4?.fvgDetails || []),
+  ].map(normalizeFvgDetailForConflict).filter(Boolean);
+}
+function makeFvgConflictState({ label, severity, htfDirection, ltfDirection, parentTimeframe = null, conflictTimeframes = [], reason, suggestedAction }){
+  return { ok: true, label, severity, htfDirection, ltfDirection, parentTimeframe, conflictTimeframes: [...new Set(conflictTimeframes.filter(Boolean))], reason, suggestedAction, updatedAt: Date.now() };
+}
+function classifyFvgConflictContext(fvgMtfContext, details){
+  const all = details || getConflictFvgDetails();
+  const active = all.filter((d)=>!["Broken", "Filled"].includes(d.detailStatus));
+  const weeklyAll = all.filter((d)=>d.role === "parent");
+  const weeklyActive = active.filter((d)=>d.role === "parent");
+  const dailyActive = active.filter((d)=>d.role === "active");
+  const h4Active = active.filter((d)=>d.role === "reaction");
+  const brokenParent = weeklyAll.find((d)=>d.detailStatus === "Broken") || marketPreparationState.weekly?.recentFvgReaction?.lastBrokenFvg;
+  if(brokenParent){
+    const direction = brokenParent.direction || getFvgDirectionFromDetail(brokenParent);
+    const possible = direction === "bullish" ? "Weekly Bullish FVG Broken / Possible Bearish IFVG Context" : "Weekly Bearish FVG Broken / Possible Bullish IFVG Context";
+    return makeFvgConflictState({ label: "Parent FVG Broken", severity: "high", htfDirection: direction, ltfDirection: null, parentTimeframe: "Weekly", conflictTimeframes: [], reason: possible, suggestedAction: "Treat the parent FVG as reaction context until a retest confirms or rejects inversion." });
+  }
+  for(const weekly of weeklyActive){
+    const challengers = [...dailyActive, ...h4Active].filter((d)=>hasOppositeDirection(weekly, d) && isFvgNear(d, weekly, 0.01));
+    if(challengers.length){
+      const bearishPressure = weekly.direction === "bullish" && challengers.some((d)=>d.direction === "bearish");
+      const bullishPressure = weekly.direction === "bearish" && challengers.some((d)=>d.direction === "bullish");
+      if(bearishPressure) return makeFvgConflictState({ label: "HTF Support Under Pressure", severity: "medium", htfDirection: "bullish", ltfDirection: "bearish", parentTimeframe: "Weekly", conflictTimeframes: challengers.map((d)=>d.timeframe), reason: "Weekly bullish parent FVG is being challenged by bearish lower-timeframe FVGs.", suggestedAction: "Wait for 4H/1H confirmation before treating the zone as support." });
+      if(bullishPressure) return makeFvgConflictState({ label: "HTF Resistance Under Pressure", severity: "medium", htfDirection: "bearish", ltfDirection: "bullish", parentTimeframe: "Weekly", conflictTimeframes: challengers.map((d)=>d.timeframe), reason: "Weekly bearish parent FVG is being challenged by bullish lower-timeframe FVGs.", suggestedAction: "Wait for 4H/1H confirmation before treating the zone as resistance." });
+    }
+  }
+  const weeklyBull = weeklyActive.some((d)=>d.direction === "bullish"), weeklyBear = weeklyActive.some((d)=>d.direction === "bearish");
+  const dailyBull = dailyActive.some((d)=>d.direction === "bullish"), dailyBear = dailyActive.some((d)=>d.direction === "bearish");
+  const h4Bull = h4Active.some((d)=>d.direction === "bullish"), h4Bear = h4Active.some((d)=>d.direction === "bearish");
+  if(weeklyBull && dailyBull && h4Bear) return makeFvgConflictState({ label: "HTF Bullish, LTF Pullback", severity: "low", htfDirection: "bullish", ltfDirection: "bearish", parentTimeframe: weeklyActive[0]?.timeframe || "Weekly", conflictTimeframes: h4Active.filter((d)=>d.direction === "bearish").map((d)=>d.timeframe), reason: "Weekly/Daily FVGs remain bullish, while 4H shows short-term bearish pullback.", suggestedAction: "Watch whether 4H bearish FVG breaks upward or Daily support fails." });
+  if(weeklyBear && dailyBear && h4Bull) return makeFvgConflictState({ label: "HTF Bearish, LTF Pullback", severity: "low", htfDirection: "bearish", ltfDirection: "bullish", parentTimeframe: weeklyActive[0]?.timeframe || "Weekly", conflictTimeframes: h4Active.filter((d)=>d.direction === "bullish").map((d)=>d.timeframe), reason: "Weekly/Daily FVGs remain bearish, while 4H shows short-term bullish pullback.", suggestedAction: "Watch whether 4H bullish FVG breaks downward or Daily resistance holds." });
+  for(const daily of dailyActive){
+    const h4Conflict = h4Active.find((h4)=>hasOppositeDirection(daily, h4) && isFvgInsideOrOverlapping(h4, daily));
+    if(h4Conflict) return makeFvgConflictState({ label: "Conflict / Wait Confirmation", severity: "medium", htfDirection: daily.direction, ltfDirection: h4Conflict.direction, parentTimeframe: daily.timeframe, conflictTimeframes: [h4Conflict.timeframe], reason: `Daily active ${daily.direction} FVG conflicts with ${h4Conflict.direction} 4H reaction FVG.`, suggestedAction: "Wait for 4H/1H confirmation before treating this as directional confluence." });
+  }
+  return createEmptyFvgConflictState();
+}
+function buildFvgConflictState(){
+  return classifyFvgConflictContext(marketPreparationState.fvgMtfContext, getConflictFvgDetails());
+}
+function buildMtfContextPayload({ ok = true, direction = null, relation = null, details = [], overlapZone = null, conflictReason = null, conflict = createEmptyFvgConflictState(), qualityHint = null, reason = null }){
   const sorted = sortFvgMtfCandidates(details);
   const parentZone = getMtfRoleZone(sorted, "parent") || getMtfRoleZone(sorted, "active") || sorted[0] || null;
   const activeZone = getMtfRoleZone(sorted, "active");
   const reactionZone = getMtfRoleZone(sorted, "reaction");
   const precisionZone = reactionZone && parentZone && (isFvgNested(reactionZone, parentZone) || (activeZone && isFvgNested(reactionZone, activeZone))) ? reactionZone : null;
-  return { ok, direction, relation, parentZone, activeZone, reactionZone, timingZone: null, overlapZone, coreZone: overlapZone, precisionZone, sources: sorted.map((d)=>d.label), conflictReason, qualityHint, reason, updatedAt: Date.now() };
+  return { ok, direction, relation, parentZone, activeZone, reactionZone, timingZone: null, overlapZone, coreZone: overlapZone, precisionZone, sources: sorted.map((d)=>d.label), conflictReason, conflict, qualityHint, reason, updatedAt: Date.now() };
 }
 function buildAlignedFvgMtfContext(details, direction){
   const aligned = sortFvgMtfCandidates(details || []);
@@ -2798,14 +2868,17 @@ function buildConflictFvgMtfContext(details){
 function buildFvgMtfContext(){
   try{
     const details = getActiveFvgDetailsForMtf();
-    if(!details.length) return createEmptyFvgMtfContext();
-    const conflict = buildConflictFvgMtfContext(details);
-    if(conflict) return conflict;
+    const conflictState = buildFvgConflictState();
+    if(conflictState.ok){
+      const conflictContext = buildConflictFvgMtfContext(details) || buildMtfContextPayload({ ok: true, direction: "mixed", relation: conflictState.label, details, conflictReason: conflictState.reason, conflict: conflictState, qualityHint: "Conflict", reason: conflictState.reason });
+      return { ...conflictContext, relation: conflictState.label, direction: "mixed", conflict: conflictState, conflictReason: conflictState.reason, qualityHint: conflictState.severity === "low" ? "Pullback" : "Conflict", reason: conflictState.reason };
+    }
+    if(!details.length) return { ...createEmptyFvgMtfContext(), conflict: conflictState };
     const grouped = groupFvgDetailsByDirection(details);
     const bullish = buildAlignedFvgMtfContext(grouped.bullish || [], "bullish");
     const bearish = buildAlignedFvgMtfContext(grouped.bearish || [], "bearish");
     const ranked = [bullish, bearish].filter(Boolean).sort((a,b)=>(b.sources?.length || 0) - (a.sources?.length || 0) || (a.overlapZone ? -1 : 1))[0];
-    return ranked || createEmptyFvgMtfContext();
+    return ranked ? { ...ranked, conflict: conflictState } : { ...createEmptyFvgMtfContext(), conflict: conflictState };
   }catch(_){ return createEmptyFvgMtfContext("MTF FVG context unavailable."); }
 }
 function refreshFvgMtfContext(){

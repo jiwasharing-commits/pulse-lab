@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-30 14:00",
-  "version": "v0.1.85",
+  "lastUpdated": "2026-05-30 15:00",
+  "version": "v0.1.86",
   "commitLabel": "manual",
-  "note": "Add MTF FVG overlap context engine"
+  "note": "Add formal FVG conflict labels"
 }
