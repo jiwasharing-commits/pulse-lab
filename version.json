@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 17:55",
-  "version": "v0.2.06",
+  "lastUpdated": "2026-05-31 18:20",
+  "version": "v0.2.07",
   "commitLabel": "manual",
-  "note": "Add IFVG failure details state"
+  "note": "Add IFVG context display panel"
 }

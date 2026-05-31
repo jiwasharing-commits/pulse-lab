@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 17:55";
+const APP_LAST_UPDATED = "2026-05-31 18:20";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -1648,6 +1648,108 @@ function renderTradePlanScenario(){
   if(!els.tradePlanScenarioPanel) return;
   els.tradePlanScenarioPanel.innerHTML = formatTradePlanScenarioPanel(marketPreparationState.tradePlanScenario);
 }
+function getIfvgContextItems(){
+  const sources = [
+    { timeframe: "Weekly", memory: marketPreparationState.weekly?.recentBrokenFvgDetails },
+    { timeframe: "Daily", memory: marketPreparationState.daily?.recentBrokenFvgDetails },
+    { timeframe: "4H", memory: marketPreparationState.h4?.recentBrokenFvgDetails },
+  ];
+  return sources.flatMap((source)=>(source.memory?.all || []).map((detail)=>({ timeframe: source.timeframe, detail, ifvg: detail?.ifvg || null })));
+}
+function summarizeIfvgMemory(memory){
+  const counts = { confirmed: 0, valid: 0, possible: 0, failed: 0, stale: 0 };
+  const items = (memory?.all || []).map((detail)=>({ detail, ifvg: detail?.ifvg || null })).filter((item)=>item.ifvg);
+  items.forEach(({ ifvg })=>{
+    const state = ifvg.state || IFVG_STATE.NONE;
+    if(state === IFVG_STATE.CONFIRMED) counts.confirmed += 1;
+    else if(state === IFVG_STATE.VALID) counts.valid += 1;
+    else if(state === IFVG_STATE.POSSIBLE) counts.possible += 1;
+    else if(state === IFVG_STATE.FAILED) counts.failed += 1;
+    if(ifvg.stale) counts.stale += 1;
+  });
+  const rank = { confirmed: 5, valid: 4, possible: 3, failed: 2, none: 1 };
+  const sortedItems = items.sort((a,b)=>
+    (rank[b.ifvg?.state] || 0) - (rank[a.ifvg?.state] || 0)
+    || (Number(b.detail?.brokenAt || 0) - Number(a.detail?.brokenAt || 0))
+  );
+  return { counts, items: sortedItems };
+}
+function getIfvgDisplayDirection(ifvg, detail){
+  const direction = ifvg?.inversionSide || getIfvgInversionSide(detail?.direction || getFvgDirection(detail?.sourceZone || detail));
+  if(direction === "bullish") return "Bullish";
+  if(direction === "bearish") return "Bearish";
+  return "Mixed";
+}
+function formatIfvgStateLabel(state){
+  if(state === IFVG_STATE.CONFIRMED) return "Confirmed";
+  if(state === IFVG_STATE.VALID) return "Valid";
+  if(state === IFVG_STATE.POSSIBLE) return "Possible";
+  if(state === IFVG_STATE.FAILED) return "Failed";
+  return "No context";
+}
+function getIfvgContextStatusClass(state){
+  if(state === IFVG_STATE.CONFIRMED) return "ifvg-state-confirmed";
+  if(state === IFVG_STATE.VALID) return "ifvg-state-valid";
+  if(state === IFVG_STATE.POSSIBLE) return "ifvg-state-possible";
+  if(state === IFVG_STATE.FAILED) return "ifvg-state-failed";
+  return "ifvg-state-stale";
+}
+function formatIfvgFailureText(ifvg){
+  const prior = ifvg?.priorStateBeforeFailure;
+  if(prior === IFVG_STATE.CONFIRMED) return "Previously confirmed, later failed after reclaim.";
+  if(prior === IFVG_STATE.VALID) return "Previously valid, later failed after reclaim.";
+  if(prior === IFVG_STATE.POSSIBLE) return "Possible IFVG later failed after reclaim.";
+  return ifvg?.failure?.reason ? "Failed after reclaim by close." : "Failed after reclaim.";
+}
+function formatIfvgContextLine(detail, timeframe){
+  const ifvg = detail?.ifvg || {};
+  const state = ifvg.state || IFVG_STATE.NONE;
+  const direction = getIfvgDisplayDirection(ifvg, detail);
+  const stateLabel = formatIfvgStateLabel(state);
+  let note = "Context unavailable.";
+  if(state === IFVG_STATE.CONFIRMED) note = `Retest + rejection confirmed · ${ifvg.quality?.band || "context"} context`;
+  else if(state === IFVG_STATE.VALID) note = `${ifvg.retest?.status === IFVG_RETEST_STATUS.FULL ? "Full retest" : "Retested inside zone"} · ${ifvg.rejection?.status === IFVG_REJECTION_STATUS.CANDIDATE ? "rejection candidate" : "waiting rejection"}`;
+  else if(state === IFVG_STATE.POSSIBLE) note = "Closed break detected · waiting for retest";
+  else if(state === IFVG_STATE.FAILED) note = formatIfvgFailureText(ifvg);
+  if(ifvg.stale && state !== IFVG_STATE.FAILED) note = `${note} · stale context`;
+  return { title: `${timeframe} ${stateLabel} ${direction} IFVG`, note, state };
+}
+function renderIfvgContextPanel(){
+  if(!els.ifvgContextPanel) return;
+  const frames = [
+    { label: "Weekly", memory: marketPreparationState.weekly?.recentBrokenFvgDetails },
+    { label: "Daily", memory: marketPreparationState.daily?.recentBrokenFvgDetails },
+    { label: "4H", memory: marketPreparationState.h4?.recentBrokenFvgDetails },
+  ];
+  const summaries = frames.map((frame)=>({ ...frame, summary: summarizeIfvgMemory(frame.memory) }));
+  const hasItems = summaries.some((frame)=>frame.summary.items.length);
+  const countLabels = (counts)=>[
+    counts.confirmed ? `Confirmed ${counts.confirmed}` : null,
+    counts.valid ? `Valid ${counts.valid}` : null,
+    counts.possible ? `Possible ${counts.possible}` : null,
+    counts.failed ? `Failed ${counts.failed}` : null,
+    counts.stale ? `Stale ${counts.stale}` : null,
+  ].filter(Boolean).join(" · ") || "No recent context";
+  const frameHtml = summaries.map((frame)=>{
+    const counts = frame.summary.counts;
+    const nonFailed = frame.summary.items.filter((item)=>item.ifvg?.state !== IFVG_STATE.FAILED).slice(0, 2);
+    const detailHtml = nonFailed.map(({ detail })=>{
+      const line = formatIfvgContextLine(detail, frame.label);
+      return `<div class="ifvg-context-row"><span class="ifvg-context-badge ${getIfvgContextStatusClass(line.state)}">${escapeHtml(formatIfvgStateLabel(line.state))}</span><strong>${escapeHtml(line.title)}</strong><small>${escapeHtml(line.note)}</small></div>`;
+    }).join("");
+    const failedNote = counts.failed ? `<p class="ifvg-context-note">${counts.failed === frame.summary.items.length ? "Recent IFVG attempts mostly failed after reclaim." : `${counts.failed} failed after reclaim.`}</p>` : "";
+    return `<article class="ifvg-context-timeframe"><h4>${escapeHtml(frame.label)}</h4><p class="ifvg-context-counts">${escapeHtml(countLabels(counts))}</p>${detailHtml}${failedNote}</article>`;
+  }).join("");
+  els.ifvgContextPanel.innerHTML = `
+    <div class="ifvg-context-header">
+      <div>
+        <h3>IFVG Context</h3>
+        <p class="ifvg-context-subtitle">Context only · not a trading signal</p>
+      </div>
+    </div>
+    ${hasItems ? `<div class="ifvg-context-grid">${frameHtml}</div>` : `<p class="ifvg-context-note">No recent IFVG context detected.</p>`}
+  `;
+}
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
   if(text.includes("fvg")) return "FVG";
@@ -2446,6 +2548,7 @@ function renderMarketPreparationMap(mapData){
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
   refreshTradePlanScenario(safeMap);
   renderTradePlanScenario();
+  renderIfvgContextPanel();
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
   const nearestUpside = safeMap.upside?.[0] || null;
