@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 15:30";
+const APP_LAST_UPDATED = "2026-05-31 15:45";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1290,16 +1290,52 @@ function getScenarioTimingGate(side){
   const aligned = !!expectedDirection && timingZone.timingStatus === "Confirming" && timingZone.supportsHighProbability === true && timingZone.direction === expectedDirection;
   return { timingStatus: timingZone.timingStatus || "Unavailable", timingDirection: timingZone.direction || null, expectedDirection, aligned, supportsHighProbability: timingZone.supportsHighProbability === true, reason: timingZone.reason || null };
 }
+function getParentFvgBrokenContext(){
+  const context = marketPreparationState.fvgMtfContext || {};
+  const conflict = context.conflict;
+  if(!conflict?.ok || conflict.label !== "Parent FVG Broken") return { isBroken: false, parentDirection: null, brokenDirection: null, supportsSide: null, blocksSide: null, reason: null };
+  const parentZone = context.parentZone || {};
+  const typeText = String(parentZone.type || parentZone.label || "").toLowerCase();
+  const parentDirection = conflict.htfDirection || parentZone.direction || (typeText.includes("bullish") ? "bullish" : (typeText.includes("bearish") ? "bearish" : null));
+  if(parentDirection === "bullish") return { isBroken: true, parentDirection, brokenDirection: "down", supportsSide: "sell", blocksSide: "buy", reason: "Bullish parent FVG broken; bearish context supported." };
+  if(parentDirection === "bearish") return { isBroken: true, parentDirection, brokenDirection: "up", supportsSide: "buy", blocksSide: "sell", reason: "Bearish parent FVG broken; bullish context supported." };
+  return { isBroken: true, parentDirection: null, brokenDirection: null, supportsSide: null, blocksSide: "both", reason: "Parent FVG broken direction unclear." };
+}
+function doesParentFvgBrokenBlockSide(side){
+  const ctx = getParentFvgBrokenContext();
+  return !!ctx.isBroken && (ctx.blocksSide === "both" || ctx.blocksSide === side);
+}
+function getParentFvgBrokenScenarioEffect(side){
+  const ctx = getParentFvgBrokenContext();
+  if(!ctx.isBroken) return { context: ctx, blocker: null, warning: null, activeBlocked: false, parentBroken: false };
+  if(doesParentFvgBrokenBlockSide(side)) return { context: ctx, blocker: ctx.reason || "Parent FVG Broken", warning: null, activeBlocked: true, parentBroken: true };
+  if(ctx.supportsSide === side) return { context: ctx, blocker: null, warning: ctx.reason, activeBlocked: false, parentBroken: false };
+  return { context: ctx, blocker: null, warning: ctx.reason || "Parent FVG broken direction unclear.", activeBlocked: true, parentBroken: false };
+}
 function getScenarioHardBlockers(side){
   const blockers = [];
   const warnings = [];
   const conflict = marketPreparationState.fvgMtfContext?.conflict;
+  let activeBlocked = false;
+  let parentBroken = false;
+  let parentBrokenContext = null;
   if(conflict?.ok){
-    if(conflict.label === "Parent FVG Broken") blockers.push("Parent FVG Broken");
-    else if(conflict.label === "Conflict / Wait Confirmation") warnings.push("Conflict / Wait Confirmation");
-    else if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") warnings.push(conflict.label);
+    if(conflict.label === "Parent FVG Broken"){
+      const effect = getParentFvgBrokenScenarioEffect(side);
+      parentBrokenContext = effect.context;
+      if(effect.blocker) blockers.push(effect.blocker);
+      if(effect.warning) warnings.push(effect.warning);
+      activeBlocked = activeBlocked || effect.activeBlocked;
+      parentBroken = effect.parentBroken;
+    } else if(conflict.label === "Conflict / Wait Confirmation"){
+      warnings.push("Conflict / Wait Confirmation");
+      activeBlocked = true;
+    } else if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure"){
+      warnings.push(conflict.label);
+      activeBlocked = true;
+    }
   }
-  return { blockers, warnings, conflictLabel: conflict?.ok ? conflict.label : null, parentBroken: blockers.includes("Parent FVG Broken"), activeBlocked: blockers.length > 0 || warnings.length > 0 };
+  return { blockers, warnings, conflictLabel: conflict?.ok ? conflict.label : null, parentBroken, parentBrokenContext, activeBlocked: activeBlocked || blockers.length > 0 };
 }
 function isScenarioEntryNear(row, currentPrice){
   if(!row || !Number.isFinite(currentPrice)) return false;
@@ -1364,7 +1400,7 @@ function buildTradeScenarioForSide(side, mapData){
     reason = "Scenario zone, invalidation, and TP1 are available, but active conditions are not fully confirmed.";
   }
   const riskLabel = status === TRADE_SCENARIO_STATUS.ACTIVE ? (isScenarioQualityAtLeast(entryRow, "High-Probability") ? "Low" : "Medium") : (status === TRADE_SCENARIO_STATUS.CANDIDATE ? "Medium" : (status === TRADE_SCENARIO_STATUS.NO_TRADE ? "No Trade" : "High"));
-  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Requires bullish 1H timing confirmation and price near/supporting entry zone." : "Requires bearish 1H timing confirmation and price near/resistance entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
+  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Requires bullish 1H timing confirmation and price near/supporting entry zone." : "Requires bearish 1H timing confirmation and price near/resistance entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
 }
 function selectPrimaryTradeScenario(buyScenario, sellScenario){
   const rank = { [TRADE_SCENARIO_STATUS.ACTIVE]: 4, [TRADE_SCENARIO_STATUS.CANDIDATE]: 3, [TRADE_SCENARIO_STATUS.WAIT]: 2, [TRADE_SCENARIO_STATUS.INVALIDATED]: 1, [TRADE_SCENARIO_STATUS.NO_TRADE]: 0 };

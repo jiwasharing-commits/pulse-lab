@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 15:30",
-  "version": "v0.1.98",
+  "lastUpdated": "2026-05-31 15:45",
+  "version": "v0.1.99",
   "commitLabel": "manual",
-  "note": "Tune trade plan scenario state refresh and conflict handling"
+  "note": "Make parent FVG broken scenario handling direction-aware"
 }
