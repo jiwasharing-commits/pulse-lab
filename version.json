@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-05-31 20:06",
+  "version": "v0.2.12",
+  "commitLabel": "manual",
+  "note": "Add H4 liquidity scoring diagnostics and stale flag"
+}
