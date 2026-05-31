@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 12:00",
-  "version": "v0.1.94",
+  "lastUpdated": "2026-05-31 13:00",
+  "version": "v0.1.95",
   "commitLabel": "manual",
-  "note": "Add S/R confluence to FVG quality scoring"
+  "note": "Add displacement factor to FVG quality scoring"
 }

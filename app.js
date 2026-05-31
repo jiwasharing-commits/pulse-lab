@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 12:00";
+const APP_LAST_UPDATED = "2026-05-31 13:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1172,9 +1172,10 @@ function buildFvgQualityScoreForDetails(details, rowContext = {}){
     return az && bz && getZoneOverlapRatio(az, bz) > 0;
   }));
   const srConfluence = scoreSrConfluenceForDetails(activeDetails);
+  const displacement = scoreDisplacementForDetails(activeDetails);
   if(aligned && multiTf && hasOverlap && hasRowFvgTimingConfirmation(activeDetails, rowContext)) return "High-Probability";
-  if(aligned && (multiTf || confluenceCount > 1) && (hasOverlap || confluenceCount > 1 || srConfluence)) return "Strong";
-  if(statuses.includes("50% Mitigated") || statuses.includes("Partially Mitigated") || statuses.includes("Touched") || statuses.includes("Fresh")) return (confluenceCount > 1 || srConfluence) ? "Valid" : "Weak";
+  if(aligned && (multiTf || confluenceCount > 1) && (hasOverlap || confluenceCount > 1 || srConfluence || displacement)) return "Strong";
+  if(statuses.includes("50% Mitigated") || statuses.includes("Partially Mitigated") || statuses.includes("Touched") || statuses.includes("Fresh")) return (confluenceCount > 1 || srConfluence || displacement) ? "Valid" : "Weak";
   return "Valid";
 }
 function getMapRowFvgQuality(row){
@@ -3462,6 +3463,95 @@ function scoreSrConfluenceForDetails(details){
   if(!factors.length) return null;
   return factors.sort((a,b)=>(b.points || 0)-(a.points || 0))[0];
 }
+function getCandlesForFvgTimeframe(timeframe){
+  const tf = String(timeframe || "").toLowerCase();
+  if(tf.includes("daily") || tf === "1d") return marketPreparationState.daily?.candles || latestDailyCandles || [];
+  if(tf.includes("4h") || tf.includes("h4")) return latest4hCandles || [];
+  if(tf.includes("weekly")) return weeklyDatasetCache || [];
+  return [];
+}
+function getFvgFormationCandle(detail, candles){
+  const sourceZone = detail?.sourceZone || detail;
+  const index = Number(sourceZone?.index);
+  if(!Number.isInteger(index) || !Array.isArray(candles) || !candles.length) return null;
+  const candidateIndexes = [index - 1, index];
+  const direction = detail?.direction || getFvgDirection(sourceZone);
+  for(const candidateIndex of candidateIndexes){
+    if(candidateIndex < 0 || candidateIndex >= candles.length) continue;
+    const candle = candles[candidateIndex];
+    if(!candle || !Number.isFinite(candle.open) || !Number.isFinite(candle.close) || !Number.isFinite(candle.high) || !Number.isFinite(candle.low)) continue;
+    const candleDirection = candle.close > candle.open ? "bullish" : (candle.close < candle.open ? "bearish" : null);
+    if(direction && candleDirection === direction) return { candle, index: candidateIndex };
+  }
+  return null;
+}
+function calculateAverageBodySize(candles, endIndex, lookback = 20){
+  if(!Array.isArray(candles) || !Number.isInteger(endIndex) || endIndex <= 0) return null;
+  const sample = candles.slice(Math.max(0, endIndex - lookback), endIndex)
+    .map((c)=>Math.abs(Number(c?.close) - Number(c?.open)))
+    .filter((v)=>Number.isFinite(v) && v > 0);
+  if(sample.length < 5) return null;
+  return sample.reduce((sum, v)=>sum + v, 0) / sample.length;
+}
+function calculateAverageRangeSize(candles, endIndex, lookback = 20){
+  if(!Array.isArray(candles) || !Number.isInteger(endIndex) || endIndex <= 0) return null;
+  const sample = candles.slice(Math.max(0, endIndex - lookback), endIndex)
+    .map((c)=>Number(c?.high) - Number(c?.low))
+    .filter((v)=>Number.isFinite(v) && v > 0);
+  if(sample.length < 5) return null;
+  return sample.reduce((sum, v)=>sum + v, 0) / sample.length;
+}
+function calculateAverageVolume(candles, endIndex, lookback = 20){
+  if(!Array.isArray(candles) || !Number.isInteger(endIndex) || endIndex <= 0) return null;
+  const sample = candles.slice(Math.max(0, endIndex - lookback), endIndex)
+    .map((c)=>Number(c?.volume))
+    .filter((v)=>Number.isFinite(v) && v > 0);
+  if(sample.length < 5) return null;
+  return sample.reduce((sum, v)=>sum + v, 0) / sample.length;
+}
+function detectFvgDisplacement(detail, candles = getCandlesForFvgTimeframe(detail?.timeframe)){
+  try{
+    if(!detail || ["Broken", "Filled"].includes(detail?.detailStatus) || !Array.isArray(candles) || !candles.length) return null;
+    const formation = getFvgFormationCandle(detail, candles);
+    if(!formation) return null;
+    const { candle, index } = formation;
+    const direction = detail.direction || getFvgDirection(detail.sourceZone || detail);
+    const candleDirection = candle.close > candle.open ? "bullish" : (candle.close < candle.open ? "bearish" : null);
+    if(direction && candleDirection !== direction) return null;
+    const body = Math.abs(candle.close - candle.open);
+    const range = candle.high - candle.low;
+    const avgBody = calculateAverageBodySize(candles, index, 20);
+    const avgRange = calculateAverageRangeSize(candles, index, 20);
+    if(!Number.isFinite(body) || !Number.isFinite(range) || range <= 0 || (!Number.isFinite(avgBody) && !Number.isFinite(avgRange))) return null;
+    const bodyRatio = Number.isFinite(avgBody) && avgBody > 0 ? body / avgBody : null;
+    const rangeRatio = Number.isFinite(avgRange) && avgRange > 0 ? range / avgRange : null;
+    const hasLargeBody = Number.isFinite(bodyRatio) && bodyRatio >= 1.5;
+    const hasLargeRange = Number.isFinite(rangeRatio) && rangeRatio >= 1.5;
+    if(!hasLargeBody && !hasLargeRange) return null;
+    const avgVolume = calculateAverageVolume(candles, index, 20);
+    const volume = Number(candle.volume);
+    const volumeRatio = Number.isFinite(avgVolume) && avgVolume > 0 && Number.isFinite(volume) ? volume / avgVolume : null;
+    const volumeConfirms = Number.isFinite(volumeRatio) && volumeRatio >= 1.2;
+    const veryClear = ((Number.isFinite(bodyRatio) && bodyRatio >= 2) || (Number.isFinite(rangeRatio) && rangeRatio >= 2)) && volumeConfirms;
+    return { ok: true, timeframe: detail.timeframe || "FVG", direction, candleIndex: index, bodyRatio, rangeRatio, volumeRatio, volumeConfirms, veryClear };
+  }catch(_){
+    return null;
+  }
+}
+function scoreDisplacementFactor(detail){
+  const displacement = detectFvgDisplacement(detail);
+  if(!displacement?.ok) return null;
+  const directionLabel = displacement.direction === "bullish" ? "Bullish" : "Bearish";
+  const tf = displacement.timeframe || detail?.timeframe || "FVG";
+  const points = displacement.veryClear ? 2 : 1;
+  const volumeText = displacement.volumeConfirms ? " with volume confirmation" : "";
+  return { name: "Displacement", points, reason: `${tf} ${directionLabel} FVG formed after a large ${directionLabel.toLowerCase()} displacement candle${volumeText}.` };
+}
+function scoreDisplacementForDetails(details){
+  const factors = (details || []).map(scoreDisplacementFactor).filter(Boolean);
+  if(!factors.length) return null;
+  return factors.sort((a,b)=>(b.points || 0)-(a.points || 0))[0];
+}
 function scoreFvgTimingFactor(state){
   const factors = [];
   const penalties = [];
@@ -3525,6 +3615,8 @@ function buildFvgQualityScore(){
     factors.push(...mtf.factors); penalties.push(...mtf.penalties);
     const srConfluence = scoreSrConfluenceForDetails(active);
     if(srConfluence) factors.push(srConfluence);
+    const displacement = scoreDisplacementForDetails(active);
+    if(displacement) factors.push(displacement);
     const positionFactor = scoreFvgPositionFactor(marketPreparationState.currentPricePosition);
     if(positionFactor) factors.push(positionFactor);
     for(const memory of [marketPreparationState.daily?.recentFvgReaction, marketPreparationState.h4?.recentFvgReaction]){
