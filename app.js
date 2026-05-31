@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 13:00";
+const APP_LAST_UPDATED = "2026-05-31 14:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -3631,11 +3631,14 @@ function buildFvgQualityScore(){
     const hasRelevantPosition = !!positionFactor;
     const timingZone = marketPreparationState.fvgMtfContext?.timingZone;
     const timingStatus = timingZone?.timingStatus;
-    const hasFormalTimingConfirmation = timingStatus === "Confirming" && timingZone?.supportsHighProbability === true;
-    const timingBlocksHighProbability = ["Waiting", "Pullback", "Conflict"].includes(timingStatus);
-    const hasTimingOrReaction = hasFormalTimingConfirmation || (!timingStatus || timingStatus === "Unavailable"
-      ? (timing.factors.some((f)=>/timing|structure|sweep|volume/i.test(f.name || "")) || factors.some((f)=>f.name === "Recent FVG reaction"))
-      : false);
+    const hasFormalTimingZone = !!(timingZone && timingZone.timeframe === "1H");
+    const hasFormalTimingConfirmation = hasFormalTimingZone && timingStatus === "Confirming" && timingZone.supportsHighProbability === true;
+    const timingBlocksHighProbability = hasFormalTimingZone
+      ? ["Waiting", "Pullback", "Conflict", "Unavailable"].includes(timingStatus)
+      : false;
+    const hasLegacyTimingOrReaction = !hasFormalTimingZone
+      && (timing.factors.some((f)=>/timing|structure|sweep|volume/i.test(f.name || "")) || factors.some((f)=>f.name === "Recent FVG reaction"));
+    const hasTimingOrReaction = hasFormalTimingConfirmation || hasLegacyTimingOrReaction;
     let result = { ok: true, label: null, score, maxScore: 10, direction: marketPreparationState.fvgMtfContext?.direction || primary?.direction || null, timeframeScope: [...new Set(active.map((d)=>d.timeframe).filter(Boolean))].join(" + ") || null, factors, penalties, override: null, reason: null, updatedAt: Date.now(), allowHighProbability: hasMtfOverlap && hasRelevantPosition && hasTimingOrReaction && !timingBlocksHighProbability };
     result = applyFvgQualityOverrides(result, marketPreparationState);
     result.label = getFvgQualityLabel(result);

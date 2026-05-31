@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 13:00",
-  "version": "v0.1.95",
+  "lastUpdated": "2026-05-31 14:00",
+  "version": "v0.1.96",
   "commitLabel": "manual",
-  "note": "Add displacement factor to FVG quality scoring"
+  "note": "Tighten global FVG quality timing gate"
 }
