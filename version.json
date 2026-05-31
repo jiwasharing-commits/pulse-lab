@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 19:16",
-  "version": "v0.2.10",
+  "lastUpdated": "2026-05-31 19:33",
+  "version": "v0.2.11",
   "commitLabel": "manual",
-  "note": "Add H4 possible liquidity sweep state"
+  "note": "Add H4 reclaim and AVWAP liquidity state"
 }

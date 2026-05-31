@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 19:16";
+const APP_LAST_UPDATED = "2026-05-31 19:33";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -524,6 +524,89 @@ function detectH4LiquiditySweepEpisode(closedCandles, candidateLevels, options =
   if(!best) return null;
   return best;
 }
+function createEmptyH4LiquidityReclaim(status = LIQUIDITY_RECLAIM_STATUS.NONE){
+  return { detected: false, status, at: null, closePrice: null, barsFromSweep: null, passedThreshold: false, candleIndex: null };
+}
+function getLiquidityReactionDirection(sweepType){
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) return "bullish";
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) return "bearish";
+  return null;
+}
+function isCorrectLiquidityAvwapSide(sweepType, side){
+  return (sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW && side === LIQUIDITY_AVWAP_SIDE.ABOVE)
+    || (sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH && side === LIQUIDITY_AVWAP_SIDE.BELOW);
+}
+function classifyH4LiquidityReclaim(closedCandles, sweep, options = {}){
+  if(!Array.isArray(closedCandles) || !closedCandles.length || !sweep) return createEmptyH4LiquidityReclaim();
+  const anchorIndex = Number(sweep.candleIndex ?? sweep.anchorIndex);
+  const maxBars = Math.max(1, Number(options.maxBars) || 3);
+  if(!Number.isInteger(anchorIndex) || anchorIndex < 0 || anchorIndex >= closedCandles.length) return createEmptyH4LiquidityReclaim();
+  const levelPrice = Number(sweep.levelPrice);
+  const breachBuffer = Number.isFinite(Number(sweep.breachBuffer)) ? Number(sweep.breachBuffer) : 0;
+  if(!Number.isFinite(levelPrice)) return createEmptyH4LiquidityReclaim();
+  const endIndex = Math.min(closedCandles.length - 1, anchorIndex + maxBars);
+  for(let index = anchorIndex; index <= endIndex; index += 1){
+    const candle = closedCandles[index];
+    if(!isValidOrderflowCandle(candle)) continue;
+    const closePrice = Number(candle.close);
+    const passedThreshold = sweep.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW
+      ? closePrice > levelPrice + breachBuffer
+      : (sweep.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH ? closePrice < levelPrice - breachBuffer : false);
+    if(!passedThreshold) continue;
+    const barsFromSweep = index - anchorIndex;
+    const status = barsFromSweep === 0 ? LIQUIDITY_RECLAIM_STATUS.SAME_BAR : (barsFromSweep === 1 ? LIQUIDITY_RECLAIM_STATUS.NEXT_BAR : LIQUIDITY_RECLAIM_STATUS.LATE);
+    return { detected: true, status, at: getOrderflowCandleTime(candle), closePrice, barsFromSweep, passedThreshold: true, candleIndex: index };
+  }
+  if((closedCandles.length - 1) - anchorIndex >= maxBars) return createEmptyH4LiquidityReclaim(LIQUIDITY_RECLAIM_STATUS.MISSED);
+  return createEmptyH4LiquidityReclaim();
+}
+function countCorrectAvwapSideCloses(closedCandles, startIndex, avwapValue, sweepType){
+  if(!Array.isArray(closedCandles) || !closedCandles.length) return 0;
+  const start = Number(startIndex);
+  if(!Number.isInteger(start) || start < 0 || start >= closedCandles.length) return 0;
+  let count = 0;
+  for(let index = start; index < closedCandles.length; index += 1){
+    const candle = closedCandles[index];
+    if(!isValidOrderflowCandle(candle)) break;
+    const side = classifyLiquidityAvwapSide(candle.close, avwapValue);
+    if(!isCorrectLiquidityAvwapSide(sweepType, side)) break;
+    count += 1;
+  }
+  return count;
+}
+function buildH4LiquidityAvwapState(closedCandles, sweep, reclaim){
+  const empty = { available: false, value: null, side: LIQUIDITY_AVWAP_SIDE.UNKNOWN, distancePct: null, correctSideCloses: 0, anchorTime: null, lifetimeBars: 0, lostControl: false };
+  if(!Array.isArray(closedCandles) || !closedCandles.length || !sweep) return empty;
+  const anchorIndex = Number(sweep.candleIndex ?? sweep.anchorIndex);
+  const anchored = calculateAnchoredVwap(closedCandles, anchorIndex);
+  if(!anchored.available) return { ...empty, anchorTime: anchored.anchorTime ?? getOrderflowCandleTime(closedCandles[anchorIndex]) ?? null };
+  const latest = closedCandles[closedCandles.length - 1];
+  const latestClose = Number(latest?.close);
+  const side = classifyLiquidityAvwapSide(latestClose, anchored.value);
+  const distancePct = Number.isFinite(latestClose) && Number.isFinite(anchored.value) && anchored.value > 0 ? ((latestClose - anchored.value) / anchored.value) * 100 : null;
+  return {
+    available: true,
+    value: anchored.value,
+    side,
+    distancePct,
+    correctSideCloses: reclaim?.detected ? countCorrectAvwapSideCloses(closedCandles, reclaim.candleIndex, anchored.value, sweep.sweepType) : 0,
+    anchorTime: anchored.anchorTime ?? getOrderflowCandleTime(closedCandles[anchorIndex]) ?? null,
+    lifetimeBars: anchored.lifetimeBars,
+    lostControl: false,
+  };
+}
+function scoreH4LiquidityPreliminary(reclaim, avwap, sweepType){
+  let score = 0;
+  if(reclaim?.detected){
+    if(reclaim.status === LIQUIDITY_RECLAIM_STATUS.SAME_BAR) score += 2;
+    else if(reclaim.status === LIQUIDITY_RECLAIM_STATUS.NEXT_BAR || reclaim.status === LIQUIDITY_RECLAIM_STATUS.LATE) score += 1;
+  }
+  if(avwap?.available && isCorrectLiquidityAvwapSide(sweepType, avwap.side)) score += 1;
+  return Math.max(0, score);
+}
+function getH4LiquidityBandForPreliminaryScore(score){
+  return score >= 3 ? LIQUIDITY_BAND.USABLE : LIQUIDITY_BAND.WEAK;
+}
 function buildH4LiquidityOrderflowState(input = {}){
   const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const closedCandles = getClosedOrderflowCandles(input.candles);
@@ -543,17 +626,33 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweepType = sweep.sweepType;
   const levelType = sweep.level?.type || null;
   const excursionAtr = Number.isFinite(Number(sweep.buffer?.averageRange)) && Number(sweep.buffer.averageRange) > 0 ? sweep.excursion / Number(sweep.buffer.averageRange) : null;
+  const reclaim = classifyH4LiquidityReclaim(closedCandles, sweep, { maxBars: 3 });
+  const avwap = buildH4LiquidityAvwapState(closedCandles, sweep, reclaim);
+  const volume = reclaim.detected ? calculateLiquidityVolumeStatus(closedCandles, reclaim.candleIndex, 20) : base.activeEpisode.volume;
+  const preliminaryScore = reclaim.detected ? scoreH4LiquidityPreliminary(reclaim, avwap, sweepType) : 0;
+  const isValid = reclaim.detected && [LIQUIDITY_RECLAIM_STATUS.SAME_BAR, LIQUIDITY_RECLAIM_STATUS.NEXT_BAR, LIQUIDITY_RECLAIM_STATUS.LATE].includes(reclaim.status);
+  const avwapSupportsContext = avwap.available && isCorrectLiquidityAvwapSide(sweepType, avwap.side);
+  const reasons = isValid
+    ? [
+      "Close reclaim/reject confirmed on closed H4 candle.",
+      avwap.available ? "Anchored VWAP context calculated from sweep candle." : "AVWAP unavailable due to missing volume.",
+      avwapSupportsContext ? "AVWAP side supports reaction context." : "AVWAP side has not confirmed control.",
+    ]
+    : [
+      "Possible H4 liquidity sweep detected on closed candle.",
+      reclaim.status === LIQUIDITY_RECLAIM_STATUS.MISSED ? "Reclaim/reject was not confirmed within the initial H4 window." : "Waiting for reclaim/reject confirmation.",
+    ];
   return {
     ...base,
     activeEpisode: {
       ...base.activeEpisode,
       episodeId: createH4LiquidityEpisodeId(sweepType, levelType, sweep.levelPrice, anchorTime),
-      status: LIQUIDITY_OF_STATE.POSSIBLE,
+      status: isValid ? LIQUIDITY_OF_STATE.VALID : LIQUIDITY_OF_STATE.POSSIBLE,
       stale: false,
-      displayStatus: "Possible liquidity sweep detected",
-      band: LIQUIDITY_BAND.WEAK,
-      score: 0,
-      reasons: ["Possible H4 liquidity sweep detected on closed candle.", "Waiting for reclaim/reject confirmation."],
+      displayStatus: isValid ? "Valid H4 liquidity sweep reaction" : (reclaim.status === LIQUIDITY_RECLAIM_STATUS.MISSED ? "Possible liquidity sweep detected; reclaim not confirmed" : "Possible liquidity sweep detected"),
+      band: getH4LiquidityBandForPreliminaryScore(preliminaryScore),
+      score: preliminaryScore,
+      reasons,
       sweep: {
         ...base.activeEpisode.sweep,
         detected: true,
@@ -568,6 +667,9 @@ function buildH4LiquidityOrderflowState(input = {}){
         anchorMethod: "sweepCandle",
         mergeCount: 0,
       },
+      reclaim,
+      avwap,
+      volume,
     },
     recentCompleted: [],
   };
