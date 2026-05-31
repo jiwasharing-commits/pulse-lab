@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 15:00",
-  "version": "v0.1.97",
+  "lastUpdated": "2026-05-31 15:30",
+  "version": "v0.1.98",
   "commitLabel": "manual",
-  "note": "Add trade plan scenario state builder"
+  "note": "Tune trade plan scenario state refresh and conflict handling"
 }

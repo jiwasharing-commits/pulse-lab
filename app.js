@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 15:00";
+const APP_LAST_UPDATED = "2026-05-31 15:30";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -168,6 +168,11 @@ const marketPreparationState = {
   tradePlanScenario: createEmptyTradePlanScenario(),
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
+if(typeof window !== "undefined") {
+  window.getPulseLabState = function getPulseLabState(){
+    return marketPreparationState;
+  };
+}
 
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
@@ -1287,13 +1292,14 @@ function getScenarioTimingGate(side){
 }
 function getScenarioHardBlockers(side){
   const blockers = [];
+  const warnings = [];
   const conflict = marketPreparationState.fvgMtfContext?.conflict;
   if(conflict?.ok){
     if(conflict.label === "Parent FVG Broken") blockers.push("Parent FVG Broken");
-    else if(conflict.label === "Conflict / Wait Confirmation") blockers.push("Conflict / Wait Confirmation");
-    else if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") blockers.push(conflict.label);
+    else if(conflict.label === "Conflict / Wait Confirmation") warnings.push("Conflict / Wait Confirmation");
+    else if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") warnings.push(conflict.label);
   }
-  return { blockers, conflictLabel: conflict?.ok ? conflict.label : null, parentBroken: blockers.includes("Parent FVG Broken"), activeBlocked: blockers.length > 0 };
+  return { blockers, warnings, conflictLabel: conflict?.ok ? conflict.label : null, parentBroken: blockers.includes("Parent FVG Broken"), activeBlocked: blockers.length > 0 || warnings.length > 0 };
 }
 function isScenarioEntryNear(row, currentPrice){
   if(!row || !Number.isFinite(currentPrice)) return false;
@@ -1328,6 +1334,7 @@ function buildTradeScenarioForSide(side, mapData){
   if(["Broken", "Filled"].includes(rowStatus)) blockers.push(`Entry row ${rowStatus}`);
   const hard = getScenarioHardBlockers(side);
   blockers.push(...hard.blockers);
+  warnings.push(...hard.warnings);
   const timing = getScenarioTimingGate(side);
   const entryNear = isScenarioEntryNear(entryRow, currentPrice);
   if(!entryNear) warnings.push("Current price is not near/inside entry zone.");
@@ -1340,6 +1347,9 @@ function buildTradeScenarioForSide(side, mapData){
   } else if(blockers.length){
     status = TRADE_SCENARIO_STATUS.NO_TRADE;
     reason = blockers.join("; ");
+  } else if(hard.activeBlocked){
+    status = TRADE_SCENARIO_STATUS.WAIT;
+    reason = `${hard.conflictLabel || "MTF conflict"}; wait for 1H/4H confirmation.`;
   } else if(!entryNear || ["Waiting", "Pullback", "Unavailable"].includes(timing.timingStatus)){
     status = TRADE_SCENARIO_STATUS.WAIT;
     reason = !entryNear ? "Scenario zone exists, but price is not near the entry zone." : "Scenario zone exists, but 1H timing confirmation is not active.";
@@ -1371,6 +1381,19 @@ function buildTradePlanScenario(mapData){
   const primarySide = selectedScenario?.side || "neutral";
   const caution = [...new Set([...(buyScenario?.warnings || []), ...(sellScenario?.warnings || []), ...(buyScenario?.blockers || []), ...(sellScenario?.blockers || [])].filter(Boolean))].slice(0, 6);
   return { ok: !!selectedScenario, primaryStatus, primarySide, reason: selectedScenario?.reason || (primaryStatus === TRADE_SCENARIO_STATUS.WAIT ? "Scenario context exists, but confirmation is incomplete." : "No clean trade scenario is available."), caution, buyScenario, sellScenario, selectedScenario, updatedAt: Date.now(), disclaimer: TRADE_SCENARIO_DISCLAIMER };
+}
+function refreshTradePlanScenario(mapData = marketPreparationState.map){
+  const safeMap = mapData || marketPreparationState.map;
+  if(!safeMap || (!Array.isArray(safeMap.upside) && !Array.isArray(safeMap.downside))){
+    marketPreparationState.tradePlanScenario = createEmptyTradePlanScenario("Market map is unavailable.");
+    return marketPreparationState.tradePlanScenario;
+  }
+  marketPreparationState.tradePlanScenario = buildTradePlanScenario({
+    ...safeMap,
+    upside: Array.isArray(safeMap.upside) ? safeMap.upside : [],
+    downside: Array.isArray(safeMap.downside) ? safeMap.downside : [],
+  });
+  return marketPreparationState.tradePlanScenario;
 }
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
@@ -2168,7 +2191,7 @@ function renderMarketPreparationMap(mapData){
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.fvgQuality = buildFvgQualityScore();
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
-  marketPreparationState.tradePlanScenario = buildTradePlanScenario(safeMap);
+  refreshTradePlanScenario(safeMap);
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
   const nearestUpside = safeMap.upside?.[0] || null;
@@ -3491,8 +3514,10 @@ function refreshFvgTimingZoneAndQuality({ rebuildQuality = true } = {}){
     const timingZone = buildFvgTimingZone(baseContext, marketPreparationState);
     updateMarketPreparationState({ fvgMtfContext: { timingZone } });
     if(rebuildQuality) updateMarketPreparationState({ fvgQuality: buildFvgQualityScore() });
+    refreshTradePlanScenario();
   }catch(_){
     updateMarketPreparationState({ fvgMtfContext: { timingZone: createEmptyFvgTimingZone() } });
+    refreshTradePlanScenario();
   }
 }
 function getAllFvgDetailsForQuality(){
