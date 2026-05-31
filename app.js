@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 18:00";
+const APP_LAST_UPDATED = "2026-05-30 19:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -169,8 +169,11 @@ function createEmptyFvgConflictState(reason = "No FVG direction conflict detecte
 function createEmptyFvgQualityState(reason = "FVG quality unavailable."){
   return { ok: false, label: "Unavailable", score: 0, maxScore: 10, direction: null, timeframeScope: null, factors: [], penalties: [], override: null, reason, updatedAt: Date.now() };
 }
+function createEmptyFvgTimingZone(reason = "1H timing data is unavailable."){
+  return { ok: false, timeframe: "1H", direction: null, timingStatus: "Unavailable", sweep: null, structure: null, stochastic: null, relatedZone: null, supportsHighProbability: false, reason, updatedAt: Date.now() };
+}
 function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
-  return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: null, overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
+  return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: createEmptyFvgTimingZone(), overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
 }
 const f1=(n)=>Number(n).toFixed(1), f2=(n)=>Number(n).toFixed(2), signed1=(n)=>`${n>=0?"+":""}${f1(n)}`, signed2=(n)=>`${n>=0?"+":""}${f2(n)}`;
 const usd=(v)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:v>1000?0:2}).format(v);
@@ -1527,7 +1530,7 @@ function formatFvgMtfContextSummary(context = marketPreparationState.fvgMtfConte
   const parent = formatFvgZoneSummary(context?.parentZone, "Parent zone unavailable");
   const core = context?.coreZone || context?.overlapZone;
   const coreText = core?.lower && core?.upper ? `${usd(core.lower)}–${usd(core.upper)}` : "Core zone unavailable";
-  return { relation, parent, core: coreText, reason: context?.conflict?.ok ? context.conflict.reason : (context?.reason || "No clear MTF FVG overlap.") };
+  return { relation, parent, core: coreText, timing: formatFvgTimingZoneText(context?.timingZone), reason: context?.conflict?.ok ? context.conflict.reason : (context?.reason || "No clear MTF FVG overlap.") };
 }
 function getFvgDetailZone(detail){
   const zone = detail?.sourceZone || detail;
@@ -1706,6 +1709,7 @@ function getKeyZonePositionContext(mapData, state){
     conflict: marketPreparationState.fvgMtfContext?.conflict || createEmptyFvgConflictState(),
     quality: marketPreparationState.fvgQuality || createEmptyFvgQualityState(),
     mtfContext: formatFvgMtfContextSummary(marketPreparationState.fvgMtfContext),
+    timingZone: marketPreparationState.fvgMtfContext?.timingZone || createEmptyFvgTimingZone(),
   };
 }
 function buildCurrentPriceDetailDataV2(mapData){
@@ -1848,6 +1852,7 @@ function renderCurrentPriceDetailCards(detail){
         ${detail.keyZone.conflict?.ok ? `<p class="prep-current-detail-kv">FVG Conflict: ${detail.keyZone.conflict.label} · wait confirmation</p>` : ""}
         <p class="prep-current-detail-kv">FVG Quality: ${formatFvgQualitySummary(detail.keyZone.quality)}</p>
         <p class="prep-current-detail-kv">FVG MTF Context: ${detail.keyZone.mtfContext?.relation || "No clear MTF FVG overlap"}</p>
+        <p class="prep-current-detail-kv">1H Timing Zone: ${detail.keyZone.mtfContext?.timing || formatFvgTimingZoneText(detail.keyZone.timingZone)}</p>
         <p class="prep-current-detail-kv">Parent Zone: ${detail.keyZone.mtfContext?.parent || "Parent zone unavailable"}</p>
         <p class="prep-current-detail-kv">Core Zone: ${detail.keyZone.mtfContext?.core || "Core zone unavailable"}</p>
         <p class="prep-current-detail-kv">Recent Reaction: ${detail.keyZone.recentReaction}</p>
@@ -3029,13 +3034,119 @@ function classifyFvgConflictContext(fvgMtfContext, details){
 function buildFvgConflictState(){
   return classifyFvgConflictContext(marketPreparationState.fvgMtfContext, getConflictFvgDetails());
 }
+function getDirectionFrom1hStructure(structureStatus){
+  const text = String(structureStatus || "");
+  if(/Bullish\s+(BOS|CHoCH)/i.test(text)) return "bullish";
+  if(/Bearish\s+(BOS|CHoCH)/i.test(text)) return "bearish";
+  return null;
+}
+function getDirectionFrom1hSweep(sweepStatus){
+  const text = String(sweepStatus || "");
+  if(/Bullish\s+Sweep/i.test(text)) return "bullish";
+  if(/Bearish\s+Sweep/i.test(text)) return "bearish";
+  return null;
+}
+function getDirectionFrom1hStochastic(stochastic){
+  if(!stochastic?.ok) return null;
+  const status = String(stochastic.status || stochastic.label || "");
+  if(/oversold_cross_up|bullish_cross|Bullish Cross|Oversold Cross Up/i.test(status)) return "bullish";
+  if(/overbought_cross_down|bearish_cross|Bearish Cross|Overbought Cross Down/i.test(status)) return "bearish";
+  return null;
+}
+function isUsable1hTimingText(value){
+  const text = String(value || "");
+  return /Bullish|Bearish|No clear|No recent/i.test(text) && !/unavailable|range unavailable/i.test(text);
+}
+function getMtfDirectionForTiming(fvgMtfContext){
+  const direction = fvgMtfContext?.direction;
+  if(direction === "bullish" || direction === "bearish") return direction;
+  const conflict = fvgMtfContext?.conflict;
+  if(conflict?.htfDirection === "bullish" || conflict?.htfDirection === "bearish") return conflict.htfDirection;
+  const currentDirection = marketPreparationState.currentPricePosition?.fvg?.detail?.direction;
+  return currentDirection === "bullish" || currentDirection === "bearish" ? currentDirection : null;
+}
+function getFvgTimingRelatedZone(fvgMtfContext){
+  return fvgMtfContext?.reactionZone || fvgMtfContext?.coreZone || fvgMtfContext?.activeZone || fvgMtfContext?.parentZone || null;
+}
+function getTimingSignalSummary({ structureStatus, sweepStatus, stochastic }){
+  const parts = [];
+  if(getDirectionFrom1hSweep(sweepStatus)) parts.push(String(sweepStatus));
+  if(getDirectionFrom1hStructure(structureStatus)) parts.push(String(structureStatus));
+  if(stochastic?.ok && getDirectionFrom1hStochastic(stochastic)) parts.push(stochastic.label || "Stochastic support");
+  return parts.join(" + ");
+}
+function buildFvgTimingZone(fvgMtfContext, state = marketPreparationState){
+  try{
+    if(!Array.isArray(latest1hCandles) || !latest1hCandles.length) return createEmptyFvgTimingZone();
+    const h1 = state?.h1 || {};
+    const structureStatus = h1.structureStatus || null;
+    const sweepStatus = h1.sweepStatus || null;
+    const stochastic = h1.stochastic || null;
+    const hasAnyH1State = !!(isUsable1hTimingText(structureStatus) || isUsable1hTimingText(sweepStatus) || stochastic?.ok);
+    if(!hasAnyH1State) return createEmptyFvgTimingZone();
+    const mtfDirection = getMtfDirectionForTiming(fvgMtfContext);
+    if(!mtfDirection) return createEmptyFvgTimingZone("MTF FVG direction is unavailable for 1H timing.");
+    const structureDirection = getDirectionFrom1hStructure(structureStatus);
+    const sweepDirection = getDirectionFrom1hSweep(sweepStatus);
+    const stochasticDirection = getDirectionFrom1hStochastic(stochastic);
+    const signalDirections = [structureDirection, sweepDirection].filter(Boolean);
+    const signalSummary = getTimingSignalSummary({ structureStatus, sweepStatus, stochastic }) || "no clear 1H structure/sweep confirmation";
+    const relatedZone = getFvgTimingRelatedZone(fvgMtfContext);
+    const makeTiming = ({ ok = true, direction = null, timingStatus, supportsHighProbability = false, reason })=>({
+      ok,
+      timeframe: "1H",
+      direction,
+      timingStatus,
+      sweep: sweepStatus,
+      structure: structureStatus,
+      stochastic: stochastic || null,
+      relatedZone,
+      supportsHighProbability,
+      reason,
+      updatedAt: Date.now(),
+    });
+    if(!signalDirections.length){
+      return makeTiming({ ok: true, direction: stochasticDirection, timingStatus: "Waiting", reason: `Waiting for 1H confirmation: ${signalSummary}.` });
+    }
+    const aligned = signalDirections.includes(mtfDirection);
+    const opposite = signalDirections.some((direction)=>direction && direction !== mtfDirection);
+    if(aligned && !opposite){
+      const label = mtfDirection === "bullish" ? "bullish" : "bearish";
+      return makeTiming({ direction: mtfDirection, timingStatus: "Confirming", supportsHighProbability: true, reason: `1H timing confirms ${label} MTF FVG context: ${signalSummary}.` });
+    }
+    if(opposite){
+      const oppositeDirection = signalDirections.find((direction)=>direction !== mtfDirection) || null;
+      const conflictActive = !!fvgMtfContext?.conflict?.ok || fvgMtfContext?.direction === "mixed" || /Conflict|Under Pressure/i.test(`${fvgMtfContext?.relation || ""} ${fvgMtfContext?.qualityHint || ""}`);
+      if(conflictActive){
+        return makeTiming({ direction: oppositeDirection, timingStatus: "Conflict", reason: `1H timing opposes ${mtfDirection} MTF FVG context while MTF conflict/pressure is active: ${signalSummary}.` });
+      }
+      return makeTiming({ direction: oppositeDirection, timingStatus: "Pullback", reason: `1H shows ${oppositeDirection} pullback against ${mtfDirection} MTF FVG context: ${signalSummary}.` });
+    }
+    return makeTiming({ ok: true, direction: stochasticDirection, timingStatus: "Waiting", reason: `Waiting for 1H confirmation: ${signalSummary}.` });
+  }catch(_){
+    return createEmptyFvgTimingZone();
+  }
+}
+function formatFvgTimingZoneText(timingZone){
+  if(!timingZone || timingZone.timingStatus === "Unavailable") return "Unavailable · 1H timing data is unavailable";
+  const status = timingZone.timingStatus || "Unavailable";
+  const dirLabel = timingZone.direction === "bullish" ? "Bullish" : (timingZone.direction === "bearish" ? "Bearish" : "");
+  const signal = getTimingSignalSummary({ structureStatus: timingZone.structure, sweepStatus: timingZone.sweep, stochastic: timingZone.stochastic });
+  const suffix = signal || timingZone.reason || "no clear 1H confirmation";
+  return `${status}${dirLabel ? ` ${dirLabel}` : ""} · ${suffix}`;
+}
+function withFvgTimingZone(context){
+  const base = context || createEmptyFvgMtfContext();
+  return { ...base, timingZone: buildFvgTimingZone(base, marketPreparationState) };
+}
 function buildMtfContextPayload({ ok = true, direction = null, relation = null, details = [], overlapZone = null, conflictReason = null, conflict = createEmptyFvgConflictState(), qualityHint = null, reason = null }){
   const sorted = sortFvgMtfCandidates(details);
   const parentZone = getMtfRoleZone(sorted, "parent") || getMtfRoleZone(sorted, "active") || sorted[0] || null;
   const activeZone = getMtfRoleZone(sorted, "active");
   const reactionZone = getMtfRoleZone(sorted, "reaction");
   const precisionZone = reactionZone && parentZone && (isFvgNested(reactionZone, parentZone) || (activeZone && isFvgNested(reactionZone, activeZone))) ? reactionZone : null;
-  return { ok, direction, relation, parentZone, activeZone, reactionZone, timingZone: null, overlapZone, coreZone: overlapZone, precisionZone, sources: sorted.map((d)=>d.label), conflictReason, conflict, qualityHint, reason, updatedAt: Date.now() };
+  const payload = { ok, direction, relation, parentZone, activeZone, reactionZone, timingZone: createEmptyFvgTimingZone(), overlapZone, coreZone: overlapZone, precisionZone, sources: sorted.map((d)=>d.label), conflictReason, conflict, qualityHint, reason, updatedAt: Date.now() };
+  return { ...payload, timingZone: buildFvgTimingZone(payload, marketPreparationState) };
 }
 function buildAlignedFvgMtfContext(details, direction){
   const aligned = sortFvgMtfCandidates(details || []);
@@ -3091,7 +3202,17 @@ function buildFvgMtfContext(){
   }catch(_){ return createEmptyFvgMtfContext("MTF FVG context unavailable."); }
 }
 function refreshFvgMtfContext(){
-  updateMarketPreparationState({ fvgMtfContext: buildFvgMtfContext() });
+  updateMarketPreparationState({ fvgMtfContext: withFvgTimingZone(buildFvgMtfContext()) });
+}
+function refreshFvgTimingZoneAndQuality({ rebuildQuality = true } = {}){
+  try{
+    const baseContext = marketPreparationState.fvgMtfContext || createEmptyFvgMtfContext();
+    const timingZone = buildFvgTimingZone(baseContext, marketPreparationState);
+    updateMarketPreparationState({ fvgMtfContext: { timingZone } });
+    if(rebuildQuality) updateMarketPreparationState({ fvgQuality: buildFvgQualityScore() });
+  }catch(_){
+    updateMarketPreparationState({ fvgMtfContext: { timingZone: createEmptyFvgTimingZone() } });
+  }
 }
 function getAllFvgDetailsForQuality(){
   return [
@@ -3158,16 +3279,27 @@ function scoreFvgRecentReactionFactor(recentFvgReaction){
 function scoreFvgTimingFactor(state){
   const factors = [];
   const penalties = [];
-  const direction = state?.fvgMtfContext?.direction || state?.currentPricePosition?.fvg?.detail?.direction;
-  const addIfAligned = (label, bullishText, bearishText, name)=>{
-    const txt = String(label || "");
-    if(direction === "bullish" && new RegExp(bullishText, "i").test(txt)) factors.push({ name, points: 2, reason: `${name} aligns bullish.` });
-    else if(direction === "bearish" && new RegExp(bearishText, "i").test(txt)) factors.push({ name, points: 2, reason: `${name} aligns bearish.` });
-    else if(/Bullish|Bearish/i.test(txt) && direction && direction !== "mixed") penalties.push({ name: `${name} mismatch`, points: -2, reason: `${name} does not align with ${direction} FVG context.` });
-  };
-  addIfAligned(state?.h4?.structureStatus, "Bullish", "Bearish", "4H structure");
-  addIfAligned(state?.h1?.structureStatus, "Bullish", "Bearish", "1H structure");
-  addIfAligned(state?.h1?.sweepStatus, "Bullish", "Bearish", "Liquidity sweep");
+  const timingZone = state?.fvgMtfContext?.timingZone;
+  if(timingZone && timingZone.timingStatus && timingZone.timingStatus !== "Unavailable"){
+    if(timingZone.timingStatus === "Confirming" && timingZone.supportsHighProbability){
+      factors.push({ name: "1H Timing Zone", points: 2, reason: timingZone.reason || "1H timing confirms the MTF FVG direction." });
+    } else if(timingZone.timingStatus === "Conflict"){
+      penalties.push({ name: "1H Timing Zone conflict", points: -2, reason: timingZone.reason || "1H timing conflicts with the MTF FVG context." });
+    } else if(timingZone.timingStatus === "Pullback"){
+      penalties.push({ name: "1H Timing Zone pullback", points: -1, reason: timingZone.reason || "1H timing is pulling back against the MTF FVG direction." });
+    }
+  } else {
+    const direction = state?.fvgMtfContext?.direction || state?.currentPricePosition?.fvg?.detail?.direction;
+    const addIfAligned = (label, bullishText, bearishText, name)=>{
+      const txt = String(label || "");
+      if(direction === "bullish" && new RegExp(bullishText, "i").test(txt)) factors.push({ name, points: 2, reason: `${name} aligns bullish.` });
+      else if(direction === "bearish" && new RegExp(bearishText, "i").test(txt)) factors.push({ name, points: 2, reason: `${name} aligns bearish.` });
+      else if(/Bullish|Bearish/i.test(txt) && direction && direction !== "mixed") penalties.push({ name: `${name} mismatch`, points: -2, reason: `${name} does not align with ${direction} FVG context.` });
+    };
+    addIfAligned(state?.h4?.structureStatus, "Bullish", "Bearish", "4H structure");
+    addIfAligned(state?.h1?.structureStatus, "Bullish", "Bearish", "1H structure");
+    addIfAligned(state?.h1?.sweepStatus, "Bullish", "Bearish", "Liquidity sweep");
+  }
   const vol = state?.h4?.volumeStatus;
   if(vol?.label && /Above Avg|Spike/i.test(vol.label)) factors.push({ name: "Volume confirmation", points: 1, reason: `4H volume is ${vol.label}${Number.isFinite(vol.ratio) ? ` (${f2(vol.ratio)}x)` : ""}.` });
   return { factors, penalties };
@@ -3217,8 +3349,14 @@ function buildFvgQualityScore(){
     let score = clampNumber(factors.reduce((sum, f)=>sum + (f.points || 0), 0) + penalties.reduce((sum, p)=>sum + (p.points || 0), 0), 0, 10);
     const hasMtfOverlap = !!(marketPreparationState.fvgMtfContext?.overlapZone || marketPreparationState.fvgMtfContext?.coreZone || /Nested|Confluence|Overlap/i.test(marketPreparationState.fvgMtfContext?.relation || ""));
     const hasRelevantPosition = !!positionFactor;
-    const hasTimingOrReaction = timing.factors.length > 0 || factors.some((f)=>f.name === "Recent FVG reaction");
-    let result = { ok: true, label: null, score, maxScore: 10, direction: marketPreparationState.fvgMtfContext?.direction || primary?.direction || null, timeframeScope: [...new Set(active.map((d)=>d.timeframe).filter(Boolean))].join(" + ") || null, factors, penalties, override: null, reason: null, updatedAt: Date.now(), allowHighProbability: hasMtfOverlap && hasRelevantPosition && hasTimingOrReaction };
+    const timingZone = marketPreparationState.fvgMtfContext?.timingZone;
+    const timingStatus = timingZone?.timingStatus;
+    const hasFormalTimingConfirmation = timingStatus === "Confirming" && timingZone?.supportsHighProbability === true;
+    const timingBlocksHighProbability = ["Waiting", "Pullback", "Conflict"].includes(timingStatus);
+    const hasTimingOrReaction = hasFormalTimingConfirmation || (!timingStatus || timingStatus === "Unavailable"
+      ? (timing.factors.some((f)=>/timing|structure|sweep|volume/i.test(f.name || "")) || factors.some((f)=>f.name === "Recent FVG reaction"))
+      : false);
+    let result = { ok: true, label: null, score, maxScore: 10, direction: marketPreparationState.fvgMtfContext?.direction || primary?.direction || null, timeframeScope: [...new Set(active.map((d)=>d.timeframe).filter(Boolean))].join(" + ") || null, factors, penalties, override: null, reason: null, updatedAt: Date.now(), allowHighProbability: hasMtfOverlap && hasRelevantPosition && hasTimingOrReaction && !timingBlocksHighProbability };
     result = applyFvgQualityOverrides(result, marketPreparationState);
     result.label = getFvgQualityLabel(result);
     if(!result.reason){
@@ -4606,6 +4744,7 @@ function render1hEventMarkers(candles){
 function update1hStochasticStatus(candles){
   const stochastic = compute1hStochasticStatus(candles, 14, 3);
   updateMarketPreparationState({ h1: { stochastic }, meta: { sourcesReady: { h1: true } } });
+  refreshFvgTimingZoneAndQuality();
   renderMarketPreparationMap(buildMarketPreparationMap());
   return stochastic;
 }
@@ -4615,6 +4754,7 @@ function render1hStructureSummary(candles){
     const st=detect1hStructure(candles);
     latest1hStructureStatus = st.status;
     updateMarketPreparationState({ h1: { structureStatus: st.status }, meta: { sourcesReady: { h1: true } } });
+    refreshFvgTimingZoneAndQuality();
     renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Structure = st.status;
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent=`1H Structure | Status: ${st.status} | Broken Level: ${st.broken?usd(st.broken):'—'} | Reference Swing: ${st.ref} | Latest Close: ${usd(st.latestClose)}`;
@@ -4622,6 +4762,7 @@ function render1hStructureSummary(candles){
     console.error('1H structure scanner failed', e);
     latest1hStructureStatus = '1H structure unavailable';
     updateMarketPreparationState({ h1: { structureStatus: latest1hStructureStatus }, meta: { sourcesReady: { h1: true } } });
+    refreshFvgTimingZoneAndQuality();
     renderMarketPreparationMap(buildMarketPreparationMap());
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent='1H structure unavailable';
   }
@@ -4653,6 +4794,7 @@ function render1hSweepSummary(candles){
     const sweep=detect1hLiquiditySweep(candles);
     latest1hSweepStatus = sweep.status;
     updateMarketPreparationState({ h1: { sweepStatus: sweep.status }, meta: { sourcesReady: { h1: true } } });
+    refreshFvgTimingZoneAndQuality();
     renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
