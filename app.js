@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 17:35";
+const APP_LAST_UPDATED = "2026-05-31 17:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -3394,6 +3394,7 @@ function createEmptyIfvgState(detail, timeframe){
   return {
     state: IFVG_STATE.NONE,
     stale: false,
+    priorStateBeforeFailure: null,
     timeframe: timeframe || detail?.timeframe || detail?.sourceZone?.timeframe || null,
     originalFvgId: detail?.key || (zone ? getFvgKey(zone, timeframe || detail?.timeframe) : null),
     originalSide: originalSide || null,
@@ -3432,6 +3433,12 @@ function createEmptyIfvgState(detail, timeframe){
       pattern: null,
       displacement: null,
       volumeRelative: null,
+    },
+    failure: {
+      detected: false,
+      at: null,
+      price: null,
+      reason: null,
     },
     structure: {
       bosAligned: false,
@@ -3608,8 +3615,8 @@ function detectIfvgReclaimFailure(detail, breakEvent, candles){
   if(breakIndex < 0) return null;
   for(let i=breakIndex + 1;i<closed.length;i++){
     const close = Number(closed[i]?.close);
-    if(side === "bullish" && Number.isFinite(close) && close > zone.upper) return { at: closed[i]?.time ?? null, price: close, reason: "Closed back above the opposite edge after bearish inversion attempt." };
-    if(side === "bearish" && Number.isFinite(close) && close < zone.lower) return { at: closed[i]?.time ?? null, price: close, reason: "Closed back below the opposite edge after bullish inversion attempt." };
+    if(side === "bullish" && Number.isFinite(close) && close > zone.upper) return { detected: true, at: closed[i]?.time ?? null, price: close, reason: "Bearish IFVG failed after price reclaimed above the zone by close." };
+    if(side === "bearish" && Number.isFinite(close) && close < zone.lower) return { detected: true, at: closed[i]?.time ?? null, price: close, reason: "Bullish IFVG failed after price reclaimed below the zone by close." };
   }
   return null;
 }
@@ -3716,10 +3723,13 @@ function buildIfvgStateForDetail(detail, candles, timeframe){
       ifvg.ui = { ...ifvg.ui, label: `${ifvg.inversionSide === "bullish" ? "Confirmed Bullish" : "Confirmed Bearish"} IFVG`, microcopy: "Retest and corroborated rejection confirmed IFVG context." };
     }
   }
-  if(failure){
+  if(failure?.detected){
+    ifvg.priorStateBeforeFailure = [IFVG_STATE.POSSIBLE, IFVG_STATE.VALID, IFVG_STATE.CONFIRMED].includes(ifvg.state) ? ifvg.state : null;
     ifvg.state = IFVG_STATE.FAILED;
-    ifvg.ui = { ...ifvg.ui, label: "Failed IFVG", microcopy: failure.reason };
-    ifvg.quality.reasons.push(failure.reason);
+    ifvg.failure = { detected: true, at: failure.at ?? null, price: Number.isFinite(Number(failure.price)) ? Number(failure.price) : null, reason: failure.reason || "IFVG failed after reclaim by close." };
+    const priorText = ifvg.priorStateBeforeFailure ? `Previously ${ifvg.priorStateBeforeFailure} IFVG later failed after reclaim.` : ifvg.failure.reason;
+    ifvg.ui = { ...ifvg.ui, label: "Failed IFVG", microcopy: priorText };
+    ifvg.quality.reasons.push(ifvg.failure.reason);
   }
   const threshold = getIfvgStaleThreshold(timeframe);
   if(Number.isFinite(breakEvent.barsSinceBreak) && breakEvent.barsSinceBreak > threshold && ![IFVG_STATE.CONFIRMED, IFVG_STATE.FAILED].includes(ifvg.state)){

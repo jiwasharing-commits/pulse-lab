@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 17:35",
-  "version": "v0.2.05",
+  "lastUpdated": "2026-05-31 17:55",
+  "version": "v0.2.06",
   "commitLabel": "manual",
-  "note": "Add recent broken FVG memory for IFVG state"
+  "note": "Add IFVG failure details state"
 }
