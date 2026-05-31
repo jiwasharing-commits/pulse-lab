@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 14:42";
+const APP_LAST_UPDATED = "2026-05-31 18:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -326,6 +326,154 @@ function createEmptyLiquidityOrderflowState(timeframe = "4H", role = "context", 
       dataWarnings: [],
     },
   };
+}
+function normalizeLiquidityPrice(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function getOrderflowCandleTime(candle){
+  return candle?.time ?? candle?.openTime ?? candle?.timestamp ?? null;
+}
+function createLiquidityDiagnosticWarning(message){
+  return String(message || "Liquidity/orderflow diagnostic unavailable.");
+}
+function isValidOrderflowCandle(candle){
+  const open = Number(candle?.open);
+  const high = Number(candle?.high);
+  const low = Number(candle?.low);
+  const close = Number(candle?.close);
+  return Number.isFinite(open) && Number.isFinite(high) && Number.isFinite(low) && Number.isFinite(close) && high >= low;
+}
+function getOrderflowCandleVolume(candle){
+  const volume = Number(candle?.volume);
+  return Number.isFinite(volume) && volume > 0 ? volume : 0;
+}
+function getClosedOrderflowCandles(candles){
+  if(!Array.isArray(candles) || candles.length < 2) return [];
+  return candles.slice(0, -1).filter(isValidOrderflowCandle);
+}
+function createUnavailableAnchoredVwap(reason = "Anchored VWAP is unavailable."){
+  return { available: false, value: null, anchorIndex: null, anchorTime: null, lifetimeBars: 0, cumulativeVolume: null, reason };
+}
+function calculateAnchoredVwap(candles, anchorIndex){
+  if(!Array.isArray(candles) || !candles.length) return createUnavailableAnchoredVwap("No candles available for anchored VWAP.");
+  const startIndex = Number(anchorIndex);
+  if(!Number.isInteger(startIndex) || startIndex < 0 || startIndex >= candles.length) return createUnavailableAnchoredVwap("Invalid anchored VWAP anchor index.");
+  let cumulativeVolume = 0;
+  let cumulativeTypicalVolume = 0;
+  let lifetimeBars = 0;
+  for(let i = startIndex; i < candles.length; i += 1){
+    const candle = candles[i];
+    if(!isValidOrderflowCandle(candle)) continue;
+    const volume = getOrderflowCandleVolume(candle);
+    if(volume <= 0) continue;
+    const typicalPrice = (Number(candle.high) + Number(candle.low) + Number(candle.close)) / 3;
+    cumulativeVolume += volume;
+    cumulativeTypicalVolume += typicalPrice * volume;
+    lifetimeBars += 1;
+  }
+  if(cumulativeVolume <= 0 || !Number.isFinite(cumulativeTypicalVolume)) return createUnavailableAnchoredVwap("Anchored VWAP unavailable because valid volume is missing.");
+  return { available: true, value: cumulativeTypicalVolume / cumulativeVolume, anchorIndex: startIndex, anchorTime: getOrderflowCandleTime(candles[startIndex]), lifetimeBars, cumulativeVolume, reason: null };
+}
+function classifyLiquidityAvwapSide(closePrice, avwapValue, tolerancePct = 0.001){
+  const close = Number(closePrice);
+  const avwap = Number(avwapValue);
+  const tolerance = Number(tolerancePct);
+  if(!Number.isFinite(close) || !Number.isFinite(avwap) || avwap <= 0) return LIQUIDITY_AVWAP_SIDE.UNKNOWN;
+  const distancePct = Math.abs(close - avwap) / avwap;
+  if(distancePct <= (Number.isFinite(tolerance) && tolerance >= 0 ? tolerance : 0.001)) return LIQUIDITY_AVWAP_SIDE.AROUND;
+  return close > avwap ? LIQUIDITY_AVWAP_SIDE.ABOVE : LIQUIDITY_AVWAP_SIDE.BELOW;
+}
+function calculateRollingMedianVolume(candles, index, lookback = 20){
+  if(!Array.isArray(candles) || !candles.length) return null;
+  const endIndex = Math.min(Math.max(Number(index) || 0, 0), candles.length);
+  const startIndex = Math.max(0, endIndex - Math.max(Number(lookback) || 20, 1));
+  const volumes = candles.slice(startIndex, endIndex).map(getOrderflowCandleVolume).filter((v)=>Number.isFinite(v) && v > 0);
+  if(!volumes.length) return null;
+  const sorted = [...volumes].sort((a,b)=>a-b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+function calculateLiquidityVolumeStatus(candles, index, lookback = 20){
+  const baselineMethod = `rollingMedian${Math.max(Number(lookback) || 20, 1)}`;
+  if(!Array.isArray(candles) || !candles.length) return { baselineMethod, baseline: null, current: null, ratio: null, status: LIQUIDITY_VOLUME_STATUS.UNKNOWN };
+  const candle = candles[index];
+  const current = getOrderflowCandleVolume(candle);
+  const baseline = calculateRollingMedianVolume(candles, index, lookback);
+  if(!Number.isFinite(current) || current <= 0 || !Number.isFinite(baseline) || baseline <= 0) return { baselineMethod, baseline, current: current || null, ratio: null, status: LIQUIDITY_VOLUME_STATUS.UNKNOWN };
+  const ratio = current / baseline;
+  const status = ratio >= 2 ? LIQUIDITY_VOLUME_STATUS.STRONG_SPIKE : (ratio >= 1.5 ? LIQUIDITY_VOLUME_STATUS.SPIKE : LIQUIDITY_VOLUME_STATUS.NORMAL);
+  return { baselineMethod, baseline, current, ratio, status };
+}
+function calculateAverageRange(candles, index, lookback = 14){
+  if(!Array.isArray(candles) || !candles.length) return null;
+  const endIndex = Math.min(Math.max(Number(index) || 0, 0), candles.length);
+  const startIndex = Math.max(0, endIndex - Math.max(Number(lookback) || 14, 1));
+  const ranges = candles.slice(startIndex, endIndex)
+    .filter(isValidOrderflowCandle)
+    .map((c)=>Number(c.high) - Number(c.low))
+    .filter((range)=>Number.isFinite(range) && range > 0);
+  if(!ranges.length) return null;
+  return ranges.reduce((sum, range)=>sum + range, 0) / ranges.length;
+}
+function calculateLiquidityBuffer(candles, index, options = {}){
+  const rangePct = Number.isFinite(Number(options.rangePct)) ? Number(options.rangePct) : 0.10;
+  const fallbackPct = Number.isFinite(Number(options.fallbackPct)) ? Number(options.fallbackPct) : 0.001;
+  const lookback = Number.isFinite(Number(options.lookback)) ? Number(options.lookback) : 14;
+  const averageRange = calculateAverageRange(candles, index, lookback);
+  if(Number.isFinite(averageRange) && averageRange > 0) return { value: averageRange * rangePct, method: "averageRangePct", averageRange, pct: rangePct };
+  const price = normalizeLiquidityPrice(candles?.[index]?.close) || normalizeLiquidityPrice(candles?.[index]?.open) || null;
+  return { value: price ? price * fallbackPct : null, method: "fallbackPct", averageRange: null, pct: fallbackPct };
+}
+function sortLiquidityCandidateLevelsByRecencyOrWeight(levels){
+  return [...(Array.isArray(levels) ? levels : [])].sort((a,b)=>(Number(b?.weight || 0) - Number(a?.weight || 0)) || (Number(b?.ref?.index ?? -1) - Number(a?.ref?.index ?? -1)) || String(a?.id || "").localeCompare(String(b?.id || "")));
+}
+function buildLiquidityCandidateLevels(candles, srSummary, mapData, options = {}){
+  const maxCandidates = Math.max(1, Number(options.maxCandidates) || 20);
+  const levels = [];
+  const closedCandles = getClosedOrderflowCandles(candles);
+  const addLevel = (candidate)=>{
+    if(!candidate || !candidate.id) return;
+    const price = normalizeLiquidityPrice(candidate.price);
+    const lower = normalizeLiquidityPrice(candidate.lower);
+    const upper = normalizeLiquidityPrice(candidate.upper);
+    if(!price && !(lower && upper && upper >= lower)) return;
+    levels.push({
+      id: candidate.id,
+      type: candidate.type,
+      side: candidate.side,
+      price,
+      lower: lower ?? price,
+      upper: upper ?? price,
+      timeframe: candidate.timeframe || "4H",
+      source: candidate.source,
+      quality: candidate.quality || "basic",
+      weight: Number.isFinite(Number(candidate.weight)) ? Number(candidate.weight) : 1,
+      ref: candidate.ref || null,
+    });
+  };
+  if(closedCandles.length >= 5 && typeof find4hSwings === "function"){
+    const swings = find4hSwings(closedCandles);
+    (swings.highs || []).slice(-6).forEach((swing)=>addLevel({ id: `h4-swing-high-${swing.time ?? swing.index}`, type: "swingHigh", side: "high", price: swing.price, timeframe: "4H", source: "swing", quality: "qualified", weight: 3, ref: swing }));
+    (swings.lows || []).slice(-6).forEach((swing)=>addLevel({ id: `h4-swing-low-${swing.time ?? swing.index}`, type: "swingLow", side: "low", price: swing.price, timeframe: "4H", source: "swing", quality: "qualified", weight: 3, ref: swing }));
+  }
+  const addSrZone = (zone, type, side, idSuffix, weight)=>{
+    if(!zone) return;
+    addLevel({ id: `h4-${type}-${idSuffix}`, type, side, price: normalizeLiquidityPrice(zone.center) || normalizeLiquidityPrice(zone.price) || ((normalizeLiquidityPrice(zone.lower) && normalizeLiquidityPrice(zone.upper)) ? (Number(zone.lower) + Number(zone.upper)) / 2 : null), lower: zone.lower, upper: zone.upper, timeframe: "4H", source: "supportResistance", quality: "qualified", weight, ref: zone });
+  };
+  addSrZone(srSummary?.support?.nearest, "support", "zone", "nearest", 2.5);
+  addSrZone(srSummary?.support?.strongest, "support", "zone", "strongest", 2.25);
+  addSrZone(srSummary?.resistance?.nearest, "resistance", "zone", "nearest", 2.5);
+  addSrZone(srSummary?.resistance?.strongest, "resistance", "zone", "strongest", 2.25);
+  const mapRows = [...(mapData?.upside || []), ...(mapData?.downside || [])].slice(0, 8);
+  mapRows.forEach((row, index)=>addLevel({ id: `market-map-zone-${row?.source || "row"}-${index}`, type: "marketMapZone", side: "zone", price: normalizeLiquidityPrice(row?.center) || ((normalizeLiquidityPrice(row?.lower) && normalizeLiquidityPrice(row?.upper)) ? (Number(row.lower) + Number(row.upper)) / 2 : null), lower: row?.lower, upper: row?.upper, timeframe: row?.timeframe || "4H", source: "marketMap", quality: "basic", weight: 1, ref: { source: row?.source || null, label: row?.label || null } }));
+  const seen = new Set();
+  return sortLiquidityCandidateLevelsByRecencyOrWeight(levels).filter((level)=>{
+    const key = `${level.source}:${level.type}:${level.side}:${level.lower}:${level.upper}:${level.price}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, maxCandidates);
 }
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
