@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 16:45";
+const APP_LAST_UPDATED = "2026-05-31 17:10";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -152,6 +152,31 @@ const TRADE_SCENARIO_STATUS = {
   INVALIDATED: "Invalidated",
 };
 const TRADE_SCENARIO_DISCLAIMER = "Scenario planning only; not a direct trading signal.";
+const IFVG_STATE = {
+  NONE: "none",
+  POSSIBLE: "possible",
+  VALID: "valid",
+  CONFIRMED: "confirmed",
+  FAILED: "failed",
+};
+const IFVG_RETEST_STATUS = {
+  NONE: "none",
+  BOUNDARY: "boundary",
+  INSIDE: "inside",
+  CE: "ce",
+  FULL: "full",
+};
+const IFVG_REJECTION_STATUS = {
+  NONE: "none",
+  CANDIDATE: "candidate",
+  CONFIRMED: "confirmed",
+};
+const IFVG_QUALITY_BAND = {
+  WEAK: "weak",
+  USABLE: "usable",
+  STRONG: "strong",
+  HIGH_CONFLUENCE: "highConfluence",
+};
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), srSummary: null },
@@ -3316,6 +3341,355 @@ function buildFvgDetailsForTimeframe(zones, candles, timeframe){
   if(!Array.isArray(zones) || !zones.length || !Array.isArray(candles) || !candles.length) return [];
   return zones.map((zone)=>buildFvgDetail(zone, candles, timeframe));
 }
+function createEmptyIfvgState(detail, timeframe){
+  const zone = getFvgDetailZone(detail);
+  const originalSide = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  const ce = Number.isFinite(detail?.cePrice) ? detail.cePrice : getFvgCePrice(zone);
+  const width = Number.isFinite(lower) && Number.isFinite(upper) ? upper - lower : null;
+  const midpoint = Number.isFinite(lower) && Number.isFinite(upper) ? (lower + upper) / 2 : null;
+  return {
+    state: IFVG_STATE.NONE,
+    stale: false,
+    timeframe: timeframe || detail?.timeframe || detail?.sourceZone?.timeframe || null,
+    originalFvgId: detail?.key || (zone ? getFvgKey(zone, timeframe || detail?.timeframe) : null),
+    originalSide: originalSide || null,
+    inversionSide: getIfvgInversionSide(originalSide),
+    zone: {
+      lower: Number.isFinite(lower) ? lower : null,
+      upper: Number.isFinite(upper) ? upper : null,
+      ce: Number.isFinite(ce) ? ce : null,
+      width: Number.isFinite(width) && width > 0 ? width : null,
+      widthPct: Number.isFinite(width) && width > 0 && Number.isFinite(midpoint) && midpoint > 0 ? (width / midpoint) * 100 : null,
+    },
+    breakEvent: {
+      detected: false,
+      method: "none",
+      direction: null,
+      at: null,
+      candleTimeframe: timeframe || detail?.timeframe || null,
+      closePrice: null,
+      extremePrice: null,
+      barsSinceBreak: null,
+    },
+    retest: {
+      status: IFVG_RETEST_STATUS.NONE,
+      firstAt: null,
+      lastAt: null,
+      touchCount: 0,
+      maxPenetrationPct: 0,
+      barsFromBreak: null,
+    },
+    rejection: {
+      status: IFVG_REJECTION_STATUS.NONE,
+      at: null,
+      closeAway: false,
+      closeAwayPctZone: null,
+      wickReject: false,
+      pattern: null,
+      displacement: null,
+      volumeRelative: null,
+    },
+    structure: {
+      bosAligned: false,
+      chochAligned: false,
+      markerRef: null,
+    },
+    confluence: {
+      higherTimeframeAligned: false,
+      higherTimeframeRefs: [],
+      srOverlap: null,
+      conflict: null,
+    },
+    quality: {
+      score: 0,
+      band: IFVG_QUALITY_BAND.WEAK,
+      reasons: [],
+    },
+    ui: {
+      label: "No IFVG",
+      microcopy: "No confirmed inversion context.",
+      overlayStyle: "none",
+      showByDefault: false,
+    },
+    meta: {
+      createdAt: null,
+      updatedAt: Date.now(),
+      source: "ifvg-engine-v1",
+    },
+  };
+}
+function getIfvgInversionSide(originalSide){
+  if(originalSide === "bullish") return "bearish";
+  if(originalSide === "bearish") return "bullish";
+  return null;
+}
+function getIfvgBreakBoundary(detail){
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  if(!zone || !side) return null;
+  return side === "bullish" ? zone.lower : zone.upper;
+}
+function getIfvgReclaimBoundary(detail){
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  if(!zone || !side) return null;
+  return side === "bullish" ? zone.upper : zone.lower;
+}
+function getIfvgClosedCandlesAfterFvg(detail, candles){
+  const zone = detail?.sourceZone || detail;
+  const after = getCandlesAfterFvg(zone, candles);
+  if(!Array.isArray(after) || !after.length) return [];
+  return after.length > 1 ? after.slice(0, -1) : [];
+}
+function detectIfvgBreakEvent(detail, candles, timeframe){
+  const empty = createEmptyIfvgState(detail, timeframe).breakEvent;
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const closed = getIfvgClosedCandlesAfterFvg(detail, candles);
+  if(!zone || !side || !closed.length) return empty;
+  let wickEvent = null;
+  for(let i=0;i<closed.length;i++){
+    const candle = closed[i] || {};
+    const close = Number(candle.close);
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const time = candle.time ?? null;
+    if(side === "bullish"){
+      if(Number.isFinite(close) && close < zone.lower){
+        return { detected: true, method: "close", direction: "down", at: time, candleTimeframe: timeframe || detail?.timeframe || null, closePrice: close, extremePrice: Number.isFinite(low) ? low : null, barsSinceBreak: closed.length - i - 1 };
+      }
+      if(!wickEvent && Number.isFinite(low) && low < zone.lower && (!Number.isFinite(close) || close >= zone.lower)){
+        wickEvent = { detected: true, method: "wick", direction: "down", at: time, candleTimeframe: timeframe || detail?.timeframe || null, closePrice: Number.isFinite(close) ? close : null, extremePrice: low, barsSinceBreak: closed.length - i - 1 };
+      }
+    } else if(side === "bearish"){
+      if(Number.isFinite(close) && close > zone.upper){
+        return { detected: true, method: "close", direction: "up", at: time, candleTimeframe: timeframe || detail?.timeframe || null, closePrice: close, extremePrice: Number.isFinite(high) ? high : null, barsSinceBreak: closed.length - i - 1 };
+      }
+      if(!wickEvent && Number.isFinite(high) && high > zone.upper && (!Number.isFinite(close) || close <= zone.upper)){
+        wickEvent = { detected: true, method: "wick", direction: "up", at: time, candleTimeframe: timeframe || detail?.timeframe || null, closePrice: Number.isFinite(close) ? close : null, extremePrice: high, barsSinceBreak: closed.length - i - 1 };
+      }
+    }
+  }
+  return wickEvent || empty;
+}
+function classifyIfvgRetest(detail, breakEvent, candles){
+  const base = createEmptyIfvgState(detail, breakEvent?.candleTimeframe).retest;
+  if(!breakEvent?.detected || breakEvent.method !== "close") return base;
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const ce = Number.isFinite(detail?.cePrice) ? detail.cePrice : getFvgCePrice(zone);
+  const width = zone ? zone.upper - zone.lower : null;
+  const closed = getIfvgClosedCandlesAfterFvg(detail, candles);
+  if(!zone || !side || !Number.isFinite(ce) || !Number.isFinite(width) || width <= 0 || !closed.length) return base;
+  const breakIndex = closed.findIndex((c)=>c?.time === breakEvent.at);
+  if(breakIndex < 0) return base;
+  const afterBreak = closed.slice(breakIndex + 1);
+  let status = IFVG_RETEST_STATUS.NONE;
+  let firstAt = null;
+  let lastAt = null;
+  let touchCount = 0;
+  let maxPenetrationPct = 0;
+  let barsFromBreak = null;
+  afterBreak.forEach((c, idx)=>{
+    const high = Number(c?.high);
+    const low = Number(c?.low);
+    let candleStatus = IFVG_RETEST_STATUS.NONE;
+    let penetration = 0;
+    if(side === "bullish" && Number.isFinite(high)){
+      if(high >= zone.upper){ candleStatus = IFVG_RETEST_STATUS.FULL; penetration = width; }
+      else if(high >= ce){ candleStatus = IFVG_RETEST_STATUS.CE; penetration = ce - zone.lower; }
+      else if(high > zone.lower){ candleStatus = IFVG_RETEST_STATUS.INSIDE; penetration = high - zone.lower; }
+      else if(high >= zone.lower){ candleStatus = IFVG_RETEST_STATUS.BOUNDARY; penetration = 0; }
+    } else if(side === "bearish" && Number.isFinite(low)){
+      if(low <= zone.lower){ candleStatus = IFVG_RETEST_STATUS.FULL; penetration = width; }
+      else if(low <= ce){ candleStatus = IFVG_RETEST_STATUS.CE; penetration = zone.upper - ce; }
+      else if(low < zone.upper){ candleStatus = IFVG_RETEST_STATUS.INSIDE; penetration = zone.upper - low; }
+      else if(low <= zone.upper){ candleStatus = IFVG_RETEST_STATUS.BOUNDARY; penetration = 0; }
+    }
+    if(candleStatus !== IFVG_RETEST_STATUS.NONE){
+      touchCount += 1;
+      if(firstAt === null){ firstAt = c?.time ?? null; barsFromBreak = idx + 1; }
+      lastAt = c?.time ?? null;
+      maxPenetrationPct = Math.max(maxPenetrationPct, clampNumber(penetration / width, 0, 1) * 100);
+      const rank = { none: 0, boundary: 1, inside: 2, ce: 3, full: 4 };
+      if(rank[candleStatus] > rank[status]) status = candleStatus;
+    }
+  });
+  return { status, firstAt, lastAt, touchCount, maxPenetrationPct, barsFromBreak };
+}
+function classifyIfvgRejection(detail, breakEvent, retest, candles){
+  const base = createEmptyIfvgState(detail, breakEvent?.candleTimeframe).rejection;
+  if(!breakEvent?.detected || breakEvent.method !== "close" || ![IFVG_RETEST_STATUS.INSIDE, IFVG_RETEST_STATUS.CE, IFVG_RETEST_STATUS.FULL].includes(retest?.status)) return base;
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const width = zone ? zone.upper - zone.lower : null;
+  const closed = getIfvgClosedCandlesAfterFvg(detail, candles);
+  if(!zone || !side || !Number.isFinite(width) || width <= 0 || !closed.length) return base;
+  const retestIndex = closed.findIndex((c)=>c?.time === retest.lastAt);
+  if(retestIndex < 0) return base;
+  for(let i=retestIndex;i<closed.length;i++){
+    const c = closed[i] || {};
+    const close = Number(c.close);
+    const high = Number(c.high);
+    const low = Number(c.low);
+    if(side === "bullish" && Number.isFinite(close) && close < zone.lower){
+      const closeAwayPctZone = clampNumber((zone.lower - close) / width, 0, 10) * 100;
+      const wickReject = Number.isFinite(high) && high > zone.lower;
+      return { ...base, status: IFVG_REJECTION_STATUS.CANDIDATE, at: c.time ?? null, closeAway: true, closeAwayPctZone, wickReject, pattern: "Bearish close-away", volumeRelative: calculateIfvgVolumeRelative(c, closed, i) };
+    }
+    if(side === "bearish" && Number.isFinite(close) && close > zone.upper){
+      const closeAwayPctZone = clampNumber((close - zone.upper) / width, 0, 10) * 100;
+      const wickReject = Number.isFinite(low) && low < zone.upper;
+      return { ...base, status: IFVG_REJECTION_STATUS.CANDIDATE, at: c.time ?? null, closeAway: true, closeAwayPctZone, wickReject, pattern: "Bullish close-away", volumeRelative: calculateIfvgVolumeRelative(c, closed, i) };
+    }
+  }
+  return base;
+}
+function calculateIfvgVolumeRelative(candle, candles, index, lookback = 20){
+  const volume = Number(candle?.volume);
+  if(!Number.isFinite(volume) || volume <= 0 || !Array.isArray(candles) || index <= 0) return null;
+  const start = Math.max(0, index - lookback);
+  const sample = candles.slice(start, index).map((c)=>Number(c.volume)).filter((v)=>Number.isFinite(v) && v > 0);
+  if(sample.length < Math.min(5, lookback)) return null;
+  const avg = sample.reduce((a,b)=>a+b,0) / sample.length;
+  return avg > 0 ? volume / avg : null;
+}
+function detectIfvgReclaimFailure(detail, breakEvent, candles){
+  if(!breakEvent?.detected || breakEvent.method !== "close") return null;
+  const zone = getFvgDetailZone(detail);
+  const side = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  const closed = getIfvgClosedCandlesAfterFvg(detail, candles);
+  if(!zone || !side || !closed.length) return null;
+  const breakIndex = closed.findIndex((c)=>c?.time === breakEvent.at);
+  if(breakIndex < 0) return null;
+  for(let i=breakIndex + 1;i<closed.length;i++){
+    const close = Number(closed[i]?.close);
+    if(side === "bullish" && Number.isFinite(close) && close > zone.upper) return { at: closed[i]?.time ?? null, price: close, reason: "Closed back above the opposite edge after bearish inversion attempt." };
+    if(side === "bearish" && Number.isFinite(close) && close < zone.lower) return { at: closed[i]?.time ?? null, price: close, reason: "Closed back below the opposite edge after bullish inversion attempt." };
+  }
+  return null;
+}
+function isIfvgCloseAwayStrong(ifvg){
+  return Number(ifvg?.rejection?.closeAwayPctZone) >= 25;
+}
+function getIfvgCorroborators(detail, ifvg, candles, timeframe){
+  const corroborators = [];
+  const side = ifvg?.inversionSide;
+  const rejectionAt = ifvg?.rejection?.at;
+  const closed = getIfvgClosedCandlesAfterFvg(detail, candles);
+  const rejectionIndex = closed.findIndex((c)=>c?.time === rejectionAt);
+  if(rejectionIndex >= 0){
+    const candle = closed[rejectionIndex];
+    const body = Math.abs(Number(candle.close) - Number(candle.open));
+    const range = Number(candle.high) - Number(candle.low);
+    const avgBody = calculateAverageBodySize(closed, rejectionIndex, 20);
+    const avgRange = calculateAverageRangeSize(closed, rejectionIndex, 20);
+    const candleDirection = candle.close > candle.open ? "bullish" : (candle.close < candle.open ? "bearish" : null);
+    const hasExpansion = candleDirection === side && ((Number.isFinite(avgBody) && avgBody > 0 && body / avgBody >= 1.5) || (Number.isFinite(avgRange) && avgRange > 0 && range / avgRange >= 1.5));
+    if(hasExpansion) corroborators.push({ type: "displacement", reason: `${timeframe || detail?.timeframe || "FVG"} IFVG rejection used an aligned expansion candle.` });
+  }
+  if(Number(ifvg?.rejection?.volumeRelative) >= 1.2) corroborators.push({ type: "volume", reason: "Rejection volume was above recent average." });
+  const structureStatus = timeframe === "4H" ? marketPreparationState.h4?.structureStatus : null;
+  if(structureStatus && side){
+    const aligned = side === "bullish" ? /Bullish (BOS|CHoCH)/i.test(structureStatus) : /Bearish (BOS|CHoCH)/i.test(structureStatus);
+    if(aligned) corroborators.push({ type: /CHoCH/i.test(structureStatus) ? "choch" : "bos", reason: `Latest ${timeframe} structure context is ${structureStatus}.`, markerRef: structureStatus });
+  }
+  return corroborators;
+}
+function findIfvgSrConfluence(detail, ifvg){
+  if(!ifvg?.inversionSide || !ifvg?.zone) return null;
+  const pseudo = { ...detail, direction: ifvg.inversionSide, detailStatus: "Fresh", sourceZone: { ...(detail?.sourceZone || {}), lower: ifvg.zone.lower, upper: ifvg.zone.upper, type: `${ifvg.inversionSide === "bullish" ? "Bullish" : "Bearish"} IFVG` } };
+  return findSrConfluenceForFvg(pseudo);
+}
+function scoreIfvgQuality(detail, ifvg, candles, timeframe){
+  let score = 0;
+  const reasons = [];
+  const add = (points, reason)=>{ score += points; if(reason) reasons.push(reason); };
+  if([IFVG_RETEST_STATUS.INSIDE, IFVG_RETEST_STATUS.CE, IFVG_RETEST_STATUS.FULL].includes(ifvg?.retest?.status)) add(1, "Retested inside the inversion zone.");
+  if(ifvg?.retest?.status === IFVG_RETEST_STATUS.CE) add(1, "Retested the 50% / CE area.");
+  if(ifvg?.retest?.status === IFVG_RETEST_STATUS.FULL) reasons.push("Full-zone retest; treat context carefully.");
+  if(ifvg?.rejection?.wickReject) add(1, "Rejected after probing back into the zone.");
+  if(ifvg?.rejection?.closeAway && isIfvgCloseAwayStrong(ifvg)) add(2, "Strong close-away rejection from the IFVG zone.");
+  const corroborators = getIfvgCorroborators(detail, ifvg, candles, timeframe);
+  corroborators.forEach((c)=>{
+    if(c.type === "bos" || c.type === "choch") add(2, c.reason);
+    else if(c.type === "displacement") add(1, c.reason);
+    else if(c.type === "volume") add(1, c.reason);
+  });
+  const sr = findIfvgSrConfluence(detail, ifvg);
+  if(sr){ add(1, `IFVG inversion side is near ${sr.zone.label}.`); }
+  const conflict = marketPreparationState.fvgMtfContext?.conflict;
+  if(conflict?.ok){ score -= 2; reasons.push(`MTF conflict caution: ${conflict.label}.`); }
+  const band = score >= 7 ? IFVG_QUALITY_BAND.HIGH_CONFLUENCE : (score >= 5 ? IFVG_QUALITY_BAND.STRONG : (score >= 3 ? IFVG_QUALITY_BAND.USABLE : IFVG_QUALITY_BAND.WEAK));
+  return { score, band, reasons, corroborators, srOverlap: sr ? { label: sr.zone.label, overlap: sr.overlap, timeframe: sr.zone.timeframe } : null, conflict: conflict?.ok ? { label: conflict.label, severity: conflict.severity } : null };
+}
+function getIfvgStaleThreshold(timeframe){
+  const tf = String(timeframe || "").toLowerCase();
+  if(tf.includes("week")) return 12;
+  if(tf.includes("daily") || tf === "1d") return 30;
+  if(tf.includes("4h")) return 60;
+  return 30;
+}
+function buildIfvgStateForDetail(detail, candles, timeframe){
+  const ifvg = createEmptyIfvgState(detail, timeframe);
+  const zone = getFvgDetailZone(detail);
+  const originalSide = ifvg.originalSide;
+  if(!zone || !originalSide || !Array.isArray(candles) || !candles.length){
+    return ifvg;
+  }
+  const breakEvent = detectIfvgBreakEvent(detail, candles, timeframe);
+  ifvg.breakEvent = breakEvent;
+  if(!breakEvent.detected){
+    return ifvg;
+  }
+  if(breakEvent.method === "wick"){
+    ifvg.ui = { ...ifvg.ui, label: "Pierced FVG", microcopy: "Wick-only breach; no confirmed inversion context." };
+    return ifvg;
+  }
+  ifvg.state = IFVG_STATE.POSSIBLE;
+  ifvg.meta.createdAt = breakEvent.at;
+  ifvg.ui = { ...ifvg.ui, label: `${ifvg.inversionSide === "bullish" ? "Possible Bullish" : "Possible Bearish"} IFVG`, microcopy: "Closed candle broke the FVG; waiting for retest confirmation." };
+  const failure = detectIfvgReclaimFailure(detail, breakEvent, candles);
+  const retest = classifyIfvgRetest(detail, breakEvent, candles);
+  ifvg.retest = retest;
+  if([IFVG_RETEST_STATUS.INSIDE, IFVG_RETEST_STATUS.CE, IFVG_RETEST_STATUS.FULL].includes(retest.status)){
+    ifvg.state = IFVG_STATE.VALID;
+    ifvg.ui = { ...ifvg.ui, label: `${ifvg.inversionSide === "bullish" ? "Valid Bullish" : "Valid Bearish"} IFVG`, microcopy: "IFVG retested the zone; waiting for corroborated rejection." };
+  }
+  const rejection = classifyIfvgRejection(detail, breakEvent, retest, candles);
+  ifvg.rejection = rejection;
+  const quality = scoreIfvgQuality(detail, ifvg, candles, timeframe);
+  ifvg.quality = { score: quality.score, band: quality.band, reasons: quality.reasons };
+  ifvg.structure = { bosAligned: quality.corroborators.some((c)=>c.type === "bos"), chochAligned: quality.corroborators.some((c)=>c.type === "choch"), markerRef: quality.corroborators.find((c)=>c.markerRef)?.markerRef || null };
+  ifvg.confluence = { higherTimeframeAligned: false, higherTimeframeRefs: [], srOverlap: quality.srOverlap, conflict: quality.conflict };
+  if(rejection.closeAway){
+    const displacementCorroborator = quality.corroborators.find((c)=>c.type === "displacement") || null;
+    ifvg.rejection.displacement = displacementCorroborator ? displacementCorroborator.reason : null;
+    const hasCorroborator = quality.corroborators.length > 0;
+    ifvg.rejection.status = hasCorroborator && quality.score >= 4 ? IFVG_REJECTION_STATUS.CONFIRMED : IFVG_REJECTION_STATUS.CANDIDATE;
+    if(ifvg.rejection.status === IFVG_REJECTION_STATUS.CONFIRMED){
+      ifvg.state = IFVG_STATE.CONFIRMED;
+      ifvg.ui = { ...ifvg.ui, label: `${ifvg.inversionSide === "bullish" ? "Confirmed Bullish" : "Confirmed Bearish"} IFVG`, microcopy: "Retest and corroborated rejection confirmed IFVG context." };
+    }
+  }
+  if(failure){
+    ifvg.state = IFVG_STATE.FAILED;
+    ifvg.ui = { ...ifvg.ui, label: "Failed IFVG", microcopy: failure.reason };
+    ifvg.quality.reasons.push(failure.reason);
+  }
+  const threshold = getIfvgStaleThreshold(timeframe);
+  if(Number.isFinite(breakEvent.barsSinceBreak) && breakEvent.barsSinceBreak > threshold && ![IFVG_STATE.CONFIRMED, IFVG_STATE.FAILED].includes(ifvg.state)){
+    ifvg.stale = true;
+    ifvg.quality.reasons.push("IFVG context is stale; no timely confirmation after break.");
+  }
+  return ifvg;
+}
+function enrichFvgDetailsWithIfvg(details, candles, timeframe){
+  if(!Array.isArray(details) || !details.length) return [];
+  return details.map((detail)=>({ ...detail, ifvg: buildIfvgStateForDetail(detail, candles, timeframe || detail?.timeframe) }));
+}
 const FVG_REACTION_FIELD_CONFIG = {
   touchedAt: { key: "lastTouchedFvg", reactionType: "Touched", priority: 1 },
   mitigatedAt: { key: "lastMitigatedFvg", reactionType: "Mitigated", priority: 2 },
@@ -4472,7 +4846,7 @@ function updateDailyMarketContext(candles, mode){
       const distance = inside ? 0 : Math.abs(current-nearest)/current*100;
       return { ...f, distancePct: distance };
     }).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct) || ((a.status==='Unfilled'?0:1)-(b.status==='Unfilled'?0:1)) || b.index-a.index);
-    const fvgDetails = buildFvgDetailsForTimeframe(fvgZones, candles, "Daily");
+    const fvgDetails = enrichFvgDetailsWithIfvg(buildFvgDetailsForTimeframe(fvgZones, candles, "Daily"), candles, "Daily");
     const recentFvgReaction = buildRecentFvgReactionMemory(buildFvgDetailsForTimeframe(rawDailyFvgZones, candles, "Daily"), current, "Daily");
     const srSummary = scanDailySupportResistance(candles);
     const pattern = detectDailyPattern(candles, mode);
@@ -5194,7 +5568,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
-    const fvgDetails = buildFvgDetailsForTimeframe(active4hFvgs, candles, "4H");
+    const fvgDetails = enrichFvgDetailsWithIfvg(buildFvgDetailsForTimeframe(active4hFvgs, candles, "4H"), candles, "4H");
     const layer=ensure4hFvgLayer();
     const visual = layer ? renderClean4hFvgOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, overlayLayer: layer, candles, activeFvgs: active4hFvgs, fvgDetails, maxBullish: 2, maxBearish: 2 }) : { selected: [], selectedBullish: [], selectedBearish: [], visualMode: "Failed" };
     const nearestDetail = findFvgDetailForZone(nearest, "4H", fvgDetails);
@@ -5625,7 +5999,7 @@ async function loadDashboard(){
       renderPotentialBiasScanner(dataset, metrics);
       const activeFvgs = renderFvgPanel(dataset);
       const weeklySrSummary = scanWeeklySupportResistance(dataset);
-      const weeklyFvgDetails = buildFvgDetailsForTimeframe(activeFvgs, dataset, "Weekly");
+      const weeklyFvgDetails = enrichFvgDetailsWithIfvg(buildFvgDetailsForTimeframe(activeFvgs, dataset, "Weekly"), dataset, "Weekly");
       const weeklyRecentFvgReaction = buildRecentFvgReactionMemory(buildFvgDetailsForTimeframe(scanWeeklyFvg(dataset), dataset, "Weekly"), dataset[dataset.length-1]?.close, "Weekly");
       renderWeeklySupportResistance(weeklySrSummary);
       renderWeeklyCandleCharacter(dataset);
