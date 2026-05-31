@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 16:00";
+const APP_LAST_UPDATED = "2026-05-31 16:15";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1297,8 +1297,8 @@ function getParentFvgBrokenContext(){
   const parentZone = context.parentZone || {};
   const typeText = String(parentZone.type || parentZone.label || "").toLowerCase();
   const parentDirection = conflict.htfDirection || parentZone.direction || (typeText.includes("bullish") ? "bullish" : (typeText.includes("bearish") ? "bearish" : null));
-  if(parentDirection === "bullish") return { isBroken: true, parentDirection, brokenDirection: "down", supportsSide: "sell", blocksSide: "buy", reason: "Bullish parent FVG broken; bearish context supported." };
-  if(parentDirection === "bearish") return { isBroken: true, parentDirection, brokenDirection: "up", supportsSide: "buy", blocksSide: "sell", reason: "Bearish parent FVG broken; bullish context supported." };
+  if(parentDirection === "bullish") return { isBroken: true, parentDirection, brokenDirection: "down", supportsSide: "sell", blocksSide: "buy", reason: "Broken bullish parent FVG may support bearish context." };
+  if(parentDirection === "bearish") return { isBroken: true, parentDirection, brokenDirection: "up", supportsSide: "buy", blocksSide: "sell", reason: "Broken bearish parent FVG may support bullish context." };
   return { isBroken: true, parentDirection: null, brokenDirection: null, supportsSide: null, blocksSide: "both", reason: "Parent FVG broken direction unclear." };
 }
 function doesParentFvgBrokenBlockSide(side){
@@ -1373,7 +1373,7 @@ function buildTradeScenarioForSide(side, mapData){
   warnings.push(...hard.warnings);
   const timing = getScenarioTimingGate(side);
   const entryNear = isScenarioEntryNear(entryRow, currentPrice);
-  if(!entryNear) warnings.push("Current price is not near/inside entry zone.");
+  if(!entryNear) warnings.push("Current price has not reached the entry zone.");
   const invalidated = !!invalidation && ((side === "buy" && currentPrice < invalidation.price) || (side === "sell" && currentPrice > invalidation.price));
   let status = TRADE_SCENARIO_STATUS.NO_TRADE;
   let reason = `${side === "buy" ? "Buy" : "Sell"} scenario is not available.`;
@@ -1400,7 +1400,7 @@ function buildTradeScenarioForSide(side, mapData){
     reason = "Scenario zone, invalidation, and TP1 are available, but active conditions are not fully confirmed.";
   }
   const riskLabel = status === TRADE_SCENARIO_STATUS.ACTIVE ? (isScenarioQualityAtLeast(entryRow, "High-Probability") ? "Low" : "Medium") : (status === TRADE_SCENARIO_STATUS.CANDIDATE ? "Medium" : (status === TRADE_SCENARIO_STATUS.NO_TRADE ? "No Trade" : "High"));
-  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Requires bullish 1H timing confirmation and price near/supporting entry zone." : "Requires bearish 1H timing confirmation and price near/resistance entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
+  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Wait for bullish 1H confirmation near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
 }
 function selectPrimaryTradeScenario(buyScenario, sellScenario){
   const rank = { [TRADE_SCENARIO_STATUS.ACTIVE]: 4, [TRADE_SCENARIO_STATUS.CANDIDATE]: 3, [TRADE_SCENARIO_STATUS.WAIT]: 2, [TRADE_SCENARIO_STATUS.INVALIDATED]: 1, [TRADE_SCENARIO_STATUS.NO_TRADE]: 0 };
@@ -1431,9 +1431,18 @@ function refreshTradePlanScenario(mapData = marketPreparationState.map){
   });
   return marketPreparationState.tradePlanScenario;
 }
-function formatScenarioSide(side){
-  if(side === "buy") return "Buy Scenario";
-  if(side === "sell") return "Sell Scenario";
+function formatScenarioSide(side, status){
+  const normalizedStatus = String(status || "").toLowerCase();
+  if(side === "buy"){
+    if(normalizedStatus.includes("active")) return "Active Buy Scenario";
+    if(normalizedStatus.includes("invalid")) return "Invalidated Buy Setup";
+    return "Potential Buy Setup";
+  }
+  if(side === "sell"){
+    if(normalizedStatus.includes("active")) return "Active Sell Scenario";
+    if(normalizedStatus.includes("invalid")) return "Invalidated Sell Setup";
+    return "Potential Sell Setup";
+  }
   return "Neutral / No Trade";
 }
 function formatScenarioStatus(status){
@@ -1450,11 +1459,24 @@ function getScenarioStatusClass(status){
   if(key.includes("invalid")) return "status-invalidated";
   return "status-no-trade";
 }
+function formatScenarioActivationCondition(scenario){
+  const side = scenario?.side;
+  const status = String(scenario?.status || "").toLowerCase();
+  const timingDirection = scenario?.evidence?.timingDirection;
+  if(side === "buy" && timingDirection === "bearish") return "Current 1H timing is bearish; wait for bullish confirmation before considering this setup.";
+  if(side === "sell" && timingDirection === "bullish") return "Current 1H timing is bullish; wait for bearish confirmation before considering this setup.";
+  if(side === "buy") return status.includes("active") ? "Bullish 1H timing confirmed near the entry zone." : "Wait for bullish 1H confirmation near the entry zone.";
+  if(side === "sell") return status.includes("active") ? "Bearish 1H timing confirmed near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.";
+  return "Wait for confirmation and a clean scenario zone.";
+}
+function formatScenarioWarningText(item){
+  return String(item || "");
+}
 function formatTradePlanScenarioPanel(scenarioState){
   const state = scenarioState || createEmptyTradePlanScenario("Trade Plan Scenario: Unavailable");
   const selected = state.selectedScenario || null;
   const status = formatScenarioStatus(selected?.status || state.primaryStatus || "Unavailable");
-  const side = formatScenarioSide(selected?.side || state.primarySide);
+  const side = formatScenarioSide(selected?.side || state.primarySide, status);
   const entryZone = selected?.entryZone;
   const invalidation = selected?.invalidation;
   const targets = selected?.targets || {};
@@ -1465,7 +1487,7 @@ function formatTradePlanScenarioPanel(scenarioState){
   const entryText = entryZone ? (entryZone.zoneText || `${formatScenarioPrice(entryZone.lower)}–${formatScenarioPrice(entryZone.upper)}`) : "—";
   const invalidationText = invalidation ? `${invalidationSide} ${formatScenarioPrice(invalidation.price)}` : "—";
   const targetText = `TP1: ${formatScenarioPrice(targets.tp1)} · TP2: ${formatScenarioPrice(targets.tp2)} · TP3: ${formatScenarioPrice(targets.tp3)}`;
-  const warningHtml = warnings.length ? `<div class="trade-plan-warning"><strong>Warnings</strong><ul>${warnings.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
+  const warningHtml = warnings.length ? `<div class="trade-plan-warning"><strong>Warnings</strong><ul>${warnings.map((item)=>`<li>${escapeHtml(formatScenarioWarningText(item))}</li>`).join("")}</ul></div>` : "";
   const blockerHtml = blockers.length ? `<div class="trade-plan-warning trade-plan-blocker"><strong>Blockers</strong><ul>${blockers.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
   return `
     <div class="trade-plan-header">
@@ -1482,7 +1504,7 @@ function formatTradePlanScenarioPanel(scenarioState){
       <div class="trade-plan-row"><span>Stop Logic</span><strong>${escapeHtml(stopLogic?.text || "—")}</strong></div>
       <div class="trade-plan-row trade-plan-targets"><span>Targets</span><strong>${escapeHtml(targetText)}</strong></div>
       <div class="trade-plan-row"><span>Risk</span><strong>${escapeHtml(selected?.riskLabel || "No Trade")}</strong></div>
-      <div class="trade-plan-row trade-plan-wide"><span>Activation Condition</span><strong>${escapeHtml(selected?.activationCondition || "Wait for confirmation and a clean scenario zone.")}</strong></div>
+      <div class="trade-plan-row trade-plan-wide"><span>Activation Condition</span><strong>${escapeHtml(formatScenarioActivationCondition(selected))}</strong></div>
       <div class="trade-plan-row trade-plan-wide"><span>Reason</span><strong>${escapeHtml(selected?.reason || state.reason || "Trade Plan Scenario: Unavailable")}</strong></div>
     </div>
     ${warningHtml}
