@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 18:20";
+const APP_LAST_UPDATED = "2026-05-31 14:42";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -177,11 +177,48 @@ const IFVG_QUALITY_BAND = {
   STRONG: "strong",
   HIGH_CONFLUENCE: "highConfluence",
 };
+const LIQUIDITY_OF_STATE = {
+  NONE: "none",
+  POSSIBLE: "possible",
+  VALID: "valid",
+  CONFIRMED: "confirmed",
+  FAILED: "failed",
+};
+const LIQUIDITY_SWEEP_TYPE = {
+  NONE: "none",
+  SWEEP_LOW: "sweepLow",
+  SWEEP_HIGH: "sweepHigh",
+};
+const LIQUIDITY_RECLAIM_STATUS = {
+  NONE: "none",
+  SAME_BAR: "sameBar",
+  NEXT_BAR: "nextBar",
+  LATE: "late",
+  MISSED: "missed",
+};
+const LIQUIDITY_BAND = {
+  WEAK: "weak",
+  USABLE: "usable",
+  STRONG: "strong",
+  HIGH_CONFLUENCE: "highConfluence",
+};
+const LIQUIDITY_AVWAP_SIDE = {
+  UNKNOWN: "unknown",
+  ABOVE: "above",
+  BELOW: "below",
+  AROUND: "around",
+};
+const LIQUIDITY_VOLUME_STATUS = {
+  UNKNOWN: "unknown",
+  NORMAL: "normal",
+  SPIKE: "spike",
+  STRONG_SPIKE: "strongSpike",
+};
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Weekly"), srSummary: null },
   daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("6M"), meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
-  h4: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("4H"), srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
+  h4: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("4H"), srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, liquidityOrderflowState: createEmptyLiquidityOrderflowState("4H", "context"), recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
   h1: { sweepStatus: null, structureStatus: null, stochastic: { ok: false, k: null, d: null, prevK: null, prevD: null, label: "Stoch unavailable", reason: null, status: "idle" } },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
   ticker: { change24hPct: null },
@@ -199,6 +236,97 @@ if(typeof window !== "undefined") {
   };
 }
 
+function createEmptyLiquidityOrderflowState(timeframe = "4H", role = "context", reason = "Liquidity/orderflow state not evaluated yet."){
+  const safeReason = reason || "Liquidity/orderflow state not evaluated yet.";
+  return {
+    timeframe,
+    role,
+    sourceMode: "ohlcv-proxy",
+    lastUpdated: null,
+    activeEpisode: {
+      episodeId: null,
+      status: LIQUIDITY_OF_STATE.NONE,
+      stale: false,
+      displayStatus: "No liquidity/orderflow confirmation",
+      band: LIQUIDITY_BAND.WEAK,
+      score: 0,
+      reasons: [safeReason],
+      sweep: {
+        detected: false,
+        type: LIQUIDITY_SWEEP_TYPE.NONE,
+        levelType: null,
+        levelPrice: null,
+        breachPrice: null,
+        breachBuffer: null,
+        excursionAtr: null,
+        anchorTime: null,
+        anchorIndex: null,
+        anchorMethod: null,
+        mergeCount: 0,
+      },
+      reclaim: {
+        detected: false,
+        status: LIQUIDITY_RECLAIM_STATUS.NONE,
+        at: null,
+        closePrice: null,
+        barsFromSweep: null,
+        passedThreshold: false,
+      },
+      avwap: {
+        available: false,
+        value: null,
+        side: LIQUIDITY_AVWAP_SIDE.UNKNOWN,
+        distancePct: null,
+        correctSideCloses: 0,
+        anchorTime: null,
+        lifetimeBars: 0,
+        lostControl: false,
+      },
+      structure: {
+        swingMethod: null,
+        choch: LIQUIDITY_OF_STATE.NONE,
+        bos: LIQUIDITY_OF_STATE.NONE,
+        chochAligned: false,
+        bosAligned: false,
+        firstBreakTime: null,
+      },
+      volume: {
+        baselineMethod: "rollingMedian20",
+        baseline: null,
+        current: null,
+        ratio: null,
+        status: LIQUIDITY_VOLUME_STATUS.UNKNOWN,
+      },
+      context: {
+        weeklyBias: null,
+        dailyBias: null,
+        htfAligned: false,
+        strongConflict: false,
+        nearMarketMapZone: false,
+        marketMapZoneIds: [],
+        nearFvg: false,
+        nearIfvg: false,
+        ifvgDirection: null,
+        ifvgState: null,
+        zoneOrIfvgConfluence: false,
+      },
+      failure: {
+        detected: false,
+        at: null,
+        price: null,
+        reason: null,
+        priorStateBeforeFailure: null,
+      },
+    },
+    recentCompleted: [],
+    diagnostics: {
+      closedBarsUsed: 0,
+      candidateLevelsScanned: 0,
+      latencyMs: null,
+      dataWarnings: [],
+    },
+  };
+}
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
 }
