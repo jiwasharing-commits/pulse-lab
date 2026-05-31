@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 16:30";
+const APP_LAST_UPDATED = "2026-05-31 16:45";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1516,6 +1516,25 @@ function formatScenarioActivationCondition(scenario){
 function formatScenarioWarningText(item){
   return String(item || "");
 }
+function formatEstimatedRRValue(rr){
+  return Number.isFinite(rr) ? `~${rr.toFixed(1)}R` : null;
+}
+function formatEstimatedRRLine(estimatedRR){
+  if(!estimatedRR?.ok || !estimatedRR.tp1?.ok) return null;
+  return ["tp1", "tp2", "tp3"]
+    .map((key)=>estimatedRR[key]?.ok ? `${key.toUpperCase()} ${formatEstimatedRRValue(estimatedRR[key].rr)}` : null)
+    .filter(Boolean)
+    .join(" · ");
+}
+function renderEstimatedRRSection(scenario){
+  const status = scenario?.status;
+  const statusText = String(status || "").toLowerCase();
+  if(!scenario || status === TRADE_SCENARIO_STATUS.NO_TRADE || status === TRADE_SCENARIO_STATUS.INVALIDATED) return "";
+  const rrLine = formatEstimatedRRLine(scenario.estimatedRR);
+  if(!rrLine) return "";
+  const title = statusText.includes("wait") ? "Estimated R:R if setup becomes valid" : "Estimated R:R";
+  return `<div class="trade-plan-row trade-plan-rr"><span class="trade-plan-rr-title">${escapeHtml(title)}</span><strong class="trade-plan-rr-values">${escapeHtml(rrLine)}</strong><small class="trade-plan-rr-note">Based on midpoint of entry zone. Scenario only.</small></div>`;
+}
 function formatTradePlanScenarioPanel(scenarioState){
   const state = scenarioState || createEmptyTradePlanScenario("Trade Plan Scenario: Unavailable");
   const selected = state.selectedScenario || null;
@@ -1533,6 +1552,7 @@ function formatTradePlanScenarioPanel(scenarioState){
   const targetText = `TP1: ${formatScenarioPrice(targets.tp1)} · TP2: ${formatScenarioPrice(targets.tp2)} · TP3: ${formatScenarioPrice(targets.tp3)}`;
   const warningHtml = warnings.length ? `<div class="trade-plan-warning"><strong>Warnings</strong><ul>${warnings.map((item)=>`<li>${escapeHtml(formatScenarioWarningText(item))}</li>`).join("")}</ul></div>` : "";
   const blockerHtml = blockers.length ? `<div class="trade-plan-warning trade-plan-blocker"><strong>Blockers</strong><ul>${blockers.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
+  const estimatedRRHtml = renderEstimatedRRSection(selected);
   return `
     <div class="trade-plan-header">
       <div>
@@ -1547,6 +1567,7 @@ function formatTradePlanScenarioPanel(scenarioState){
       <div class="trade-plan-row"><span>Invalidation</span><strong>${escapeHtml(invalidationText)}</strong>${invalidation?.rule ? `<small>${escapeHtml(invalidation.rule)}</small>` : ""}</div>
       <div class="trade-plan-row"><span>Stop Logic</span><strong>${escapeHtml(stopLogic?.text || "—")}</strong></div>
       <div class="trade-plan-row trade-plan-targets"><span>Targets</span><strong>${escapeHtml(targetText)}</strong></div>
+      ${estimatedRRHtml}
       <div class="trade-plan-row"><span>Risk</span><strong>${escapeHtml(selected?.riskLabel || "No Trade")}</strong></div>
       <div class="trade-plan-row trade-plan-wide"><span>Activation Condition</span><strong>${escapeHtml(formatScenarioActivationCondition(selected))}</strong></div>
       <div class="trade-plan-row trade-plan-wide"><span>Reason</span><strong>${escapeHtml(selected?.reason || state.reason || "Trade Plan Scenario: Unavailable")}</strong></div>
