@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 14:00";
+const APP_LAST_UPDATED = "2026-05-31 15:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -144,6 +144,14 @@ let trendlineDrawMode = { active: false, chartKey: null, startPoint: null };
 let drawingManagerChartKey = null;
 let prepCurrentDetailOpen = false;
 const mtfState = { weeklyDirection: null, weeklyPhase: null, weeklyDivergence: null, topBias: null, h4Structure: null, h4FvgNearest: null, h1Sweep: null, h1Structure: null };
+const TRADE_SCENARIO_STATUS = {
+  NO_TRADE: "No Trade",
+  WAIT: "Wait Confirmation",
+  CANDIDATE: "Candidate Scenario",
+  ACTIVE: "Active Scenario",
+  INVALIDATED: "Invalidated",
+};
+const TRADE_SCENARIO_DISCLAIMER = "Scenario planning only; not a direct trading signal.";
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), srSummary: null },
@@ -157,6 +165,7 @@ const marketPreparationState = {
   map: { upside: [], downside: [], currentRowText: "● Price unavailable" },
   fvgMtfContext: createEmptyFvgMtfContext(),
   fvgQuality: createEmptyFvgQualityState(),
+  tradePlanScenario: createEmptyTradePlanScenario(),
   meta: { lastUpdatedMs: null, sourcesReady: { ticker: false, weekly: false, daily: false, h4: false, h1: false } },
 };
 
@@ -171,6 +180,9 @@ function createEmptyFvgQualityState(reason = "FVG quality unavailable."){
 }
 function createEmptyFvgTimingZone(reason = "1H timing data is unavailable."){
   return { ok: false, timeframe: "1H", direction: null, timingStatus: "Unavailable", sweep: null, structure: null, stochastic: null, relatedZone: null, supportsHighProbability: false, reason, updatedAt: Date.now() };
+}
+function createEmptyTradePlanScenario(reason = "No trade scenario is available yet."){
+  return { ok: false, primaryStatus: TRADE_SCENARIO_STATUS.NO_TRADE, primarySide: "neutral", reason, caution: [], buyScenario: null, sellScenario: null, selectedScenario: null, updatedAt: Date.now(), disclaimer: TRADE_SCENARIO_DISCLAIMER };
 }
 function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
   return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: createEmptyFvgTimingZone(), overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
@@ -1197,6 +1209,169 @@ function formatMapRowFvgBadges(row){
   if(!status && !quality) return null;
   return [status ? `Status: ${status}` : null, quality ? `Quality: ${quality}` : null].filter(Boolean).join(" · ");
 }
+function getScenarioRowQuality(row){
+  const fvgQuality = getMapRowFvgQuality(row);
+  if(fvgQuality) return fvgQuality;
+  const text = `${row?.quality || ""} ${row?.status || ""} ${Array.isArray(row?.sources) ? row.sources.map((s)=>`${s.quality || ""} ${s.status || ""}`).join(" ") : ""}`;
+  if(/broken/i.test(text)) return "Broken";
+  if(/filled/i.test(text) && !/unfilled/i.test(text)) return "Filled";
+  if(/high[-\s]?probability/i.test(text)) return "High-Probability";
+  if(/strong/i.test(text)) return "Strong";
+  if(/valid|active|unfilled|partial|touched|touch|medium/i.test(text)) return "Valid";
+  if(/weak/i.test(text)) return "Weak";
+  return null;
+}
+function isScenarioQualityAtLeast(row, min){
+  const rank = { Filled: 0, Broken: 0, Weak: 1, Valid: 2, Strong: 3, "High-Probability": 4 };
+  const quality = getScenarioRowQuality(row);
+  return (rank[quality] || 0) >= (rank[min] || 0);
+}
+function getScenarioRowText(row){
+  return `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""} ${row?.confluenceLabel || ""} ${Array.isArray(row?.sources) ? row.sources.map((s)=>`${s.label || ""} ${s.source || ""} ${s.primarySource || ""}`).join(" ") : ""}`.toLowerCase();
+}
+function isBuyEntryRow(row){
+  const text = getScenarioRowText(row);
+  const positive = /bullish/.test(text) || /support/.test(text);
+  const negative = /bearish/.test(text) || /resistance/.test(text);
+  return !!row && positive && !negative;
+}
+function isSellEntryRow(row){
+  const text = getScenarioRowText(row);
+  const positive = /bearish/.test(text) || /resistance/.test(text);
+  const negative = /bullish/.test(text) || /support/.test(text);
+  return !!row && positive && !negative;
+}
+function normalizeScenarioEntryZone(row, side){
+  if(!row || !Number.isFinite(row.lower) || !Number.isFinite(row.upper) || row.upper <= row.lower) return null;
+  const status = getMapRowFvgStatus(row) || row.status || null;
+  const quality = getScenarioRowQuality(row);
+  return { lower: row.lower, upper: row.upper, zoneText: row.zoneText || `${usd(row.lower)}–${usd(row.upper)}`, type: inferSingleZoneType(row), sources: formatConfluenceSources(row, 4), distancePct: row.distancePct ?? null, quality, status, rowKey: getMapRowStableKey(row), sourceSide: side === "buy" ? "downside" : "upside" };
+}
+function calculateScenarioBuffer(row, currentPrice){
+  if(!row || !Number.isFinite(row.lower) || !Number.isFinite(row.upper) || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+  const zoneWidth = row.upper - row.lower;
+  if(!Number.isFinite(zoneWidth) || zoneWidth <= 0) return null;
+  return Math.max(zoneWidth * 0.10, currentPrice * 0.002);
+}
+function buildScenarioInvalidation(row, side, currentPrice){
+  const buffer = calculateScenarioBuffer(row, currentPrice);
+  if(!Number.isFinite(buffer)) return null;
+  if(side === "buy"){
+    const price = row.lower - buffer;
+    return { price, rule: "Scenario invalid if 4H/Daily close is below invalidation zone.", buffer, basis: "Entry zone lower boundary - buffer" };
+  }
+  if(side === "sell"){
+    const price = row.upper + buffer;
+    return { price, rule: "Scenario invalid if 4H/Daily close is above invalidation zone.", buffer, basis: "Entry zone upper boundary + buffer" };
+  }
+  return null;
+}
+function buildScenarioTargets(side, mapData, entryRow){
+  const rows = side === "buy" ? (mapData?.upside || []) : (mapData?.downside || []);
+  const candidates = rows.filter((row)=>row && !isSameMapRow(row, entryRow) && Number.isFinite(row.lower) && Number.isFinite(row.upper) && row.upper > row.lower);
+  const first = candidates[0] || null;
+  const second = candidates[1] || null;
+  if(side === "buy"){
+    return { tp1: first ? first.lower : null, tp2: first ? first.upper : null, tp3: second ? second.lower : null };
+  }
+  if(side === "sell"){
+    return { tp1: first ? first.upper : null, tp2: first ? first.lower : null, tp3: second ? second.upper : null };
+  }
+  return { tp1: null, tp2: null, tp3: null };
+}
+function getScenarioTimingGate(side){
+  const timingZone = marketPreparationState.fvgMtfContext?.timingZone || createEmptyFvgTimingZone();
+  const expectedDirection = side === "buy" ? "bullish" : (side === "sell" ? "bearish" : null);
+  const aligned = !!expectedDirection && timingZone.timingStatus === "Confirming" && timingZone.supportsHighProbability === true && timingZone.direction === expectedDirection;
+  return { timingStatus: timingZone.timingStatus || "Unavailable", timingDirection: timingZone.direction || null, expectedDirection, aligned, supportsHighProbability: timingZone.supportsHighProbability === true, reason: timingZone.reason || null };
+}
+function getScenarioHardBlockers(side){
+  const blockers = [];
+  const conflict = marketPreparationState.fvgMtfContext?.conflict;
+  if(conflict?.ok){
+    if(conflict.label === "Parent FVG Broken") blockers.push("Parent FVG Broken");
+    else if(conflict.label === "Conflict / Wait Confirmation") blockers.push("Conflict / Wait Confirmation");
+    else if(conflict.label === "HTF Support Under Pressure" || conflict.label === "HTF Resistance Under Pressure") blockers.push(conflict.label);
+  }
+  return { blockers, conflictLabel: conflict?.ok ? conflict.label : null, parentBroken: blockers.includes("Parent FVG Broken"), activeBlocked: blockers.length > 0 };
+}
+function isScenarioEntryNear(row, currentPrice){
+  if(!row || !Number.isFinite(currentPrice)) return false;
+  if(currentPrice >= row.lower && currentPrice <= row.upper) return true;
+  return Number.isFinite(row.distancePct) && row.distancePct <= 1.5;
+}
+function buildScenarioStopLogic(entryZone, invalidation, side){
+  if(!entryZone || !invalidation) return null;
+  const boundary = side === "buy" ? entryZone.lower : entryZone.upper;
+  return { text: side === "buy" ? "Plan invalidation below the entry zone with buffer." : "Plan invalidation above the entry zone with buffer.", boundary, bufferType: "zone width / percentage buffer" };
+}
+function buildNoTradeScenario(side, reason, blockers = []){
+  return { side, status: TRADE_SCENARIO_STATUS.NO_TRADE, entryZone: null, invalidation: null, stopLogic: null, targets: { tp1: null, tp2: null, tp3: null }, estimatedRR: null, riskLabel: "No Trade", activationCondition: "Wait for a clean scenario zone and confirmation.", invalidationReason: null, reason, blockers, warnings: [], evidence: { timingStatus: marketPreparationState.fvgMtfContext?.timingZone?.timingStatus || "Unavailable", timingDirection: marketPreparationState.fvgMtfContext?.timingZone?.direction || null, conflictLabel: marketPreparationState.fvgMtfContext?.conflict?.label || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: null } };
+}
+function buildTradeScenarioForSide(side, mapData){
+  const currentPrice = marketPreparationState.currentPrice;
+  if(!Number.isFinite(currentPrice)) return buildNoTradeScenario(side, "Current price is unavailable.", ["Current price unavailable"]);
+  const rows = side === "buy" ? (mapData?.downside || []) : (mapData?.upside || []);
+  const isEntry = side === "buy" ? isBuyEntryRow : isSellEntryRow;
+  if(!rows.length) return buildNoTradeScenario(side, `No ${side === "buy" ? "downside" : "upside"} scenario zones are available.`, ["Map rows unavailable"]);
+  const entryRow = rows.find((row)=>isEntry(row) && isScenarioQualityAtLeast(row, "Valid") && !["Broken", "Filled"].includes(getMapRowFvgStatus(row)) && Number.isFinite(row.lower) && Number.isFinite(row.upper) && row.upper > row.lower);
+  if(!entryRow) return buildNoTradeScenario(side, `No valid ${side} entry zone is available.`, ["No valid entry zone"]);
+  const entryZone = normalizeScenarioEntryZone(entryRow, side);
+  const invalidation = buildScenarioInvalidation(entryRow, side, currentPrice);
+  const targets = buildScenarioTargets(side, mapData, entryRow);
+  const blockers = [];
+  const warnings = [];
+  if(!entryZone) blockers.push("Entry zone invalid");
+  if(!invalidation) blockers.push("Invalidation unavailable");
+  if(!Number.isFinite(targets.tp1)) blockers.push("TP1 unavailable");
+  const rowStatus = entryZone?.status || getMapRowFvgStatus(entryRow);
+  if(["Broken", "Filled"].includes(rowStatus)) blockers.push(`Entry row ${rowStatus}`);
+  const hard = getScenarioHardBlockers(side);
+  blockers.push(...hard.blockers);
+  const timing = getScenarioTimingGate(side);
+  const entryNear = isScenarioEntryNear(entryRow, currentPrice);
+  if(!entryNear) warnings.push("Current price is not near/inside entry zone.");
+  const invalidated = !!invalidation && ((side === "buy" && currentPrice < invalidation.price) || (side === "sell" && currentPrice > invalidation.price));
+  let status = TRADE_SCENARIO_STATUS.NO_TRADE;
+  let reason = `${side === "buy" ? "Buy" : "Sell"} scenario is not available.`;
+  if(invalidated || hard.parentBroken || ["Broken", "Filled"].includes(rowStatus)){
+    status = TRADE_SCENARIO_STATUS.INVALIDATED;
+    reason = invalidated ? "Current price has crossed the scenario invalidation level." : "Scenario is invalidated by broken/filled context.";
+  } else if(blockers.length){
+    status = TRADE_SCENARIO_STATUS.NO_TRADE;
+    reason = blockers.join("; ");
+  } else if(!entryNear || ["Waiting", "Pullback", "Unavailable"].includes(timing.timingStatus)){
+    status = TRADE_SCENARIO_STATUS.WAIT;
+    reason = !entryNear ? "Scenario zone exists, but price is not near the entry zone." : "Scenario zone exists, but 1H timing confirmation is not active.";
+  } else if(timing.timingStatus === "Conflict"){
+    status = TRADE_SCENARIO_STATUS.WAIT;
+    reason = "1H timing conflicts with the scenario direction; wait for confirmation.";
+  } else if(timing.aligned && entryNear && isScenarioQualityAtLeast(entryRow, "Strong")){
+    status = TRADE_SCENARIO_STATUS.ACTIVE;
+    reason = "Scenario planning conditions are active with aligned 1H timing confirmation.";
+  } else {
+    status = TRADE_SCENARIO_STATUS.CANDIDATE;
+    reason = "Scenario zone, invalidation, and TP1 are available, but active conditions are not fully confirmed.";
+  }
+  const riskLabel = status === TRADE_SCENARIO_STATUS.ACTIVE ? (isScenarioQualityAtLeast(entryRow, "High-Probability") ? "Low" : "Medium") : (status === TRADE_SCENARIO_STATUS.CANDIDATE ? "Medium" : (status === TRADE_SCENARIO_STATUS.NO_TRADE ? "No Trade" : "High"));
+  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Requires bullish 1H timing confirmation and price near/supporting entry zone." : "Requires bearish 1H timing confirmation and price near/resistance entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
+}
+function selectPrimaryTradeScenario(buyScenario, sellScenario){
+  const rank = { [TRADE_SCENARIO_STATUS.ACTIVE]: 4, [TRADE_SCENARIO_STATUS.CANDIDATE]: 3, [TRADE_SCENARIO_STATUS.WAIT]: 2, [TRADE_SCENARIO_STATUS.INVALIDATED]: 1, [TRADE_SCENARIO_STATUS.NO_TRADE]: 0 };
+  const scenarios = [buyScenario, sellScenario].filter(Boolean);
+  const viable = scenarios.filter((s)=>s.status !== TRADE_SCENARIO_STATUS.NO_TRADE);
+  if(!viable.length) return null;
+  return viable.sort((a,b)=> (rank[b.status] - rank[a.status]) || ((a.entryZone?.distancePct ?? 999) - (b.entryZone?.distancePct ?? 999)) || (({ "High-Probability": 4, Strong: 3, Valid: 2, Weak: 1 }[b.entryZone?.quality] || 0) - ({ "High-Probability": 4, Strong: 3, Valid: 2, Weak: 1 }[a.entryZone?.quality] || 0)))[0] || null;
+}
+function buildTradePlanScenario(mapData){
+  const buyScenario = buildTradeScenarioForSide("buy", mapData);
+  const sellScenario = buildTradeScenarioForSide("sell", mapData);
+  const selectedScenario = selectPrimaryTradeScenario(buyScenario, sellScenario);
+  const primaryStatus = selectedScenario?.status || (buyScenario?.status === TRADE_SCENARIO_STATUS.WAIT || sellScenario?.status === TRADE_SCENARIO_STATUS.WAIT ? TRADE_SCENARIO_STATUS.WAIT : TRADE_SCENARIO_STATUS.NO_TRADE);
+  const primarySide = selectedScenario?.side || "neutral";
+  const caution = [...new Set([...(buyScenario?.warnings || []), ...(sellScenario?.warnings || []), ...(buyScenario?.blockers || []), ...(sellScenario?.blockers || [])].filter(Boolean))].slice(0, 6);
+  return { ok: !!selectedScenario, primaryStatus, primarySide, reason: selectedScenario?.reason || (primaryStatus === TRADE_SCENARIO_STATUS.WAIT ? "Scenario context exists, but confirmation is incomplete." : "No clean trade scenario is available."), caution, buyScenario, sellScenario, selectedScenario, updatedAt: Date.now(), disclaimer: TRADE_SCENARIO_DISCLAIMER };
+}
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
   if(text.includes("fvg")) return "FVG";
@@ -1993,6 +2168,7 @@ function renderMarketPreparationMap(mapData){
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.fvgQuality = buildFvgQualityScore();
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
+  marketPreparationState.tradePlanScenario = buildTradePlanScenario(safeMap);
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
   const nearestUpside = safeMap.upside?.[0] || null;
