@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 16:15";
+const APP_LAST_UPDATED = "2026-05-31 16:30";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1347,6 +1347,49 @@ function buildScenarioStopLogic(entryZone, invalidation, side){
   const boundary = side === "buy" ? entryZone.lower : entryZone.upper;
   return { text: side === "buy" ? "Plan invalidation below the entry zone with buffer." : "Plan invalidation above the entry zone with buffer.", boundary, bufferType: "zone width / percentage buffer" };
 }
+function createEmptyEstimatedRR(reason = "Missing valid entry, invalidation, or target.", warnings = []){
+  return { ok: false, status: "unavailable", assumption: "Estimated using midpoint of entry zone.", reason, warnings };
+}
+function calculateTargetRR(side, entryMid, risk, target){
+  if(!Number.isFinite(target)) return null;
+  const reward = side === "buy" ? target - entryMid : (side === "sell" ? entryMid - target : null);
+  if(!Number.isFinite(reward) || reward <= 0) return null;
+  const rr = reward / risk;
+  if(!Number.isFinite(rr) || rr <= 0) return null;
+  return { target, reward, rr: Math.round(rr * 100) / 100, ok: true };
+}
+function calculateScenarioEstimatedRR(scenario){
+  const assumption = "Estimated using midpoint of entry zone.";
+  const warnings = [];
+  if(!scenario || !["buy", "sell"].includes(scenario.side)) return createEmptyEstimatedRR("Missing valid scenario side.");
+  const entry = scenario.entryZone || {};
+  const invalidation = scenario.invalidation || {};
+  const targets = scenario.targets || {};
+  if(!Number.isFinite(entry.lower) || !Number.isFinite(entry.upper) || entry.upper <= entry.lower || !Number.isFinite(invalidation.price)){
+    return createEmptyEstimatedRR("Missing valid entry, invalidation, or target.");
+  }
+  const entryMid = (entry.lower + entry.upper) / 2;
+  const risk = scenario.side === "buy" ? entryMid - invalidation.price : invalidation.price - entryMid;
+  const minRisk = Math.max(entryMid * 0.0005, 1);
+  if(!Number.isFinite(risk) || risk <= minRisk) return createEmptyEstimatedRR("Risk distance is too small or invalid for a reliable estimate.");
+  const zoneWidth = entry.upper - entry.lower;
+  if(Number.isFinite(zoneWidth) && zoneWidth / entryMid > 0.03) warnings.push("Entry zone is wide; estimate may be less precise.");
+  if(scenario.status === TRADE_SCENARIO_STATUS.WAIT) warnings.push("Estimated only if setup becomes valid.");
+  const result = { ok: false, status: "unavailable", assumption, entryMid, risk, tp1: null, tp2: null, tp3: null, validTargets: [], warnings };
+  for(const key of ["tp1", "tp2", "tp3"]){
+    const targetResult = calculateTargetRR(scenario.side, entryMid, risk, targets[key]);
+    if(targetResult){
+      result[key] = targetResult;
+      result.validTargets.push(key);
+    }else if(key !== "tp1"){
+      warnings.push(`${key.toUpperCase()} unavailable.`);
+    }
+  }
+  if(!result.tp1) return createEmptyEstimatedRR("Missing valid TP1 for a reliable estimate.", warnings);
+  result.ok = true;
+  result.status = result.validTargets.length === 3 ? "available" : "partial";
+  return result;
+}
 function buildNoTradeScenario(side, reason, blockers = []){
   return { side, status: TRADE_SCENARIO_STATUS.NO_TRADE, entryZone: null, invalidation: null, stopLogic: null, targets: { tp1: null, tp2: null, tp3: null }, estimatedRR: null, riskLabel: "No Trade", activationCondition: "Wait for a clean scenario zone and confirmation.", invalidationReason: null, reason, blockers, warnings: [], evidence: { timingStatus: marketPreparationState.fvgMtfContext?.timingZone?.timingStatus || "Unavailable", timingDirection: marketPreparationState.fvgMtfContext?.timingZone?.direction || null, conflictLabel: marketPreparationState.fvgMtfContext?.conflict?.label || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: null } };
 }
@@ -1400,7 +1443,8 @@ function buildTradeScenarioForSide(side, mapData){
     reason = "Scenario zone, invalidation, and TP1 are available, but active conditions are not fully confirmed.";
   }
   const riskLabel = status === TRADE_SCENARIO_STATUS.ACTIVE ? (isScenarioQualityAtLeast(entryRow, "High-Probability") ? "Low" : "Medium") : (status === TRADE_SCENARIO_STATUS.CANDIDATE ? "Medium" : (status === TRADE_SCENARIO_STATUS.NO_TRADE ? "No Trade" : "High"));
-  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR: null, riskLabel, activationCondition: side === "buy" ? "Wait for bullish 1H confirmation near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
+  const estimatedRR = status === TRADE_SCENARIO_STATUS.INVALIDATED || status === TRADE_SCENARIO_STATUS.NO_TRADE ? null : calculateScenarioEstimatedRR({ side, status, entryZone, invalidation, targets });
+  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR, riskLabel, activationCondition: side === "buy" ? "Wait for bullish 1H confirmation near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
 }
 function selectPrimaryTradeScenario(buyScenario, sellScenario){
   const rank = { [TRADE_SCENARIO_STATUS.ACTIVE]: 4, [TRADE_SCENARIO_STATUS.CANDIDATE]: 3, [TRADE_SCENARIO_STATUS.WAIT]: 2, [TRADE_SCENARIO_STATUS.INVALIDATED]: 1, [TRADE_SCENARIO_STATUS.NO_TRADE]: 0 };
