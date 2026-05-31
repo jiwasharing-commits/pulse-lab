@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 11:00";
+const APP_LAST_UPDATED = "2026-05-31 12:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1171,9 +1171,10 @@ function buildFvgQualityScoreForDetails(details, rowContext = {}){
     const az = getFvgDetailZone(a), bz = getFvgDetailZone(b);
     return az && bz && getZoneOverlapRatio(az, bz) > 0;
   }));
+  const srConfluence = scoreSrConfluenceForDetails(activeDetails);
   if(aligned && multiTf && hasOverlap && hasRowFvgTimingConfirmation(activeDetails, rowContext)) return "High-Probability";
-  if(aligned && (multiTf || confluenceCount > 1) && (hasOverlap || confluenceCount > 1)) return "Strong";
-  if(statuses.includes("50% Mitigated") || statuses.includes("Partially Mitigated") || statuses.includes("Touched") || statuses.includes("Fresh")) return confluenceCount > 1 ? "Valid" : "Weak";
+  if(aligned && (multiTf || confluenceCount > 1) && (hasOverlap || confluenceCount > 1 || srConfluence)) return "Strong";
+  if(statuses.includes("50% Mitigated") || statuses.includes("Partially Mitigated") || statuses.includes("Touched") || statuses.includes("Fresh")) return (confluenceCount > 1 || srConfluence) ? "Valid" : "Weak";
   return "Valid";
 }
 function getMapRowFvgQuality(row){
@@ -3379,6 +3380,88 @@ function scoreFvgRecentReactionFactor(recentFvgReaction){
   if(["Broken", "Filled"].includes(latest.reactionType)) return { type: "penalty", item: { name: "Recent invalidation", points: latest.reactionType === "Broken" ? -3 : -2, reason: latest.reason || `${latest.label || "FVG"} was ${latest.reactionType.toLowerCase()} recently.` } };
   return { type: "factor", item: { name: "Recent FVG reaction", points: 1, reason: latest.reason || `${latest.label || "FVG"} reacted recently.` } };
 }
+function normalizeSrZoneForConfluence(zone, timeframe, type){
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= lower) return null;
+  const status = String(zone?.status || "Active");
+  if(/broken/i.test(status)) return null;
+  return {
+    ...zone,
+    timeframe,
+    type,
+    lower,
+    upper,
+    label: `${timeframe} ${type === "support" ? "Support" : "Resistance"}`,
+  };
+}
+function getSrZonesForConfluence(){
+  const zones = [];
+  const add = (zone, timeframe, type)=>{
+    const normalized = normalizeSrZoneForConfluence(zone, timeframe, type);
+    if(normalized) zones.push(normalized);
+  };
+  const weekly = marketPreparationState.weekly?.srSummary;
+  add(weekly?.support, "Weekly", "support");
+  add(weekly?.resistance, "Weekly", "resistance");
+  for(const [timeframe, summary] of [["Daily", marketPreparationState.daily?.srSummary], ["4H", marketPreparationState.h4?.srSummary]]){
+    add(summary?.support?.nearest, timeframe, "support");
+    add(summary?.support?.strongest, timeframe, "support");
+    add(summary?.resistance?.nearest, timeframe, "resistance");
+    add(summary?.resistance?.strongest, timeframe, "resistance");
+  }
+  const seen = new Set();
+  return zones.filter((zone)=>{
+    const key = `${zone.timeframe}|${zone.type}|${zone.lower.toFixed(2)}|${zone.upper.toFixed(2)}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function calculateZoneOverlapRatio(a, b){
+  return getZoneOverlapRatio(a, b);
+}
+function isZoneNearFvg(fvgDetail, srZone, tolerancePct = 0.005){
+  const fvgZone = getFvgDetailZone(fvgDetail);
+  if(!fvgZone || !srZone) return false;
+  if(calculateZoneOverlapRatio(fvgZone, srZone) > 0) return true;
+  const gap = fvgZone.upper < srZone.lower ? srZone.lower - fvgZone.upper : (srZone.upper < fvgZone.lower ? fvgZone.lower - srZone.upper : 0);
+  const reference = Number.isFinite(marketPreparationState.currentPrice) && marketPreparationState.currentPrice > 0
+    ? marketPreparationState.currentPrice
+    : Math.max(1, (fvgZone.lower + fvgZone.upper + srZone.lower + srZone.upper) / 4);
+  return gap / reference <= tolerancePct;
+}
+function findSrConfluenceForFvg(detail){
+  const direction = detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+  if(!direction || ["Broken", "Filled"].includes(detail?.detailStatus)) return null;
+  const requiredType = direction === "bullish" ? "support" : (direction === "bearish" ? "resistance" : null);
+  if(!requiredType) return null;
+  return getSrZonesForConfluence()
+    .filter((zone)=>zone.type === requiredType && isZoneNearFvg(detail, zone, 0.005))
+    .map((zone)=>({ zone, overlap: calculateZoneOverlapRatio(getFvgDetailZone(detail), zone) }))
+    .sort((a,b)=>{
+      const rank = { Weekly: 3, Daily: 2, "4H": 1 };
+      return b.overlap - a.overlap || ((rank[b.zone.timeframe] || 0) - (rank[a.zone.timeframe] || 0));
+    })[0] || null;
+}
+function scoreSrConfluenceFactor(detail){
+  const match = findSrConfluenceForFvg(detail);
+  if(!match) return null;
+  const { zone, overlap } = match;
+  const points = (overlap > 0 && /Weekly|Daily/i.test(zone.timeframe)) ? 2 : 1;
+  const directionLabel = (detail.direction || getFvgDirection(detail.sourceZone || detail)) === "bullish" ? "Bullish" : "Bearish";
+  const relation = overlap > 0 ? "overlaps" : "is near";
+  return {
+    name: "S/R confluence",
+    points,
+    reason: `${detail.timeframe || "FVG"} ${directionLabel} FVG ${relation} ${zone.label}.`,
+  };
+}
+function scoreSrConfluenceForDetails(details){
+  const factors = (details || []).map(scoreSrConfluenceFactor).filter(Boolean);
+  if(!factors.length) return null;
+  return factors.sort((a,b)=>(b.points || 0)-(a.points || 0))[0];
+}
 function scoreFvgTimingFactor(state){
   const factors = [];
   const penalties = [];
@@ -3440,6 +3523,8 @@ function buildFvgQualityScore(){
     if(primaryStatus?.type === "penalty") penalties.push(primaryStatus.item);
     const mtf = scoreMtfFvgFactor(marketPreparationState.fvgMtfContext);
     factors.push(...mtf.factors); penalties.push(...mtf.penalties);
+    const srConfluence = scoreSrConfluenceForDetails(active);
+    if(srConfluence) factors.push(srConfluence);
     const positionFactor = scoreFvgPositionFactor(marketPreparationState.currentPricePosition);
     if(positionFactor) factors.push(positionFactor);
     for(const memory of [marketPreparationState.daily?.recentFvgReaction, marketPreparationState.h4?.recentFvgReaction]){

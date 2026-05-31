@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 11:00",
-  "version": "v0.1.93",
+  "lastUpdated": "2026-05-31 12:00",
+  "version": "v0.1.94",
   "commitLabel": "manual",
-  "note": "Use FVG detailStatus in overlay labels"
+  "note": "Add S/R confluence to FVG quality scoring"
 }
