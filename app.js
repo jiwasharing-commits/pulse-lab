@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 18:55";
+const APP_LAST_UPDATED = "2026-05-31 19:16";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -474,6 +474,103 @@ function buildLiquidityCandidateLevels(candles, srSummary, mapData, options = {}
     seen.add(key);
     return true;
   }).slice(0, maxCandidates);
+}
+function isLowSideLiquidityCandidate(level){
+  const type = String(level?.type || "").toLowerCase();
+  const side = String(level?.side || "").toLowerCase();
+  return side === "low" || type.includes("low") || type.includes("support");
+}
+function isHighSideLiquidityCandidate(level){
+  const type = String(level?.type || "").toLowerCase();
+  const side = String(level?.side || "").toLowerCase();
+  return side === "high" || type.includes("high") || type.includes("resistance");
+}
+function createH4LiquidityEpisodeId(sweepType, levelType, levelPrice, anchorTime){
+  const price = Number.isFinite(Number(levelPrice)) ? Number(levelPrice).toFixed(2) : "unknown";
+  return `h4-${sweepType}-${levelType || "level"}-${price}-${anchorTime ?? "unknown"}`;
+}
+function getLiquidityLevelReferencePrice(level, sweepType){
+  if(!level) return null;
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) return normalizeLiquidityPrice(level.price) || normalizeLiquidityPrice(level.lower);
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) return normalizeLiquidityPrice(level.price) || normalizeLiquidityPrice(level.upper);
+  return normalizeLiquidityPrice(level.price);
+}
+function detectH4LiquiditySweepEpisode(closedCandles, candidateLevels, options = {}){
+  if(!Array.isArray(closedCandles) || !closedCandles.length || !Array.isArray(candidateLevels) || !candidateLevels.length) return null;
+  const scanWindow = Math.max(1, Number(options.scanWindow) || 60);
+  const startIndex = Math.max(0, closedCandles.length - scanWindow);
+  let best = null;
+  for(let candleIndex = startIndex; candleIndex < closedCandles.length; candleIndex += 1){
+    const candle = closedCandles[candleIndex];
+    if(!isValidOrderflowCandle(candle)) continue;
+    const buffer = calculateLiquidityBuffer(closedCandles, candleIndex, options.bufferOptions || {});
+    const breachBuffer = Number.isFinite(Number(buffer?.value)) && Number(buffer.value) > 0 ? Number(buffer.value) : 0;
+    candidateLevels.forEach((level)=>{
+      const checks = [];
+      if(isLowSideLiquidityCandidate(level)) checks.push({ sweepType: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW, breachPrice: Number(candle.low), levelPrice: getLiquidityLevelReferencePrice(level, LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) });
+      if(isHighSideLiquidityCandidate(level)) checks.push({ sweepType: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, breachPrice: Number(candle.high), levelPrice: getLiquidityLevelReferencePrice(level, LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) });
+      checks.forEach((check)=>{
+        if(!Number.isFinite(check.levelPrice) || !Number.isFinite(check.breachPrice)) return;
+        const sweptLow = check.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW && check.breachPrice < check.levelPrice - breachBuffer;
+        const sweptHigh = check.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH && check.breachPrice > check.levelPrice + breachBuffer;
+        if(!sweptLow && !sweptHigh) return;
+        const excursion = Math.abs(check.breachPrice - check.levelPrice);
+        const weight = Number(level?.weight || 0);
+        const candidate = { candle, candleIndex, level, sweepType: check.sweepType, levelPrice: check.levelPrice, breachPrice: check.breachPrice, breachBuffer, buffer, excursion, rank: candleIndex * 1000000 + weight * 1000 + excursion };
+        if(!best || candidate.rank > best.rank) best = candidate;
+      });
+    });
+  }
+  if(!best) return null;
+  return best;
+}
+function buildH4LiquidityOrderflowState(input = {}){
+  const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  const closedCandles = getClosedOrderflowCandles(input.candles);
+  const dataWarnings = [];
+  if(!closedCandles.length) dataWarnings.push(createLiquidityDiagnosticWarning("No closed H4 candles available."));
+  dataWarnings.push(createLiquidityDiagnosticWarning("Market Map context not used as primary sweep level in Phase 2C1."));
+  const candidateLevels = buildLiquidityCandidateLevels(closedCandles, input.srSummary, null, { maxCandidates: 20 });
+  const primaryCandidates = candidateLevels.filter((level)=>level?.source !== "marketMap").slice(0, 20);
+  if(!primaryCandidates.length) dataWarnings.push(createLiquidityDiagnosticWarning("No H4 liquidity candidate levels available."));
+  const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
+  const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+  const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
+  base.lastUpdated = Date.now();
+  base.diagnostics = { closedBarsUsed: closedCandles.length, candidateLevelsScanned: primaryCandidates.length, latencyMs: Math.max(0, endedAt - startedAt), dataWarnings: sweep ? dataWarnings : [...dataWarnings, createLiquidityDiagnosticWarning("No possible H4 liquidity sweep detected.")] };
+  if(!sweep) return base;
+  const anchorTime = getOrderflowCandleTime(sweep.candle);
+  const sweepType = sweep.sweepType;
+  const levelType = sweep.level?.type || null;
+  const excursionAtr = Number.isFinite(Number(sweep.buffer?.averageRange)) && Number(sweep.buffer.averageRange) > 0 ? sweep.excursion / Number(sweep.buffer.averageRange) : null;
+  return {
+    ...base,
+    activeEpisode: {
+      ...base.activeEpisode,
+      episodeId: createH4LiquidityEpisodeId(sweepType, levelType, sweep.levelPrice, anchorTime),
+      status: LIQUIDITY_OF_STATE.POSSIBLE,
+      stale: false,
+      displayStatus: "Possible liquidity sweep detected",
+      band: LIQUIDITY_BAND.WEAK,
+      score: 0,
+      reasons: ["Possible H4 liquidity sweep detected on closed candle.", "Waiting for reclaim/reject confirmation."],
+      sweep: {
+        ...base.activeEpisode.sweep,
+        detected: true,
+        type: sweepType,
+        levelType,
+        levelPrice: sweep.levelPrice,
+        breachPrice: sweep.breachPrice,
+        breachBuffer: sweep.breachBuffer,
+        excursionAtr,
+        anchorTime,
+        anchorIndex: sweep.candleIndex,
+        anchorMethod: "sweepCandle",
+        mergeCount: 0,
+      },
+    },
+    recentCompleted: [],
+  };
 }
 function createEmptyRecentFvgReactionMemory(){
   return { lastTouchedFvg: null, lastMitigatedFvg: null, lastCeTouchedFvg: null, lastFilledFvg: null, lastBrokenFvg: null, latestReaction: null, updatedAt: null };
@@ -5998,7 +6095,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, reason: "No possible H4 liquidity sweep detected." }); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -6011,9 +6108,10 @@ function render4hFvgSummaryAndOverlay(candles){
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     const srSummary = scan4hSupportResistance(candles);
+    const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, reason: "No possible H4 liquidity sweep detected." });
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
-    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
+    updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } });
     refreshFvgMtfContext();
     renderMarketPreparationMap(buildMarketPreparationMap());
     schedule4hSrOverlayRedraw(candles);
