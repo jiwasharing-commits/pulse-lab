@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 10:00",
-  "version": "v0.1.92",
+  "lastUpdated": "2026-05-31 11:00",
+  "version": "v0.1.93",
   "commitLabel": "manual",
-  "note": "Guard row-specific quality with 1H timing zone"
+  "note": "Use FVG detailStatus in overlay labels"
 }

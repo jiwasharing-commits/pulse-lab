@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 10:00";
+const APP_LAST_UPDATED = "2026-05-31 11:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -402,8 +402,6 @@ async function fetchJson(url){ const r=await fetch(url,{method:"GET"}); if(!r.ok
 const fetchBtcTicker=()=>fetchJson(BTC_TICKER_URL);
 async function fetchWeeklyKlines(){
   const klines = await fetchJson(BTC_WEEKLY_KLINE_URL);
-  console.log("Klines length:", Array.isArray(klines) ? klines.length : "not-array");
-  console.log("Sample kline:", Array.isArray(klines) ? klines[0] : null);
   if(!Array.isArray(klines)) throw new Error("Weekly Binance data unavailable.");
   return klines;
 }
@@ -424,8 +422,6 @@ function buildWeeklyDataset(klines){
     open: d.open, high: d.high, low: d.low, close: d.close,
     rsi: Number.isFinite(rsiSeries[start + i - RSI_PERIOD]) ? rsiSeries[start + i - RSI_PERIOD] : null,
   }));
-  console.log("Dataset length:", dataset.length);
-  console.log("Sample dataset item:", dataset[0]);
   return dataset;
 }
 
@@ -994,6 +990,66 @@ function getAllFvgDetailsForMapRows(){
     ...(marketPreparationState.daily?.fvgDetails || []),
     ...(marketPreparationState.h4?.fvgDetails || []),
   ].filter((detail)=>getFvgDetailZone(detail));
+}
+function getFvgDetailsForOverlayTimeframe(timeframe, detailCandidates = null){
+  const tf = String(timeframe || "").toLowerCase();
+  const candidates = Array.isArray(detailCandidates) ? detailCandidates : (
+    tf.includes("weekly") ? marketPreparationState.weekly?.fvgDetails
+    : tf.includes("daily") ? marketPreparationState.daily?.fvgDetails
+    : tf.includes("4h") || tf.includes("h4") ? marketPreparationState.h4?.fvgDetails
+    : []
+  );
+  return (Array.isArray(candidates) ? candidates : []).filter((detail)=>getFvgDetailZone(detail));
+}
+function findFvgDetailForZone(zone, timeframe, detailCandidates = null){
+  const zoneBounds = getFvgDetailZone(zone);
+  if(!zoneBounds) return null;
+  const normalizedTimeframe = timeframe || zone?.timeframe || null;
+  const zoneKey = getFvgKey(zone, normalizedTimeframe);
+  const zoneDirection = getFvgDirection(zone);
+  const zoneCenter = (zoneBounds.lower + zoneBounds.upper) / 2;
+  const candidates = getFvgDetailsForOverlayTimeframe(normalizedTimeframe, detailCandidates);
+  const exact = candidates.find((detail)=>detail?.key && detail.key === zoneKey);
+  if(exact) return exact;
+  const nearPrice = (a, b)=>{
+    const tolerance = Math.max(1, Math.abs(zoneBounds.upper - zoneBounds.lower) * 0.02, Math.abs(zoneCenter) * 0.00002);
+    return Math.abs(Number(a) - Number(b)) <= tolerance;
+  };
+  const scored = candidates.map((detail)=>{
+    const detailZone = getFvgDetailZone(detail);
+    if(!detailZone) return null;
+    const detailDirection = detail.direction || getFvgDirection(detail.sourceZone || detail);
+    if(zoneDirection && detailDirection && zoneDirection !== detailDirection) return null;
+    const lowerMatch = nearPrice(zoneBounds.lower, detailZone.lower);
+    const upperMatch = nearPrice(zoneBounds.upper, detailZone.upper);
+    const overlap = getZoneOverlapRatio(zoneBounds, detailZone);
+    const detailCenter = (detailZone.lower + detailZone.upper) / 2;
+    const centerDistance = Math.abs(zoneCenter - detailCenter);
+    const timeMatch = (zone.startTime && detail.sourceZone?.startTime && zone.startTime === detail.sourceZone.startTime)
+      || (zone.endTime && detail.sourceZone?.endTime && zone.endTime === detail.sourceZone.endTime);
+    if((lowerMatch && upperMatch) || overlap >= 0.8 || (timeMatch && overlap >= 0.35)){
+      return { detail, score: (timeMatch ? 2 : 0) + (lowerMatch && upperMatch ? 2 : 0) + overlap - (centerDistance / Math.max(1, Math.abs(zoneCenter))) };
+    }
+    return null;
+  }).filter(Boolean).sort((a,b)=>b.score-a.score);
+  return scored[0]?.detail || null;
+}
+function getFvgOverlayDirectionLabel(zone, detail = null){
+  const direction = detail?.direction || getFvgDirection(zone);
+  if(direction === "bullish") return "Bullish";
+  if(direction === "bearish") return "Bearish";
+  const typeText = String(zone?.type || detail?.sourceZone?.type || "FVG");
+  if(/bullish/i.test(typeText)) return "Bullish";
+  if(/bearish/i.test(typeText)) return "Bearish";
+  return "";
+}
+function formatFvgOverlayLabel(zone, timeframe, detailCandidates = null){
+  const detail = findFvgDetailForZone(zone, timeframe, detailCandidates);
+  const directionLabel = getFvgOverlayDirectionLabel(zone, detail);
+  const status = detail?.detailStatus || zone?.status || "Active";
+  const tf = timeframe || detail?.timeframe || zone?.timeframe || "FVG";
+  const prefix = [tf, directionLabel, "FVG"].filter(Boolean).join(" ");
+  return `${prefix} · ${status}`;
 }
 function findFvgDetailForMapSource(source){
   if(!isFvgMapSource(source)) return null;
@@ -3485,7 +3541,7 @@ function renderFvgFilledOverlay(){
       rect.style.top = `${Math.min(yTop, yBottom)}px`;
       rect.style.width = `${width}px`;
       rect.style.height = `${Math.max(1, Math.abs(yBottom - yTop))}px`;
-      rect.title = `${f.type} | ${f.startLabel} → ${f.endLabel}`;
+      rect.title = `${formatFvgOverlayLabel(f, "Weekly")} | ${f.startLabel} → ${f.endLabel}`;
       layer.appendChild(rect);
     });
   } catch (e) {
@@ -3523,8 +3579,9 @@ function renderFvgOverlay(activeFvgs, dataset){
     safeFvgs.forEach((f)=>{
       const bull = f.type === "Bullish FVG";
       const color = bull ? "rgba(34,197,94,0.38)" : "rgba(239,68,68,0.38)";
-      const upperLine = candleSeries.createPriceLine({ price:f.upper, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} upper` });
-      const lowerLine = candleSeries.createPriceLine({ price:f.lower, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${f.type} lower` });
+      const overlayLabel = formatFvgOverlayLabel(f, "Weekly");
+      const upperLine = candleSeries.createPriceLine({ price:f.upper, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${overlayLabel} upper` });
+      const lowerLine = candleSeries.createPriceLine({ price:f.lower, color, lineWidth:1, lineStyle:2, axisLabelVisible:false, title:`${overlayLabel} lower` });
       fvgOverlayLines.push(upperLine, lowerLine);
     });
     renderFvgFilledOverlay();
@@ -3987,10 +4044,11 @@ function renderDailyFvgOverlay(){
       el.style.top = `${top}px`;
       el.style.width = `${width}px`;
       el.style.height = `${height}px`;
-      el.title = `${bull ? "Daily Bullish FVG" : "Daily Bearish FVG"} · ${zone.status || "Active"} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const overlayLabel = formatFvgOverlayLabel(zone, "Daily");
+      el.title = `${overlayLabel} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
       const label = document.createElement("span");
-      label.className = "daily-fvg-label";
-      label.textContent = `${bull ? "Daily Bullish FVG" : "Daily Bearish FVG"} · ${String(zone.status || "Active").replace("Partially Filled", "Partial")}`;
+      label.className = "daily-fvg-label fvg-overlay-label";
+      label.textContent = overlayLabel;
       el.appendChild(label);
       layer.appendChild(el);
     });
@@ -4187,7 +4245,6 @@ async function renderDailyRangeMode(mode = activeDailyRange || "6M"){
 }
 async function renderLowerTimeframeMode(mode="3M"){
   activeLowerTfMode = mode;
-  console.log("Lower TF mode:", activeLowerTfMode);
   if(!ltfVisible) return;
   if(!els.lower4hChart || !els.lower1hChart || els.lower4hChart.clientWidth===0 || els.lower1hChart.clientWidth===0 || els.lower4hChart.clientHeight===0 || els.lower1hChart.clientHeight===0){
     requestAnimationFrame(()=>renderLowerTimeframeMode(mode));
@@ -4219,13 +4276,10 @@ async function renderLowerTimeframeMode(mode="3M"){
   const h1CapLabelByPreset = { '1w':'latest 168 candles (~1 week)', '2w':'latest 336 candles (~2 weeks)', '1m':'latest 336 candles (~2 weeks)', '3m':'latest 336 candles (~2 weeks)' };
   const limit4h = hasRange ? 1000 : (limit4hByPreset[preset] || 540);
   const limit1h = hasRange ? 1000 : (limit1hByPreset[preset] || 336);
-  console.log('4H chart size:', els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   const [h4,h1] = await Promise.allSettled([fetchLtfKlines('4h', st, et, limit4h), fetchLtfKlines('1h', st, et, limit1h)]);
   if(h4.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
-      console.log('4H candles:', candles.length);
-      console.log('Sample 4H candle:', candles[0]);
       if(!candles.length) { setLtfMeta(els.lower4hMeta, '4H Reaction · range unavailable'); toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
       else {
         setLtfMeta(els.lower4hMeta, formatIntradayRangeMeta({ role:'4H Reaction', mode:selectedModeLabel, candles, isCustom:hasRange }));
@@ -4241,7 +4295,6 @@ async function renderLowerTimeframeMode(mode="3M"){
         renderTrendlinesForChart("h4");
         requestAnimationFrame(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } });
         setTimeout(()=>{ try { schedule4hFvgOverlayRedraw(candles); schedule4hSrOverlayRedraw(candles); } catch(err){ console.error('4H overlay redraw failed', err); } },50);
-        console.log('4H overlay exists:', !!document.getElementById('lower4hFvgOverlay'));
       }
     }
     catch(e){ console.error('4H chart render failed:', e); setLtfMeta(els.lower4hMeta, '4H Reaction · range unavailable'); toggleLtfError(els.lower4hError,'4H chart unavailable.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='FVG overlay unavailable'; render4hSupportResistanceSummary({ok:false,reason:'scan_failed'}); }
@@ -4249,8 +4302,6 @@ async function renderLowerTimeframeMode(mode="3M"){
   if(h1.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h1.value, hasRange ? undefined : limit1h);
-      console.log('1H candles length:', candles.length);
-      console.log('Sample 1H candle:', candles[0]);
       if(!candles.length) { latest1hCandles = []; setLtfMeta(els.lower1hMeta, '1H Timing · range unavailable'); toggleLtfError(els.lower1hError,'No 1H candles found for selected range.'); update1hStochasticStatus([]); }
       else {
         latest1hCandles = candles;
@@ -4441,8 +4492,6 @@ function ensure4hFvgLayer(){
   return null;
 }
 function clear4hFvgOverlay(){
-  console.log("4H FVG overlays before clear:", current4hFvgOverlays.length);
-  console.log("4H FVG price lines before clear:", current4hFvgPriceLines.length);
   current4hFvgOverlays.forEach((el)=>{ try { el.remove(); } catch(_){} });
   current4hFvgOverlays=[];
   current4hFvgPriceLines.forEach((line)=>{ try { ltf4hSeries?.removePriceLine(line); } catch(_){} });
@@ -4477,7 +4526,7 @@ function selectClean4hFvgsByType(activeFvgs, currentPrice, { maxBullish=2, maxBe
   return { selected, selectedBullish, selectedBearish };
 }
 
-function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candles, activeFvgs, maxBullish = 2, maxBearish = 2 }){
+function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candles, activeFvgs, fvgDetails = null, maxBullish = 2, maxBearish = 2 }){
   if(!getChartLayer("h4", "fvg")){ clear4hFvgOverlay(); return { selected: [], selectedBullish: [], selectedBearish: [], visualMode: 'Hidden' }; }
   if(!chart || !series || !container || !overlayLayer) return { selected: [], selectedBullish: [], selectedBearish: [], visualMode: 'Failed' };
   clear4hFvgOverlay();
@@ -4489,21 +4538,14 @@ function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candl
   const MIN_ZONE_HEIGHT=10;
   let filledCount=0, fallbackCount=0;
 
-  console.log('4H active FVGs:', activeFvgs);
-  console.log('4H selected FVGs:', selected4hFvgs);
-  console.log('Overlay layer size:', overlayLayer.clientWidth, overlayLayer.clientHeight);
-  console.log('4H chart container size:', container.clientWidth, container.clientHeight);
-
   selected4hFvgs.forEach((f)=>{
     const bull=f.type==='Bullish 4H FVG';
     const x1=chart.timeScale().timeToCoordinate(f.startTime);
     const x2=chart.timeScale().timeToCoordinate(lastTime);
     const y1=series.priceToCoordinate(f.upper);
     const y2=series.priceToCoordinate(f.lower);
-    console.log('FVG coordinates:', { x1, x2, y1, y2 });
 
     if(x1==null || x2==null || y1==null || y2==null){
-      console.log('4H FVG overlay coordinate skip:', {x1,x2,y1,y2});
       try {
         const lineCol=bull?'rgba(34,197,94,0.55)':'rgba(239,68,68,0.55)';
         const up=series.createPriceLine({price:f.upper,color:lineCol,lineWidth:1,lineStyle:2,axisLabelVisible:false});
@@ -4524,17 +4566,18 @@ function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candl
     r.style.left=`${left}px`; r.style.top=`${top}px`; r.style.width=`${width}px`; r.style.height=`${height}px`;
     r.style.background=bull?'rgba(34, 197, 94, 0.22)':'rgba(239, 68, 68, 0.22)';
     r.style.borderColor=bull?'rgba(34, 197, 94, 0.80)':'rgba(239, 68, 68, 0.80)';
+    const overlayLabel = formatFvgOverlayLabel(f, "4H", fvgDetails);
+    r.title = `${overlayLabel} · ${usd(f.lower)} - ${usd(f.upper)}`;
+    const label=document.createElement('span');
+    label.className='fvg-overlay-label';
+    label.textContent=overlayLabel;
+    r.appendChild(label);
     overlayLayer.appendChild(r);
     current4hFvgOverlays.push(r);
     filledCount += 1;
   });
 
   const visualMode = filledCount>0 ? 'Filled Zones' : (fallbackCount>0 ? 'Boundary Lines' : 'Failed');
-  console.log('FVG visual mode:', visualMode);
-  console.log('4H FVG active total:', activeFvgs.length);
-  console.log('4H FVG selected for chart:', selected4hFvgs.length);
-  console.log('4H FVG overlay layer children:', overlayLayer.children.length);
-  console.log('Sample FVG:', selected4hFvgs[0]);
   return { selected: selected4hFvgs, selectedBullish: picked.selectedBullish, selectedBearish: picked.selectedBearish, visualMode };
 }
 
@@ -4581,13 +4624,15 @@ function render4hFvgSummaryAndOverlay(candles){
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
+    const fvgDetails = buildFvgDetailsForTimeframe(active4hFvgs, candles, "4H");
     const layer=ensure4hFvgLayer();
-    const visual = layer ? renderClean4hFvgOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, overlayLayer: layer, candles, activeFvgs: active4hFvgs, maxBullish: 2, maxBearish: 2 }) : { selected: [], selectedBullish: [], selectedBearish: [], visualMode: "Failed" };
-    if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Bullish: ${visual.selectedBullish.length} | Bearish: ${visual.selectedBearish.length} | Shown: ${visual.selected.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearest.status} | Visual: ${visual.visualMode}`;
+    const visual = layer ? renderClean4hFvgOverlay({ chart: ltf4hChart, series: ltf4hSeries, container: els.lower4hChart, overlayLayer: layer, candles, activeFvgs: active4hFvgs, fvgDetails, maxBullish: 2, maxBearish: 2 }) : { selected: [], selectedBullish: [], selectedBearish: [], visualMode: "Failed" };
+    const nearestDetail = findFvgDetailForZone(nearest, "4H", fvgDetails);
+    const nearestStatus = nearestDetail?.detailStatus || nearest.status;
+    if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent=`4H FVG | Active: ${active4hFvgs.length} | Bullish: ${visual.selectedBullish.length} | Bearish: ${visual.selectedBearish.length} | Shown: ${visual.selected.length} | Nearest: ${nearest.type} | Distance: ${nearest.distance===0?'0%':f1(nearest.distance)+'%'} | Status: ${nearestStatus} | Visual: ${visual.visualMode}`;
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     const srSummary = scan4hSupportResistance(candles);
-    const fvgDetails = buildFvgDetailsForTimeframe(active4hFvgs, candles, "4H");
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
     updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, recentFvgReaction, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus }, meta: { sourcesReady: { h4: true } } });
