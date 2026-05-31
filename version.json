@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-05-31 15:45",
-  "version": "v0.1.99",
+  "lastUpdated": "2026-05-31 16:00",
+  "version": "v0.2.00",
   "commitLabel": "manual",
-  "note": "Make parent FVG broken scenario handling direction-aware"
+  "note": "Add trade plan scenario UI panel"
 }

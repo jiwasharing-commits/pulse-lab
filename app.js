@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 15:45";
+const APP_LAST_UPDATED = "2026-05-31 16:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -1431,6 +1431,69 @@ function refreshTradePlanScenario(mapData = marketPreparationState.map){
   });
   return marketPreparationState.tradePlanScenario;
 }
+function formatScenarioSide(side){
+  if(side === "buy") return "Buy Scenario";
+  if(side === "sell") return "Sell Scenario";
+  return "Neutral / No Trade";
+}
+function formatScenarioStatus(status){
+  return status || "Unavailable";
+}
+function formatScenarioPrice(value){
+  return Number.isFinite(value) ? usd(value) : "—";
+}
+function getScenarioStatusClass(status){
+  const key = String(status || "").toLowerCase();
+  if(key.includes("active")) return "status-active";
+  if(key.includes("candidate")) return "status-candidate";
+  if(key.includes("wait")) return "status-wait";
+  if(key.includes("invalid")) return "status-invalidated";
+  return "status-no-trade";
+}
+function formatTradePlanScenarioPanel(scenarioState){
+  const state = scenarioState || createEmptyTradePlanScenario("Trade Plan Scenario: Unavailable");
+  const selected = state.selectedScenario || null;
+  const status = formatScenarioStatus(selected?.status || state.primaryStatus || "Unavailable");
+  const side = formatScenarioSide(selected?.side || state.primarySide);
+  const entryZone = selected?.entryZone;
+  const invalidation = selected?.invalidation;
+  const targets = selected?.targets || {};
+  const stopLogic = selected?.stopLogic;
+  const warnings = selected ? (selected.warnings || []) : (state.caution || []);
+  const blockers = selected?.blockers || [];
+  const invalidationSide = selected?.side === "sell" ? "Above" : (selected?.side === "buy" ? "Below" : "At");
+  const entryText = entryZone ? (entryZone.zoneText || `${formatScenarioPrice(entryZone.lower)}–${formatScenarioPrice(entryZone.upper)}`) : "—";
+  const invalidationText = invalidation ? `${invalidationSide} ${formatScenarioPrice(invalidation.price)}` : "—";
+  const targetText = `TP1: ${formatScenarioPrice(targets.tp1)} · TP2: ${formatScenarioPrice(targets.tp2)} · TP3: ${formatScenarioPrice(targets.tp3)}`;
+  const warningHtml = warnings.length ? `<div class="trade-plan-warning"><strong>Warnings</strong><ul>${warnings.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
+  const blockerHtml = blockers.length ? `<div class="trade-plan-warning trade-plan-blocker"><strong>Blockers</strong><ul>${blockers.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
+  return `
+    <div class="trade-plan-header">
+      <div>
+        <h3>Trade Plan Scenario</h3>
+        <p>${escapeHtml(state.disclaimer || "Scenario planning only; not a direct trading signal.")}</p>
+      </div>
+      <span class="trade-plan-status ${getScenarioStatusClass(status)}">${escapeHtml(status)}</span>
+    </div>
+    <div class="trade-plan-grid">
+      <div class="trade-plan-row"><span>Side</span><strong>${escapeHtml(side)}</strong></div>
+      <div class="trade-plan-row"><span>Entry Zone</span><strong>${escapeHtml(entryText)}</strong></div>
+      <div class="trade-plan-row"><span>Invalidation</span><strong>${escapeHtml(invalidationText)}</strong>${invalidation?.rule ? `<small>${escapeHtml(invalidation.rule)}</small>` : ""}</div>
+      <div class="trade-plan-row"><span>Stop Logic</span><strong>${escapeHtml(stopLogic?.text || "—")}</strong></div>
+      <div class="trade-plan-row trade-plan-targets"><span>Targets</span><strong>${escapeHtml(targetText)}</strong></div>
+      <div class="trade-plan-row"><span>Risk</span><strong>${escapeHtml(selected?.riskLabel || "No Trade")}</strong></div>
+      <div class="trade-plan-row trade-plan-wide"><span>Activation Condition</span><strong>${escapeHtml(selected?.activationCondition || "Wait for confirmation and a clean scenario zone.")}</strong></div>
+      <div class="trade-plan-row trade-plan-wide"><span>Reason</span><strong>${escapeHtml(selected?.reason || state.reason || "Trade Plan Scenario: Unavailable")}</strong></div>
+    </div>
+    ${warningHtml}
+    ${blockerHtml}
+    <p class="trade-plan-footer">Scenario only. Wait for confirmation and use risk management.</p>
+  `;
+}
+function renderTradePlanScenario(){
+  if(!els.tradePlanScenarioPanel) return;
+  els.tradePlanScenarioPanel.innerHTML = formatTradePlanScenarioPanel(marketPreparationState.tradePlanScenario);
+}
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
   if(text.includes("fvg")) return "FVG";
@@ -2228,6 +2291,7 @@ function renderMarketPreparationMap(mapData){
   marketPreparationState.fvgQuality = buildFvgQualityScore();
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
   refreshTradePlanScenario(safeMap);
+  renderTradePlanScenario();
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
   const nearestUpside = safeMap.upside?.[0] || null;
@@ -3551,9 +3615,11 @@ function refreshFvgTimingZoneAndQuality({ rebuildQuality = true } = {}){
     updateMarketPreparationState({ fvgMtfContext: { timingZone } });
     if(rebuildQuality) updateMarketPreparationState({ fvgQuality: buildFvgQualityScore() });
     refreshTradePlanScenario();
+    renderTradePlanScenario();
   }catch(_){
     updateMarketPreparationState({ fvgMtfContext: { timingZone: createEmptyFvgTimingZone() } });
     refreshTradePlanScenario();
+    renderTradePlanScenario();
   }
 }
 function getAllFvgDetailsForQuality(){
