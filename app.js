@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-30 19:00";
+const APP_LAST_UPDATED = "2026-05-31 09:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1154,7 +1154,7 @@ function formatMapRowForDisplay(row){
   const fvgBadges = formatMapRowFvgBadges(row);
   const fullSources = row?.confluenceLabel || row?.detail || (Array.isArray(row?.sources) ? row.sources.map(formatSourceLabel).filter(Boolean).join(" + ") : "") || row?.quality || "";
   return {
-    zone: row?.zoneText || "—",
+    zone: row?.zoneText || (Number.isFinite(row?.lower) && Number.isFinite(row?.upper) ? `${usd(row.lower)}–${usd(row.upper)}` : "—"),
     type: getConfluenceType(row),
     sources: formatConfluenceSources(row, 3),
     fvgBadges,
@@ -1162,15 +1162,46 @@ function formatMapRowForDisplay(row){
     fullSources: [fullSources, fvgBadges].filter(Boolean).join(" | "),
   };
 }
+function getMapRowCenter(row){
+  if(Number.isFinite(row?.center)) return row.center;
+  const lower = Number(row?.lower), upper = Number(row?.upper);
+  return Number.isFinite(lower) && Number.isFinite(upper) ? (Math.min(lower, upper) + Math.max(lower, upper)) / 2 : null;
+}
+function getMapRowStableKey(row){
+  if(!row) return "";
+  const lower = Number(row.lower), upper = Number(row.upper), center = getMapRowCenter(row);
+  const sourceKey = getConfluenceSourceList(row).map((source)=>`${source?.source || source?.primarySource || ""}:${source?.label || ""}:${Number(source?.lower || 0).toFixed(2)}:${Number(source?.upper || 0).toFixed(2)}`).join("|");
+  return [row.primarySource || row.source || "zone", row.label || row.quality || "", Number.isFinite(lower) ? lower.toFixed(2) : "na", Number.isFinite(upper) ? upper.toFixed(2) : "na", Number.isFinite(center) ? center.toFixed(2) : "na", sourceKey].join("|");
+}
+function isSameMapRow(a, b){ return !!a && !!b && getMapRowStableKey(a) === getMapRowStableKey(b); }
+function getPriceLadderRows(rows){
+  return [...(rows || [])].sort((a,b)=>{
+    const ac = getMapRowCenter(a);
+    const bc = getMapRowCenter(b);
+    return (Number.isFinite(bc) ? bc : -Infinity) - (Number.isFinite(ac) ? ac : -Infinity);
+  });
+}
+function formatNearestZoneDetail(row, directionText){
+  if(!row) return { range: "—", type: "—", sources: "—" };
+  const display = formatMapRowForDisplay(row);
+  const distance = display.distance && display.distance !== "—" ? `${display.distance} ${directionText}` : `— ${directionText}`;
+  return { range: `${display.zone} · ${distance}`, type: display.type || "—", sources: display.sources || "—" };
+}
+function renderKeyZoneDetailBlock(title, detail){
+  return `<div class="key-zone-nearest-card"><p class="key-zone-zone-title">${escapeHtml(title)}</p><p class="key-zone-zone-range">${escapeHtml(detail?.range || "—")}</p><p class="key-zone-zone-detail">Type: ${escapeHtml(detail?.type || "—")}</p><p class="key-zone-zone-detail">Sources: ${escapeHtml(detail?.sources || "—")}</p></div>`;
+}
 function renderMarketMapHeader(){
   return `<div class="prep-map-header-row" aria-hidden="true"><span>Zone</span><span>Type</span><span>Sources</span><span>Distance</span></div>`;
 }
-function renderMarketMapGrid(rows){
+function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "" } = {}){
   return (rows || []).map((r)=>{
     const display = formatMapRowForDisplay(r);
     const title = escapeHtml(display.fullSources || display.sources);
     const sourceHtml = `${escapeHtml(display.sources)}${display.fvgBadges ? `<span class="prep-map-row-badges">${escapeHtml(display.fvgBadges)}</span>` : ""}`;
-    return `<div class="prep-map-row" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
+    const nearest = isSameMapRow(r, nearestRow);
+    const className = `prep-map-row${nearest ? " is-nearest-zone" : ""}`;
+    const nearestPill = nearest && nearestLabel ? `<span class="prep-map-nearest-label">${escapeHtml(nearestLabel)}</span>` : "";
+    return `<div class="${className}" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${nearestPill}${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
   }).join("");
 }
 function mergeConfluenceRows(rows, currentPrice){
@@ -1700,8 +1731,11 @@ function getKeyZonePositionContext(mapData, state){
     ? `${formatRecentReactionLabel(status.recentReaction)} · ${status.recentReaction.confirmation}`
     : formatRecentReactionLabel(status.recentReaction));
   return {
+    referencePrice: Number.isFinite(state?.currentPrice) ? usd(state.currentPrice) : "—",
     nearestUpside: status.nearestUpsideZone?.text || "Nearest upside unavailable",
     nearestDownside: status.nearestDownsideZone?.text || "Nearest downside unavailable",
+    nearestUpsideDetail: formatNearestZoneDetail(status.nearestUpsideZone, "above"),
+    nearestDownsideDetail: formatNearestZoneDetail(status.nearestDownsideZone, "below"),
     position: patternContext.currentPosition || status.currentPosition || "Current position unavailable",
     recentReaction,
     fvg: status.fvg || buildCurrentFvgPositionStatus(),
@@ -1843,9 +1877,10 @@ function renderCurrentPriceDetailCards(detail){
         <p class="prep-current-detail-meaning">${detail.h1TimingMeaning}</p>
       </article>
       <article class="prep-current-detail-card">
-        <h4 class="prep-current-detail-card-title">Key Zone Position</h4>
-        <p class="prep-current-detail-kv">Nearest Upside: ${detail.keyZone.nearestUpside}</p>
-        <p class="prep-current-detail-kv">Nearest Downside: ${detail.keyZone.nearestDownside}</p>
+        <h4 class="prep-current-detail-card-title">Current Price vs Key Zones</h4>
+        <p class="prep-current-detail-kv key-zone-reference-price">Reference Price: ${detail.keyZone.referencePrice || "—"}</p>
+        ${renderKeyZoneDetailBlock("Nearest Upside Zone", detail.keyZone.nearestUpsideDetail)}
+        ${renderKeyZoneDetailBlock("Nearest Downside Zone", detail.keyZone.nearestDownsideDetail)}
         <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
         <p class="prep-current-detail-kv">FVG Position: ${detail.keyZone.fvg?.ok ? `${detail.keyZone.fvg.position} · ${detail.keyZone.fvg.zoneType} · ${detail.keyZone.fvg.detailStatus || "Status unavailable"}` : (detail.keyZone.fvg?.position || "No nearby active FVG")}</p>
         <p class="prep-current-detail-kv">FVG Reaction: ${detail.keyZone.recentFvgReaction || detail.keyZone.fvg?.recentReaction || detail.keyZone.fvg?.reason || "No FVG reaction"}</p>
@@ -1895,8 +1930,12 @@ function renderMarketPreparationMap(mapData){
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.fvgQuality = buildFvgQualityScore();
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = safeMap.upside.length ? renderMarketMapHeader() + renderMarketMapGrid(safeMap.upside) : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = safeMap.downside.length ? renderMarketMapHeader() + renderMarketMapGrid(safeMap.downside) : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  const displayUpside = getPriceLadderRows(safeMap.upside || []);
+  const displayDownside = getPriceLadderRows(safeMap.downside || []);
+  const nearestUpside = safeMap.upside?.[0] || null;
+  const nearestDownside = safeMap.downside?.[0] || null;
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = displayUpside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayUpside, { nearestRow: nearestUpside, nearestLabel: "Nearest Upside" }) : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = displayDownside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayDownside, { nearestRow: nearestDownside, nearestLabel: "Nearest Downside" }) : '<p class="prep-map-empty">No downside watch levels available.</p>';
   const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.innerHTML = renderCurrentPriceChips(detail) || escapeHtml(detail.compactRowText || "● Price unavailable");
   renderCurrentPriceDetailCards(detail);
