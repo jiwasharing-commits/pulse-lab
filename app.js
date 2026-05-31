@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 09:00";
+const APP_LAST_UPDATED = "2026-05-31 10:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1080,18 +1080,23 @@ function rowMatchesFvgConflict(details){
   if(detailsHaveOppositeFvgOverlap(details)) return { label: "Conflict", reason: "Matched FVG sources have opposite directions in the same/near zone." };
   return null;
 }
-function hasRowFvgTimingConfirmation(details, row){
-  const directions = getMatchedFvgDirections(details);
+function getFormalFvgTimingZone(){
+  const zone = marketPreparationState.fvgMtfContext?.timingZone;
+  return zone && typeof zone === "object" ? zone : createEmptyFvgTimingZone();
+}
+function doesTimingZoneAlignWithFvgRow(timingZone, rowDetails){
+  const directions = getMatchedFvgDirections(rowDetails);
   if(directions.length !== 1) return false;
   const direction = directions[0];
-  const text = `${marketPreparationState.h4?.structureStatus || ""} ${marketPreparationState.h1?.structureStatus || ""} ${marketPreparationState.h1?.sweepStatus || ""}`;
-  const alignedTiming = direction === "bullish" ? /Bullish/i.test(text) : /Bearish/i.test(text);
-  const recent = [marketPreparationState.daily?.recentFvgReaction, marketPreparationState.h4?.recentFvgReaction]
-    .map(getLatestFvgReaction).filter(Boolean)
-    .some((reaction)=>reaction.direction === direction && !["Broken", "Filled"].includes(reaction.reactionType));
+  return timingZone?.timingStatus === "Confirming"
+    && timingZone?.supportsHighProbability === true
+    && (timingZone.direction === direction);
+}
+function hasRowFvgTimingConfirmation(details, row){
+  const timingZone = getFormalFvgTimingZone();
+  if(!doesTimingZoneAlignWithFvgRow(timingZone, details)) return false;
   const rowDistance = Number(row?.distancePct);
-  const relevantPosition = Number.isFinite(rowDistance) ? rowDistance <= 1.5 : false;
-  return (alignedTiming || recent) && relevantPosition;
+  return Number.isFinite(rowDistance) ? rowDistance <= 1.5 : false;
 }
 function buildFvgQualityScoreForDetails(details, rowContext = {}){
   const activeDetails = (details || []).filter(Boolean);
@@ -3131,19 +3136,22 @@ function buildFvgTimingZone(fvgMtfContext, state = marketPreparationState){
     const signalDirections = [structureDirection, sweepDirection].filter(Boolean);
     const signalSummary = getTimingSignalSummary({ structureStatus, sweepStatus, stochastic }) || "no clear 1H structure/sweep confirmation";
     const relatedZone = getFvgTimingRelatedZone(fvgMtfContext);
-    const makeTiming = ({ ok = true, direction = null, timingStatus, supportsHighProbability = false, reason })=>({
-      ok,
-      timeframe: "1H",
-      direction,
-      timingStatus,
-      sweep: sweepStatus,
-      structure: structureStatus,
-      stochastic: stochastic || null,
-      relatedZone,
-      supportsHighProbability,
-      reason,
-      updatedAt: Date.now(),
-    });
+    const makeTiming = ({ ok = true, direction = null, timingStatus, supportsHighProbability = false, reason })=>{
+      const status = timingStatus || "Unavailable";
+      return {
+        ok,
+        timeframe: "1H",
+        direction,
+        timingStatus: status,
+        sweep: sweepStatus,
+        structure: structureStatus,
+        stochastic: stochastic || null,
+        relatedZone,
+        supportsHighProbability: status === "Confirming" && supportsHighProbability === true,
+        reason,
+        updatedAt: Date.now(),
+      };
+    };
     if(!signalDirections.length){
       return makeTiming({ ok: true, direction: stochasticDirection, timingStatus: "Waiting", reason: `Waiting for 1H confirmation: ${signalSummary}.` });
     }
