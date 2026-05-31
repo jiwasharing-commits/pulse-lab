@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 19:33";
+const APP_LAST_UPDATED = "2026-05-31 20:06";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -607,6 +607,88 @@ function scoreH4LiquidityPreliminary(reclaim, avwap, sweepType){
 function getH4LiquidityBandForPreliminaryScore(score){
   return score >= 3 ? LIQUIDITY_BAND.USABLE : LIQUIDITY_BAND.WEAK;
 }
+function getH4LiquidityBarsAfterSweep(episode, closedCandles){
+  if(!episode || !Array.isArray(closedCandles) || !closedCandles.length) return null;
+  const anchorIndex = Number(episode?.sweep?.anchorIndex ?? episode?.sweep?.candleIndex);
+  if(!Number.isInteger(anchorIndex) || anchorIndex < 0 || anchorIndex >= closedCandles.length) return null;
+  return Math.max(0, (closedCandles.length - 1) - anchorIndex);
+}
+function classifyH4LiquidityStale(episode, closedCandles, options = {}){
+  const barsAfterSweep = getH4LiquidityBarsAfterSweep(episode, closedCandles);
+  const possibleWindow = Math.max(1, Number(options.possibleWindowBars) || 12);
+  const validWindow = Math.max(possibleWindow, Number(options.validWindowBars) || 24);
+  const reclaimWindow = Math.max(1, Number(options.reclaimWindowBars) || 3);
+  const confirmationWindowBars = validWindow;
+  const reclaimWindowRemaining = Number.isFinite(barsAfterSweep) ? Math.max(0, reclaimWindow - barsAfterSweep) : null;
+  const status = episode?.status;
+  const reclaimDetected = episode?.reclaim?.detected === true;
+  const possibleStale = status === LIQUIDITY_OF_STATE.POSSIBLE && !reclaimDetected && Number.isFinite(barsAfterSweep) && barsAfterSweep >= possibleWindow;
+  const validStale = status === LIQUIDITY_OF_STATE.VALID && Number.isFinite(barsAfterSweep) && barsAfterSweep >= validWindow;
+  const stale = possibleStale || validStale;
+  return {
+    stale,
+    reason: stale ? "H4 liquidity sweep context is aging without confirmation." : null,
+    barsAfterSweep,
+    reclaimWindowRemaining,
+    confirmationWindowBars,
+  };
+}
+function classifyH4LiquidityBand(score){
+  const capped = Math.min(10, Math.max(0, Number(score) || 0));
+  if(capped >= 9) return LIQUIDITY_BAND.HIGH_CONFLUENCE;
+  if(capped >= 6) return LIQUIDITY_BAND.STRONG;
+  if(capped >= 3) return LIQUIDITY_BAND.USABLE;
+  return LIQUIDITY_BAND.WEAK;
+}
+function getH4LiquidityDeepBreachWarning(episode){
+  const levelPrice = Number(episode?.sweep?.levelPrice);
+  const breachPrice = Number(episode?.sweep?.breachPrice);
+  const sweepType = episode?.sweep?.type;
+  if(!Number.isFinite(levelPrice) || levelPrice <= 0 || !Number.isFinite(breachPrice)) return { triggered: false, deepBreachPct: null, reason: null };
+  let deepBreachPct = null;
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) deepBreachPct = ((levelPrice - breachPrice) / levelPrice) * 100;
+  else if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) deepBreachPct = ((breachPrice - levelPrice) / levelPrice) * 100;
+  if(!Number.isFinite(deepBreachPct)) return { triggered: false, deepBreachPct: null, reason: null };
+  const triggered = deepBreachPct >= 3;
+  return {
+    triggered,
+    deepBreachPct,
+    reason: triggered ? "Deep breach; reaction still requires reclaim/reject confirmation." : null,
+  };
+}
+function scoreH4LiquidityEpisode(episode, context = {}, options = {}){
+  const components = [];
+  const reasons = [];
+  const add = (label, value)=>{
+    const score = Number(value);
+    if(!label || !Number.isFinite(score) || score === 0) return;
+    components.push({ label, score });
+  };
+  if(!episode || episode.status !== LIQUIDITY_OF_STATE.VALID || episode.reclaim?.detected !== true){
+    return { score: 0, band: LIQUIDITY_BAND.WEAK, components, reasons };
+  }
+  add("qualified level", 1);
+  if(Number.isFinite(Number(episode.sweep?.excursionAtr)) && Number(episode.sweep.excursionAtr) >= 0.5) add("meaningful sweep excursion", 1);
+  if(episode.reclaim.status === LIQUIDITY_RECLAIM_STATUS.SAME_BAR) add("same-bar reclaim/reject", 2);
+  else if(episode.reclaim.status === LIQUIDITY_RECLAIM_STATUS.NEXT_BAR) add("next-bar reclaim/reject", 1);
+  else if(episode.reclaim.status === LIQUIDITY_RECLAIM_STATUS.LATE) add("late reclaim/reject", 1);
+  const avwapSide = episode.avwap?.side;
+  if(episode.avwap?.available && isCorrectLiquidityAvwapSide(episode.sweep?.type, avwapSide)) add("AVWAP correct side", 2);
+  else if(episode.avwap?.available && avwapSide !== LIQUIDITY_AVWAP_SIDE.UNKNOWN && avwapSide !== LIQUIDITY_AVWAP_SIDE.AROUND) add("AVWAP wrong side", -1);
+  if(Number(episode.avwap?.correctSideCloses) >= 2) add("two AVWAP-side closes", 1);
+  if(episode.volume?.status === LIQUIDITY_VOLUME_STATUS.STRONG_SPIKE) add("strong volume spike", 2);
+  else if(episode.volume?.status === LIQUIDITY_VOLUME_STATUS.SPIKE) add("volume spike", 1);
+  if(context.structureAligned) add("structure aligned", 1);
+  if(context.nearMarketMapZone) add("near Market Map zone", 1);
+  if(context.nearFvg || context.nearIfvg) add("near FVG/IFVG", 1);
+  if(context.strongConflict) add("strong HTF conflict", -2);
+  if(options.penalizeDeepBreach !== false && context.deepBreachWarning?.triggered) add("deep breach warning", -1);
+  const rawScore = components.reduce((sum, item)=>sum + item.score, 0);
+  const score = Math.min(10, Math.max(0, rawScore));
+  const band = classifyH4LiquidityBand(score);
+  if(score > 0) reasons.push(`H4 liquidity/orderflow context score: ${score}/10.`);
+  return { score, band, components, reasons };
+}
 function buildH4LiquidityOrderflowState(input = {}){
   const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const closedCandles = getClosedOrderflowCandles(input.candles);
@@ -617,11 +699,27 @@ function buildH4LiquidityOrderflowState(input = {}){
   const primaryCandidates = candidateLevels.filter((level)=>level?.source !== "marketMap").slice(0, 20);
   if(!primaryCandidates.length) dataWarnings.push(createLiquidityDiagnosticWarning("No H4 liquidity candidate levels available."));
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
-  const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  base.diagnostics = { closedBarsUsed: closedCandles.length, candidateLevelsScanned: primaryCandidates.length, latencyMs: Math.max(0, endedAt - startedAt), dataWarnings: sweep ? dataWarnings : [...dataWarnings, createLiquidityDiagnosticWarning("No possible H4 liquidity sweep detected.")] };
-  if(!sweep) return base;
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [] } = {})=>{
+    const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    return {
+      closedBarsUsed: closedCandles.length,
+      candidateLevelsScanned: primaryCandidates.length,
+      latencyMs: Math.max(0, endedAt - startedAt),
+      dataWarnings: warnings,
+      barsAfterSweep,
+      reclaimWindowRemaining,
+      confirmationWindowBars,
+      deepBreachPct,
+      scoreComponents,
+      contextWarnings,
+    };
+  };
+  if(!sweep){
+    base.diagnostics = buildDiagnostics({ warnings: [...dataWarnings, createLiquidityDiagnosticWarning("No possible H4 liquidity sweep detected.")] });
+    return base;
+  }
   const anchorTime = getOrderflowCandleTime(sweep.candle);
   const sweepType = sweep.sweepType;
   const levelType = sweep.level?.type || null;
@@ -629,49 +727,68 @@ function buildH4LiquidityOrderflowState(input = {}){
   const reclaim = classifyH4LiquidityReclaim(closedCandles, sweep, { maxBars: 3 });
   const avwap = buildH4LiquidityAvwapState(closedCandles, sweep, reclaim);
   const volume = reclaim.detected ? calculateLiquidityVolumeStatus(closedCandles, reclaim.candleIndex, 20) : base.activeEpisode.volume;
-  const preliminaryScore = reclaim.detected ? scoreH4LiquidityPreliminary(reclaim, avwap, sweepType) : 0;
   const isValid = reclaim.detected && [LIQUIDITY_RECLAIM_STATUS.SAME_BAR, LIQUIDITY_RECLAIM_STATUS.NEXT_BAR, LIQUIDITY_RECLAIM_STATUS.LATE].includes(reclaim.status);
   const avwapSupportsContext = avwap.available && isCorrectLiquidityAvwapSide(sweepType, avwap.side);
+  const episode = {
+    ...base.activeEpisode,
+    episodeId: createH4LiquidityEpisodeId(sweepType, levelType, sweep.levelPrice, anchorTime),
+    status: isValid ? LIQUIDITY_OF_STATE.VALID : LIQUIDITY_OF_STATE.POSSIBLE,
+    stale: false,
+    displayStatus: isValid ? "Valid H4 liquidity sweep reaction" : (reclaim.status === LIQUIDITY_RECLAIM_STATUS.MISSED ? "Possible liquidity sweep detected; reclaim not confirmed" : "Possible liquidity sweep detected"),
+    sweep: {
+      ...base.activeEpisode.sweep,
+      detected: true,
+      type: sweepType,
+      levelType,
+      levelPrice: sweep.levelPrice,
+      breachPrice: sweep.breachPrice,
+      breachBuffer: sweep.breachBuffer,
+      excursionAtr,
+      anchorTime,
+      anchorIndex: sweep.candleIndex,
+      anchorMethod: "sweepCandle",
+      mergeCount: 0,
+    },
+    reclaim,
+    avwap,
+    volume,
+  };
+  const staleState = classifyH4LiquidityStale(episode, closedCandles, { reclaimWindowBars: 3, possibleWindowBars: 12, validWindowBars: 24 });
+  const deepBreachWarning = getH4LiquidityDeepBreachWarning(episode);
+  const scoreState = scoreH4LiquidityEpisode(episode, { deepBreachWarning }, { penalizeDeepBreach: true });
   const reasons = isValid
     ? [
       "Close reclaim/reject confirmed on closed H4 candle.",
       avwap.available ? "Anchored VWAP context calculated from sweep candle." : "AVWAP unavailable due to missing volume.",
       avwapSupportsContext ? "AVWAP side supports reaction context." : "AVWAP side has not confirmed control.",
+      ...scoreState.reasons,
+      ...(staleState.stale && staleState.reason ? [staleState.reason] : []),
     ]
     : [
       "Possible H4 liquidity sweep detected on closed candle.",
       reclaim.status === LIQUIDITY_RECLAIM_STATUS.MISSED ? "Reclaim/reject was not confirmed within the initial H4 window." : "Waiting for reclaim/reject confirmation.",
+      ...(deepBreachWarning.triggered && deepBreachWarning.reason ? [deepBreachWarning.reason] : []),
+      ...(staleState.stale && staleState.reason ? [staleState.reason] : []),
     ];
+  const diagnostics = buildDiagnostics({
+    barsAfterSweep: staleState.barsAfterSweep,
+    reclaimWindowRemaining: staleState.reclaimWindowRemaining,
+    confirmationWindowBars: staleState.confirmationWindowBars,
+    deepBreachPct: deepBreachWarning.deepBreachPct,
+    scoreComponents: scoreState.components,
+    contextWarnings: [],
+  });
   return {
     ...base,
     activeEpisode: {
-      ...base.activeEpisode,
-      episodeId: createH4LiquidityEpisodeId(sweepType, levelType, sweep.levelPrice, anchorTime),
-      status: isValid ? LIQUIDITY_OF_STATE.VALID : LIQUIDITY_OF_STATE.POSSIBLE,
-      stale: false,
-      displayStatus: isValid ? "Valid H4 liquidity sweep reaction" : (reclaim.status === LIQUIDITY_RECLAIM_STATUS.MISSED ? "Possible liquidity sweep detected; reclaim not confirmed" : "Possible liquidity sweep detected"),
-      band: getH4LiquidityBandForPreliminaryScore(preliminaryScore),
-      score: preliminaryScore,
+      ...episode,
+      stale: staleState.stale,
+      band: scoreState.band,
+      score: scoreState.score,
       reasons,
-      sweep: {
-        ...base.activeEpisode.sweep,
-        detected: true,
-        type: sweepType,
-        levelType,
-        levelPrice: sweep.levelPrice,
-        breachPrice: sweep.breachPrice,
-        breachBuffer: sweep.breachBuffer,
-        excursionAtr,
-        anchorTime,
-        anchorIndex: sweep.candleIndex,
-        anchorMethod: "sweepCandle",
-        mergeCount: 0,
-      },
-      reclaim,
-      avwap,
-      volume,
     },
     recentCompleted: [],
+    diagnostics,
   };
 }
 function createEmptyRecentFvgReactionMemory(){
