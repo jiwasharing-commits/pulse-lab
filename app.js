@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 03:48";
+const APP_LAST_UPDATED = "2026-06-01 04:18";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1518,6 +1518,197 @@ function classifyH4StructureAlignment(episode, h4State, options = {}){
   if(!source) return classifyH4StructureEpisodeAlignment(episode, null, options.closedCandles || []);
   return classifyH4StructureEpisodeAlignment(episode, source, options.closedCandles || []);
 }
+function runH4StructureAlignmentFixtureTests(){
+  const candles = Array.from({ length: 130 }, (_, index)=>({ time: 1700000000 + index * 14400, close: 100 + index }));
+  const baseEpisode = (overrides = {})=>({
+    status: LIQUIDITY_OF_STATE.VALID,
+    sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW, anchorIndex: 100, ...(overrides.sweep || {}) },
+    reclaim: { detected: true, status: LIQUIDITY_RECLAIM_STATUS.SAME_BAR, candleIndex: 110, ...(overrides.reclaim || {}) },
+    avwap: { available: true, side: LIQUIDITY_AVWAP_SIDE.ABOVE, correctSideCloses: 1 },
+    volume: { status: LIQUIDITY_VOLUME_STATUS.NORMAL },
+    score: 6,
+    stale: false,
+    failure: { detected: false },
+    ...overrides,
+  });
+  const structureEvent = (overrides = {})=>{
+    const direction = overrides.direction || "bullish";
+    const structureType = overrides.structureType || "BOS";
+    const eventIndex = Number.isInteger(overrides.eventIndex) ? overrides.eventIndex : 112;
+    const status = overrides.status || `${direction === "bullish" ? "Bullish" : direction === "bearish" ? "Bearish" : "No clear 4H"} ${structureType === "none" ? "structure shift" : structureType}`;
+    return {
+      status,
+      direction,
+      structureType,
+      eventIndex,
+      eventTime: candles[eventIndex]?.time ?? null,
+      broken: Number.isFinite(overrides.broken) ? overrides.broken : 100,
+      brokenLevel: Number.isFinite(overrides.brokenLevel) ? overrides.brokenLevel : 100,
+      ref: String(candles[Math.max(0, eventIndex - 3)]?.time ?? "—"),
+      sourceSwingIndex: Number.isInteger(overrides.sourceSwingIndex) ? overrides.sourceSwingIndex : Math.max(0, eventIndex - 3),
+      sourceSwingTime: overrides.sourceSwingTime ?? candles[Math.max(0, eventIndex - 3)]?.time ?? null,
+      latestClose: 101,
+      confidence: overrides.confidence || "medium",
+      ...overrides,
+    };
+  };
+  const includes = (list, value)=>Array.isArray(list) && list.includes(value);
+  const notIncludes = (list, value)=>!includes(list, value);
+  const hasWarningContaining = (alignment, text)=>Array.isArray(alignment?.warnings) && alignment.warnings.some((warning)=>String(warning).includes(text));
+  const structureIsNotEligible = (alignment)=>{
+    const gate = getH4LiquidityEligibleContextCorroborators({ nearbyH4Fvgs: [], nearbyH4Ifvgs: [], nearbyMarketMapZones: [], structureAlignment: alignment });
+    const corroboratorState = hasH4LiquidityCorroborator(baseEpisode(), { eligibleContextCorroborators: ["4H structure alignment"] });
+    const confirmation = shouldConfirmH4LiquidityEpisode(baseEpisode(), { closedCandles: candles, eligibleContextCorroborators: ["4H structure alignment"] }, { scoreThreshold: 6 });
+    return {
+      gate,
+      corroboratorState,
+      confirmation,
+      passed: gate.eligibleCorroborators.length === 0
+        && corroboratorState.hasCorroborator === false
+        && confirmation.confirmed === false
+        && notIncludes(confirmation.corroborators, "4H structure alignment")
+        && includes(confirmation.blockers, "no corroborator"),
+    };
+  };
+  const cases = [
+    {
+      name: "Structure after sweep but before reclaim remains diagnostics-only",
+      episode: baseEpisode(),
+      structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 105, status: "Bullish BOS" }),
+      expected: "relation after sweep / before reclaim with episodeAligned false",
+      checks: [
+        ({ alignment })=>alignment.reactionDirection === "bullish",
+        ({ alignment })=>alignment.structureDirection === "bullish",
+        ({ alignment })=>alignment.relationToSweep === "after",
+        ({ alignment })=>alignment.relationToReclaim === "before",
+        ({ alignment })=>alignment.episodeAligned === false,
+        ({ alignment })=>hasWarningContaining(alignment, "Structure did not occur after reclaim"),
+      ],
+    },
+    {
+      name: "Structure after reclaim matching sweepLow direction aligns diagnostics",
+      episode: baseEpisode(),
+      structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 112, status: "Bullish BOS" }),
+      expected: "aligned and episodeAligned true",
+      checks: [
+        ({ alignment })=>alignment.relationToSweep === "after",
+        ({ alignment })=>alignment.relationToReclaim === "after",
+        ({ alignment })=>alignment.alignment === "aligned",
+        ({ alignment })=>alignment.episodeAligned === true,
+      ],
+    },
+    {
+      name: "Structure after reclaim opposite sweepLow direction conflicts as warning-only diagnostics",
+      episode: baseEpisode(),
+      structure: structureEvent({ direction: "bearish", structureType: "BOS", eventIndex: 112, status: "Bearish BOS" }),
+      expected: "conflict and episodeAligned true with warning",
+      checks: [
+        ({ alignment })=>alignment.reactionDirection === "bullish",
+        ({ alignment })=>alignment.structureDirection === "bearish",
+        ({ alignment })=>alignment.relationToReclaim === "after",
+        ({ alignment })=>alignment.alignment === "conflict",
+        ({ alignment })=>alignment.episodeAligned === true,
+        ({ alignment })=>hasWarningContaining(alignment, "opposite 4H structure"),
+      ],
+    },
+    {
+      name: "No reclaim keeps structure non-episode-aligned",
+      episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE, candleIndex: null } }),
+      structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 112, status: "Bullish BOS" }),
+      expected: "relationToReclaim unknown and episodeAligned false",
+      checks: [
+        ({ alignment })=>alignment.relationToSweep === "after",
+        ({ alignment })=>alignment.relationToReclaim === "unknown",
+        ({ alignment })=>alignment.episodeAligned === false,
+        ({ alignment })=>hasWarningContaining(alignment, "No reclaim candle"),
+      ],
+    },
+    {
+      name: "No clear structure remains unknown",
+      episode: baseEpisode(),
+      structure: structureEvent({ direction: "neutral", structureType: "none", eventIndex: 112, status: "No clear 4H structure shift", broken: null, brokenLevel: null, confidence: "low" }),
+      expected: "unknown and episodeAligned false",
+      checks: [
+        ({ alignment })=>alignment.alignment === "unknown",
+        ({ alignment })=>alignment.episodeAligned === false,
+        ({ alignment })=>alignment.structureDirection === "neutral",
+        ({ alignment })=>alignment.structureType === "none",
+        ({ alignment })=>/No clear 4H BOS\/CHoCH/.test(alignment.reason),
+      ],
+    },
+    {
+      name: "Old string-only structure lacks event metadata",
+      episode: baseEpisode(),
+      structure: "Bullish BOS",
+      expected: "unknown with missing event metadata warning",
+      checks: [
+        ({ alignment })=>alignment.alignment === "unknown",
+        ({ alignment })=>alignment.episodeAligned === false,
+        ({ alignment })=>alignment.reactionDirection === "bullish",
+        ({ alignment })=>alignment.structureDirection === "bullish",
+        ({ alignment })=>hasWarningContaining(alignment, "Missing structure event index/time"),
+      ],
+    },
+    {
+      name: "sweepHigh bearish structure after reclaim aligns diagnostics",
+      episode: baseEpisode({ sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, anchorIndex: 100 } }),
+      structure: structureEvent({ direction: "bearish", structureType: "BOS", eventIndex: 112, status: "Bearish BOS" }),
+      expected: "bearish reaction aligned",
+      checks: [
+        ({ alignment })=>alignment.reactionDirection === "bearish",
+        ({ alignment })=>alignment.structureDirection === "bearish",
+        ({ alignment })=>alignment.alignment === "aligned",
+        ({ alignment })=>alignment.episodeAligned === true,
+      ],
+    },
+    {
+      name: "sweepHigh bullish structure after reclaim conflicts diagnostics",
+      episode: baseEpisode({ sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, anchorIndex: 100 } }),
+      structure: structureEvent({ direction: "bullish", structureType: "CHOCH", eventIndex: 112, status: "Bullish CHoCH" }),
+      expected: "bearish reaction conflict with warning",
+      checks: [
+        ({ alignment })=>alignment.reactionDirection === "bearish",
+        ({ alignment })=>alignment.structureDirection === "bullish",
+        ({ alignment })=>alignment.alignment === "conflict",
+        ({ alignment })=>alignment.episodeAligned === true,
+        ({ alignment })=>hasWarningContaining(alignment, "opposite 4H structure"),
+      ],
+    },
+  ];
+  const results = cases.map((testCase)=>{
+    const alignment = classifyH4StructureEpisodeAlignment(testCase.episode, testCase.structure, candles);
+    const eligibility = structureIsNotEligible(alignment);
+    const details = {
+      structureAlignment: alignment,
+      contextGateEligibleCorroborators: eligibility.gate.eligibleCorroborators,
+      contextGateSkipped: eligibility.gate.skipped,
+      contextGateWarnings: eligibility.gate.warnings,
+      hasStructureCorroborator: eligibility.corroboratorState.hasCorroborator,
+      confirmationCorroborators: eligibility.confirmation.corroborators,
+      confirmationBlockers: eligibility.confirmation.blockers,
+      confirmed: eligibility.confirmation.confirmed,
+    };
+    const passed = testCase.checks.every((check)=>check({ alignment, details })) && eligibility.passed;
+    return {
+      name: testCase.name,
+      passed,
+      expected: testCase.expected,
+      actual: passed ? "matched" : "mismatch",
+      details,
+    };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return {
+    passed: failed === 0,
+    total: results.length,
+    failed,
+    results,
+  };
+}
+if(typeof window !== "undefined") {
+  window.runH4StructureAlignmentFixtureTests = runH4StructureAlignmentFixtureTests;
+}
+
 function buildH4LiquidityContextCorroborators(input = {}){
   const episode = input.episode || null;
   const closedCandles = Array.isArray(input.closedCandles) ? input.closedCandles : [];
