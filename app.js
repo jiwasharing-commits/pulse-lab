@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 07:42";
+const APP_LAST_UPDATED = "2026-06-01 08:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -4644,6 +4644,22 @@ function buildDailyContextSnapshot(dailyState = marketPreparationState.daily, cu
   const contextBias = deriveDailyContextBias({ available, fvg, ifvg, sr, pattern });
   return { available, rangeMode, candleCount, fvg, ifvg, sr, pattern, contextBias, warnings: [...new Set(warnings)], skipped: [...new Set(skipped)] };
 }
+function formatDailyContextForMarketPreparation(snapshot){
+  if(!snapshot || snapshot.available !== true) return "Daily: context unavailable";
+  const patternText = `${snapshot.pattern?.name || ""} ${snapshot.pattern?.status || ""} ${snapshot.pattern?.position || ""}`.toLowerCase();
+  if(patternText.includes("rising")) return "Daily: rising channel";
+  if(patternText.includes("falling")) return "Daily: falling channel";
+  if(patternText.includes("range")) return "Daily: range context";
+  if(snapshot.fvg?.nearestType && snapshot.fvg.nearestType !== "unavailable") return "Daily: FVG context";
+  if(snapshot.sr?.nearestSupport) return "Daily: near support";
+  if(snapshot.sr?.nearestResistance) return "Daily: near resistance";
+  const bias = String(snapshot.contextBias || "").toLowerCase();
+  if(["bullish context", "bearish context", "mixed context", "neutral context"].includes(bias)) return `Daily: ${bias}`;
+  return "Daily: neutral context";
+}
+function formatDailyContextChipValue(snapshot){
+  return formatDailyContextForMarketPreparation(snapshot).replace(/^Daily:\s*/i, "");
+}
 function formatDailyContextSrItem(item){
   if(!item) return "unavailable";
   const price = Number.isFinite(Number(item.price)) ? formatDiagnosticPrice(item.price) : "unavailable";
@@ -4711,6 +4727,45 @@ function runDailyContextSnapshotFixtureTests(){
       expected: "no throw with skipped and warning details",
     },
     {
+      name: "formatter returns unavailable phrase",
+      run: ()=>formatDailyContextForMarketPreparation({ available:false }),
+      verify: (actual)=>actual === "Daily: context unavailable",
+      expected: "Daily: context unavailable",
+    },
+    {
+      name: "formatter prefers pattern context",
+      run: ()=>formatDailyContextForMarketPreparation({ available:true, pattern:{ name:"Rising Channel", status:"Valid", position:"near support" }, fvg:{ nearestType:"bullish" }, sr:{ nearestSupport:{ label:"support" } }, contextBias:"mixed context" }),
+      verify: (actual)=>actual === "Daily: rising channel",
+      expected: "Daily: rising channel",
+    },
+    {
+      name: "formatter returns FVG context",
+      run: ()=>formatDailyContextForMarketPreparation({ available:true, pattern:{ name:"—", status:"Unavailable", position:"—" }, fvg:{ nearestType:"bullish" }, sr:{}, contextBias:"neutral context" }),
+      verify: (actual)=>actual === "Daily: FVG context",
+      expected: "Daily: FVG context",
+    },
+    {
+      name: "formatter returns support context",
+      run: ()=>formatDailyContextForMarketPreparation({ available:true, pattern:{ name:"—", status:"Unavailable", position:"—" }, fvg:{ nearestType:"unavailable" }, sr:{ nearestSupport:{ label:"support" } }, contextBias:"neutral context" }),
+      verify: (actual)=>actual === "Daily: near support",
+      expected: "Daily: near support",
+    },
+    {
+      name: "formatter falls back to bias context",
+      run: ()=>formatDailyContextForMarketPreparation({ available:true, pattern:{ name:"—", status:"Unavailable", position:"—" }, fvg:{ nearestType:"unavailable" }, sr:{}, contextBias:"neutral context" }),
+      verify: (actual)=>actual === "Daily: neutral context",
+      expected: "Daily: neutral context",
+    },
+    {
+      name: "formatter avoids prohibited wording",
+      run: ()=>formatDailyContextForMarketPreparation({ available:true, pattern:{ name:"Range", status:"Valid", position:"middle" }, fvg:{ nearestType:"unavailable" }, sr:{}, contextBias:"neutral context" }),
+      verify: (actual)=>{
+        const prohibited = ["b"+"uy", "s"+"ell", "en"+"try", "sig"+"nal", "take"+" profit", "stop"+" loss", "win"+"rate", "prob"+"ability", "lev"+"erage", "position"+" size", "guar"+"anteed", "sure"+" profit", "exact"+" stop", "exact"+" target"];
+        return !prohibited.some((term)=>String(actual).toLowerCase().includes(term));
+      },
+      expected: "no prohibited action wording",
+    },
+    {
       name: "no alternate Daily key or liquidity state regression",
       run: ()=>{
         const alternateDailyKey = ["d", "1"].join("");
@@ -4738,6 +4793,7 @@ function runDailyContextSnapshotFixtureTests(){
 }
 if(typeof window !== "undefined"){
   window.buildDailyContextSnapshot = buildDailyContextSnapshot;
+  window.formatDailyContextForMarketPreparation = formatDailyContextForMarketPreparation;
   window.runDailyContextSnapshotFixtureTests = runDailyContextSnapshotFixtureTests;
 }
 
@@ -4762,12 +4818,13 @@ function buildMarketPreparationMap(){
     const upside = mergeConfluenceRows(rows.filter((r)=>r.side==='upside' && (Number.isFinite(price) ? r.center>price : true)), price);
     const downside = mergeConfluenceRows(rows.filter((r)=>r.side==='downside' && (Number.isFinite(price) ? r.center<price : true)), price);
     const h4RsiText = marketPreparationState.h4.rsiStatus?.ok ? ` | ${marketPreparationState.h4.rsiStatus.label}` : "";
+    const dailyContextText = formatDailyContextForMarketPreparation(buildDailyContextSnapshot(marketPreparationState.daily, price));
     const currentRowText = Number.isFinite(price)
-      ? `● ${usd(price)} | ${marketPreparationState.h4.structureStatus||'4H —'}${h4RsiText} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`
-      : "● Price unavailable | Waiting for ticker/4H/1H context";
+      ? `● ${usd(price)} | ${dailyContextText} | ${marketPreparationState.h4.structureStatus||'4H —'}${h4RsiText} | 1H Sweep: ${marketPreparationState.h1.sweepStatus||'—'} | 1H Structure: ${marketPreparationState.h1.structureStatus||'—'}`
+      : "● Price unavailable | Daily: context unavailable | Waiting for ticker/4H/1H context";
     return { upside, downside, currentRowText };
   } catch {
-    return { upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" };
+    return { upside: [], downside: [], currentRowText: "● Price unavailable | Daily: context unavailable | Waiting for ticker/4H/1H context" };
   }
 }
 function getSentimentMeaning(value, label){
@@ -5206,15 +5263,17 @@ function buildCurrentPriceDetailDataV2(mapData){
   const weeklyFvgText = weeklyFvg ? `${weeklyFvg.type || "Weekly FVG"} ${Number.isFinite(price)&&price<weeklyFvg.lower?"above":Number.isFinite(price)&&price>weeklyFvg.upper?"below":"nearby"}` : "—";
   const weeklySrText = weeklySr?.support && weeklySr?.resistance ? "Price between weekly zones" : (weeklySr?.support || weeklySr?.resistance) ? "Price near weekly zone" : "—";
   const dailyPattern = getDailyPatternDetail(marketPreparationState.daily?.pattern);
+  const dailySnapshot = buildDailyContextSnapshot(marketPreparationState.daily, price);
+  const dailyContextText = formatDailyContextForMarketPreparation(dailySnapshot);
   const keyZone = getKeyZonePositionContext(mapData, marketPreparationState);
   return {
     compactRowText: Number.isFinite(price)
-      ? `● ${usd(price)} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
-      : "● Price unavailable | Waiting for ticker/4H/1H context",
+      ? `● ${usd(price)} | ${dailyContextText} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
+      : "● Price unavailable | Daily: context unavailable | Waiting for ticker/4H/1H context",
     price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable", change24hPct: Number.isFinite(change24hPct) ? change24hPct : null },
     sentiment: { value: toNullableNumber(sentiment.value), label: sentiment.label || null, meaning: getSentimentMeaning(toNullableNumber(sentiment.value), sentiment.label) },
     weekly: { bias: weeklyBias, fvg: weeklyFvgText, sr: weeklySrText, meaning: weeklyBias !== "Unavailable" ? "Weekly context still defines the main reaction zones." : "Weekly context unavailable." },
-    daily: { pattern: dailyPattern.pattern, status: dailyPattern.status, position: dailyPattern.position, touches: dailyPattern.touches, reason: dailyPattern.reason, caption: dailyPattern.caption },
+    daily: { pattern: dailyPattern.pattern, status: dailyPattern.status, position: dailyPattern.position, touches: dailyPattern.touches, reason: dailyPattern.reason, caption: dailyPattern.caption, contextText: dailyContextText, contextChip: formatDailyContextChipValue(dailySnapshot) },
     h4Structure: { status: h4Status, brokenLevel: null, latestClose: null, meaning: h4Meaning },
     h4Rsi: { ok: !!h4Rsi.ok, value: Number.isFinite(h4Rsi.value) ? h4Rsi.value : null, regime: h4Rsi.regime || null, slope: h4Rsi.slope || null, label: h4Rsi.label || "4H RSI unavailable", meaning: h4RsiMeaning },
     h4Volume: { label: h4Volume?.label || null, ratio: Number.isFinite(h4Volume?.ratio) ? h4Volume.ratio : null },
@@ -5230,12 +5289,14 @@ function buildCurrentPriceDetailDataV2(mapData){
 function renderCurrentPriceChips(detail){
   if(!detail) return escapeHtml("● Price unavailable");
   const priceText = detail.price?.text || "Price unavailable";
+  const dailyText = detail.daily?.contextChip || String(detail.daily?.contextText || "Daily: context unavailable").replace(/^Daily:\s*/i, "");
   const h4Text = detail.h4Structure?.status || "4H unavailable";
   const rsiText = detail.h4Rsi?.ok ? (detail.h4Rsi.label || "RSI available") : "RSI unavailable";
   const sweepText = detail.h1Sweep?.status || "Sweep unavailable";
   const h1Text = detail.h1Structure?.status || "1H unavailable";
   const chips = [
     ["Price", priceText],
+    ["Daily", dailyText],
     ["4H", h4Text],
     ["RSI", rsiText],
     ["1H Sweep", sweepText],
@@ -5269,6 +5330,7 @@ function renderCurrentPriceDetailCards(detail){
       </article>
       <article class="prep-current-detail-card">
         <h4 class="prep-current-detail-card-title">Daily Context</h4>
+        <p class="prep-current-detail-kv">Context: ${detail.daily.contextText}</p>
         <p class="prep-current-detail-kv">Pattern: ${detail.daily.pattern}</p>
         <p class="prep-current-detail-kv">Status: ${detail.daily.status}</p>
         <p class="prep-current-detail-kv">Position: ${detail.daily.position}</p>
@@ -9031,7 +9093,7 @@ function setLoading(){
   if(els.weeklyCandleW3) els.weeklyCandleW3.textContent='W-3: loading';
   if(els.weeklyCandleReading) els.weeklyCandleReading.textContent='3W Reading: loading';
   if(els.weeklyCandleCondition) els.weeklyCandleCondition.textContent='Condition: loading';
-  renderMarketPreparationMap({ upside: [], downside: [], currentRowText: "● Price unavailable | Waiting for ticker/4H/1H context" });
+  renderMarketPreparationMap({ upside: [], downside: [], currentRowText: "● Price unavailable | Daily: context unavailable | Waiting for ticker/4H/1H context" });
   togglePriceChartError(""); toggleRsiChartError("");
   clearFvgOverlay();
 }
