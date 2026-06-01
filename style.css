@@ -281,7 +281,14 @@
 
 /* Section 3 chart-attached explanation layout */
 .ltf-combined-card{margin-bottom:.5rem}
-.ltf-combined-grid{display:grid;gap:.3rem}
+.ltf-combined-grid{display:grid;gap:.45rem}
+.ltf-context-card{border:1px solid rgba(148,163,184,.14);border-radius:.75rem;background:rgba(15,23,42,.34);padding:.55rem .62rem;color:#dbeafe}
+.ltf-context-card h4{margin:0 0 .16rem;font-size:.76rem;letter-spacing:.04em;text-transform:uppercase;color:#e5edff}
+.ltf-context-card p,.ltf-context-card small{margin:0;color:#9caecf;font-size:.72rem;line-height:1.32}
+.daily-context-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.38rem;margin-top:.48rem}
+.daily-context-grid span{min-width:0;border-top:1px solid rgba(148,163,184,.08);padding-top:.28rem;color:#dbeafe;font-size:.72rem;line-height:1.28;overflow-wrap:anywhere}
+.daily-context-grid strong{display:block;margin-bottom:.08rem;color:#8fa0c4;font-size:.64rem;letter-spacing:.04em;text-transform:uppercase}
+@media (max-width:860px){.daily-context-grid{grid-template-columns:1fr}}
 .ltf-chart-card{border-radius:.75rem;padding:.58rem .65rem;margin-bottom:.55rem}
 .ltf-chart-card-grid{display:grid;grid-template-columns:minmax(0,80%) minmax(180px,20%);gap:14px;align-items:start}
 .ltf-analysis-card.visual-evidence .ltf-chart-card-grid{grid-template-columns:1fr}

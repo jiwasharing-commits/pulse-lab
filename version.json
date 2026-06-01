@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 07:18",
-  "version": "v0.2.27",
+  "lastUpdated": "2026-06-01 07:42",
+  "version": "v0.2.28",
   "commitLabel": "manual",
-  "note": "Add read-only H4 liquidity diagnostics panel"
+  "note": "Add Daily context snapshot and Lower TF combined summary"
 }

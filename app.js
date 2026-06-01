@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 07:18";
+const APP_LAST_UPDATED = "2026-06-01 07:42";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -28,7 +28,7 @@ const els = {
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
   ltfStartDate: document.getElementById("ltfStartDate"), ltfEndDate: document.getElementById("ltfEndDate"), ltfApplyBtn: document.getElementById("ltfApplyBtn"), ltfResetBtn: document.getElementById("ltfResetBtn"),
   lowerDailyChart: document.getElementById("lowerDailyChart"), lowerDailyError: document.getElementById("lowerDailyError"), lowerDailyMeta: document.getElementById("lowerDailyMeta"), lowerDailyPatternSummary: document.getElementById("lowerDailyPatternSummary"), lowerDailyFvgOverlay: document.getElementById("lowerDailyFvgOverlay"), lowerDailySrOverlay: document.getElementById("lowerDailySrOverlay"), lowerDailyPatternOverlay: document.getElementById("lowerDailyPatternOverlay"), lower4hMeta: document.getElementById("lower4hMeta"), lower1hMeta: document.getElementById("lower1hMeta"), lower4hChart: document.getElementById("lower4hChart"), lower1hChart: document.getElementById("lower1hChart"), lower4hError: document.getElementById("lower4hError"), lower1hError: document.getElementById("lower1hError"), lower4hFvgSummary: document.getElementById("lower4hFvgSummary"), lower4hStructure: document.getElementById("lower4hStructure"), lower4hReaction: document.getElementById("lower4hReaction"),
-  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
+  lower1hSweepSummary: document.getElementById("lower1hSweepSummary"), lower1hStructureSummary: document.getElementById("lower1hStructureSummary"), lowerTfReactionSummary: document.getElementById("lowerTfReactionSummary"), dailyContextSummary: document.getElementById("dailyContextSummary"), lower4hFvgOverlay: document.getElementById("lower4hFvgOverlay"), lower4hSrOverlay: document.getElementById("lower4hSrOverlay"), lower4hSrNearestResistance: document.getElementById("lower4hSrNearestResistance"), lower4hSrStrongestResistance: document.getElementById("lower4hSrStrongestResistance"), lower4hSrNearestSupport: document.getElementById("lower4hSrNearestSupport"), lower4hSrStrongestSupport: document.getElementById("lower4hSrStrongestSupport"), lower4hSrState: document.getElementById("lower4hSrState"),
   ltfDateControls: document.getElementById("ltfDateControls"), ltfPreset1w: document.getElementById("ltfPreset1w"), ltfPreset2w: document.getElementById("ltfPreset2w"), ltfPreset1m: document.getElementById("ltfPreset1m"), ltfPreset3m: document.getElementById("ltfPreset3m"), ltfPresetCustom: document.getElementById("ltfPresetCustom"), dailyPreset3m: document.getElementById("dailyPreset3m"), dailyPreset6m: document.getElementById("dailyPreset6m"), dailyPreset1y: document.getElementById("dailyPreset1y"), dailyLayerToggleBtn: document.getElementById("dailyLayerToggleBtn"), dailyLayerMenu: document.getElementById("dailyLayerMenu"), h4LayerToggleBtn: document.getElementById("h4LayerToggleBtn"), h4LayerMenu: document.getElementById("h4LayerMenu"), h1LayerToggleBtn: document.getElementById("h1LayerToggleBtn"), h1LayerMenu: document.getElementById("h1LayerMenu"),
   weeklyAddLineBtn: document.getElementById("weeklyAddLineBtn"), weeklyDrawLineBtn: document.getElementById("weeklyDrawLineBtn"), weeklyDrawTrendlineBtn: document.getElementById("weeklyDrawTrendlineBtn"), weeklyManageBtn: document.getElementById("weeklyManageBtn"), h4AddLineBtn: document.getElementById("h4AddLineBtn"), h4DrawLineBtn: document.getElementById("h4DrawLineBtn"), h4DrawTrendlineBtn: document.getElementById("h4DrawTrendlineBtn"), h4ManageBtn: document.getElementById("h4ManageBtn"),
   exportPdfBtn: document.getElementById("exportPdfBtn"), pdfReportRoot: document.getElementById("pdfReportRoot"), drawingManagerModal: document.getElementById("drawingManagerModal"), drawingManagerTitle: document.getElementById("drawingManagerTitle"), drawingManagerLinesList: document.getElementById("drawingManagerLinesList"), drawingManagerTrendlinesList: document.getElementById("drawingManagerTrendlinesList"), drawingManagerClearAllBtn: document.getElementById("drawingManagerClearAllBtn"), drawingManagerCloseBtn: document.getElementById("drawingManagerCloseBtn"),
@@ -4519,6 +4519,228 @@ function getDailyPatternDetail(pattern = marketPreparationState.daily?.pattern){
   };
 }
 
+function formatDailyContextZoneText(zone){
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  if(Number.isFinite(lower) && Number.isFinite(upper)) return `${formatDiagnosticPrice(lower)}–${formatDiagnosticPrice(upper)}`;
+  const price = Number(zone?.price ?? zone?.level ?? zone?.center);
+  return Number.isFinite(price) ? formatDiagnosticPrice(price) : "unavailable";
+}
+function classifyDailyContextZoneRelation(zone, currentPrice){
+  const price = Number(currentPrice);
+  const lower = Number(zone?.lower);
+  const upper = Number(zone?.upper);
+  if(!Number.isFinite(price) || !Number.isFinite(lower) || !Number.isFinite(upper) || price <= 0) return "unavailable";
+  if(price >= lower && price <= upper) return "inside";
+  const nearest = price > upper ? upper : lower;
+  const distancePct = Math.abs(price - nearest) / price * 100;
+  if(distancePct <= 1.5) return "near";
+  return price > upper ? "above" : "below";
+}
+function getDailyContextFvgDirection(zone){
+  const text = `${zone?.type || ""} ${zone?.direction || ""} ${zone?.label || ""}`.toLowerCase();
+  if(text.includes("bullish")) return "bullish";
+  if(text.includes("bearish")) return "bearish";
+  return "mixed";
+}
+function buildDailyContextFvgSummary(dailyState = {}, currentPrice = null, skipped = []){
+  const zones = Array.isArray(dailyState.fvgZones) ? dailyState.fvgZones : [];
+  const details = Array.isArray(dailyState.fvgDetails) ? dailyState.fvgDetails : [];
+  const nearest = zones[0] || getFvgDetailZone(details[0]) || null;
+  if(!nearest){
+    skipped.push("Daily FVG unavailable");
+    return { nearestType: "unavailable", nearestStatus: "unavailable", relation: "unavailable", zoneText: "unavailable" };
+  }
+  const direction = getDailyContextFvgDirection(nearest);
+  const status = nearest.detailStatus || nearest.status || details[0]?.detailStatus || "active";
+  return {
+    nearestType: direction,
+    nearestStatus: String(status || "active").toLowerCase(),
+    relation: classifyDailyContextZoneRelation(nearest, currentPrice),
+    zoneText: formatDailyContextZoneText(nearest),
+  };
+}
+function buildDailyContextIfvgSummary(dailyState = {}, skipped = []){
+  const summary = summarizeIfvgMemory(dailyState.recentBrokenFvgDetails);
+  const counts = {
+    total: summary.items.length,
+    bullish: summary.items.filter(({ detail, ifvg })=>String(getIfvgDisplayDirection(ifvg, detail)).toLowerCase() === "bullish").length,
+    bearish: summary.items.filter(({ detail, ifvg })=>String(getIfvgDisplayDirection(ifvg, detail)).toLowerCase() === "bearish").length,
+    confirmed: summary.counts.confirmed,
+    valid: summary.counts.valid,
+    possible: summary.counts.possible,
+    failed: summary.counts.failed,
+  };
+  const latest = summary.items[0] || null;
+  if(!latest){
+    skipped.push("Daily IFVG unavailable");
+    return { counts, latestLabel: "unavailable", latestState: "unavailable" };
+  }
+  const line = formatIfvgContextLine(latest.detail, "Daily");
+  return { counts, latestLabel: line.title, latestState: latest.ifvg?.state || "unavailable" };
+}
+function buildDailyContextSrItem(zone, label, currentPrice){
+  if(!zone) return null;
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  const center = Number.isFinite(lower) && Number.isFinite(upper) ? (lower + upper) / 2 : Number(zone.price ?? zone.level ?? zone.center);
+  const price = Number(currentPrice);
+  const distancePct = Number.isFinite(price) && price > 0 && Number.isFinite(center) ? Math.abs(price - center) / price * 100 : null;
+  return {
+    label,
+    price: Number.isFinite(center) ? center : null,
+    distancePct,
+    quality: zone.strength || (Number.isFinite(Number(zone.touchCount)) ? `Touch ${zone.touchCount}x` : "unavailable"),
+  };
+}
+function buildDailyContextSrSummary(dailyState = {}, currentPrice = null, skipped = []){
+  const sr = dailyState.srSummary || {};
+  const nearestSupport = buildDailyContextSrItem(sr.support?.nearest || sr.support, "Nearest support", currentPrice);
+  const nearestResistance = buildDailyContextSrItem(sr.resistance?.nearest || sr.resistance, "Nearest resistance", currentPrice);
+  if(!nearestSupport && !nearestResistance) skipped.push("Daily S/R unavailable");
+  return { nearestSupport, nearestResistance };
+}
+function buildDailyContextPatternSummary(dailyState = {}, skipped = []){
+  const pattern = getDailyPatternDetail(dailyState.pattern);
+  if(!pattern.ok) skipped.push("Daily pattern unavailable");
+  return { name: pattern.pattern, status: pattern.status, position: pattern.position, touches: pattern.touches, reason: pattern.reason };
+}
+function deriveDailyContextBias({ available, fvg, ifvg, sr, pattern }){
+  if(!available) return "unavailable";
+  let bullish = 0;
+  let bearish = 0;
+  if(fvg?.nearestType === "bullish") bullish += 1;
+  if(fvg?.nearestType === "bearish") bearish += 1;
+  const latestIfvg = `${ifvg?.latestLabel || ""}`.toLowerCase();
+  if(latestIfvg.includes("bullish")) bullish += 1;
+  if(latestIfvg.includes("bearish")) bearish += 1;
+  if(sr?.nearestSupport) bullish += 1;
+  if(sr?.nearestResistance) bearish += 1;
+  const patternText = `${pattern?.name || ""} ${pattern?.position || ""}`.toLowerCase();
+  if(patternText.includes("rising") || patternText.includes("support")) bullish += 1;
+  if(patternText.includes("falling") || patternText.includes("resistance")) bearish += 1;
+  if(bullish > 0 && bearish > 0) return "mixed context";
+  if(bullish > bearish) return "bullish context";
+  if(bearish > bullish) return "bearish context";
+  return "neutral context";
+}
+function buildDailyContextSnapshot(dailyState = marketPreparationState.daily, currentPrice = marketPreparationState.currentPrice){
+  const warnings = ["Daily context only; not used by H4 confirmed gate"];
+  const skipped = [];
+  const state = dailyState || {};
+  const candles = Array.isArray(state.candles) ? state.candles : [];
+  const fvgZones = Array.isArray(state.fvgZones) ? state.fvgZones : [];
+  const fvgDetails = Array.isArray(state.fvgDetails) ? state.fvgDetails : [];
+  const hasSr = !!state.srSummary;
+  const hasPattern = state.pattern?.ok === true;
+  const available = !!(candles.length || fvgZones.length || fvgDetails.length || hasSr || hasPattern);
+  if(!available) skipped.push("Daily data unavailable");
+  const rangeMode = state.meta?.rangeMode || activeDailyRange || "unavailable";
+  const candleCount = Number.isFinite(Number(state.meta?.candleCount)) ? Number(state.meta.candleCount) : candles.length;
+  const fvg = buildDailyContextFvgSummary(state, currentPrice, skipped);
+  const ifvg = buildDailyContextIfvgSummary(state, skipped);
+  const sr = buildDailyContextSrSummary(state, currentPrice, skipped);
+  const pattern = buildDailyContextPatternSummary(state, skipped);
+  const contextBias = deriveDailyContextBias({ available, fvg, ifvg, sr, pattern });
+  return { available, rangeMode, candleCount, fvg, ifvg, sr, pattern, contextBias, warnings: [...new Set(warnings)], skipped: [...new Set(skipped)] };
+}
+function formatDailyContextSrItem(item){
+  if(!item) return "unavailable";
+  const price = Number.isFinite(Number(item.price)) ? formatDiagnosticPrice(item.price) : "unavailable";
+  const distance = Number.isFinite(Number(item.distancePct)) ? ` · ${f1(Number(item.distancePct))}%` : "";
+  const quality = item.quality && item.quality !== "unavailable" ? ` · ${item.quality}` : "";
+  return `${item.label}: ${price}${distance}${quality}`;
+}
+function formatDailyContextFvgLine(fvg){
+  if(!fvg || fvg.nearestType === "unavailable") return "FVG context unavailable";
+  return `${fvg.nearestType} · ${fvg.nearestStatus} · ${fvg.relation} · ${fvg.zoneText}`;
+}
+function formatDailyContextIfvgLine(ifvg){
+  if(!ifvg || ifvg.latestState === "unavailable") return "IFVG context unavailable";
+  const total = Number(ifvg.counts?.total) || 0;
+  return `${ifvg.latestLabel} · ${ifvg.latestState} · total ${total}`;
+}
+function renderDailyContextSummary(){
+  if(!els.dailyContextSummary) return;
+  const snapshot = buildDailyContextSnapshot(marketPreparationState.daily, marketPreparationState.currentPrice);
+  if(!snapshot.available){
+    els.dailyContextSummary.innerHTML = `<h4>Daily Context</h4><p>Daily context unavailable.</p><small>Context only · bridges Weekly bias and 4H reaction</small>`;
+    return;
+  }
+  const srLine = [formatDailyContextSrItem(snapshot.sr.nearestSupport), formatDailyContextSrItem(snapshot.sr.nearestResistance)].filter((item)=>item !== "unavailable").join(" | ") || "S/R context unavailable";
+  els.dailyContextSummary.innerHTML = `
+    <h4>Daily Context</h4>
+    <small>Context only · bridges Weekly bias and 4H reaction</small>
+    <div class="daily-context-grid">
+      <span><strong>Range</strong>${escapeHtml(snapshot.rangeMode)}</span>
+      <span><strong>Candles</strong>${escapeHtml(formatDiagnosticValue(snapshot.candleCount))}</span>
+      <span><strong>Bias</strong>${escapeHtml(snapshot.contextBias)}</span>
+      <span><strong>FVG</strong>${escapeHtml(formatDailyContextFvgLine(snapshot.fvg))}</span>
+      <span><strong>IFVG</strong>${escapeHtml(formatDailyContextIfvgLine(snapshot.ifvg))}</span>
+      <span><strong>S/R</strong>${escapeHtml(srLine)}</span>
+      <span><strong>Pattern</strong>${escapeHtml(`${snapshot.pattern.name} · ${snapshot.pattern.status} · ${snapshot.pattern.position}`)}</span>
+    </div>
+  `;
+}
+function runDailyContextSnapshotFixtureTests(){
+  const makeResult = (name, passed, expected, actual, details = {})=>({ name, passed: !!passed, expected, actual, details });
+  const mockPattern = { ok:true, type:"Rising Channel", status:"Valid", currentPosition:"near support", supportTouches:2, resistanceTouches:2, totalTouches:4, reason:"Daily pattern fixture.", rangeMode:"3M" };
+  const fixtures = [
+    {
+      name: "empty daily state is unavailable and safe",
+      run: ()=>buildDailyContextSnapshot({ candles: [], fvgZones: [], fvgDetails: [], srSummary: null, pattern: null, meta: { rangeMode:"3M", candleCount:0 } }, 100),
+      verify: (actual)=>!actual.available && actual.contextBias === "unavailable" && actual.skipped.includes("Daily data unavailable"),
+      expected: "available false, unavailable context, no throw",
+    },
+    {
+      name: "daily FVG and support context summarizes",
+      run: ()=>buildDailyContextSnapshot({ candles:[{close:100}], fvgZones:[{ type:"Daily Bullish FVG", lower:96, upper:101, status:"Active" }], fvgDetails:[], recentBrokenFvgDetails:{ all:[] }, srSummary:{ support:{ nearest:{ lower:95, upper:98, touchCount:3 } } }, pattern:null, meta:{ rangeMode:"3M", candleCount:1 } }, 100),
+      verify: (actual)=>actual.available && actual.fvg.nearestType === "bullish" && !!actual.sr.nearestSupport && actual.contextBias !== "unavailable",
+      expected: "available true with FVG and support summary",
+    },
+    {
+      name: "daily pattern context summarizes",
+      run: ()=>buildDailyContextSnapshot({ candles:[{close:100}], fvgZones:[], fvgDetails:[], recentBrokenFvgDetails:{ all:[] }, srSummary:null, pattern:mockPattern, meta:{ rangeMode:"3M", candleCount:1 } }, 100),
+      verify: (actual)=>actual.pattern.name === "Rising Channel" && actual.pattern.status === "Valid" && actual.pattern.position === "near support",
+      expected: "pattern summary exists",
+    },
+    {
+      name: "missing optional shapes remain safe",
+      run: ()=>buildDailyContextSnapshot({ candles:[{close:100}], meta:{ rangeMode:"3M", candleCount:1 } }, 100),
+      verify: (actual)=>actual.available && actual.skipped.length >= 3 && actual.warnings.includes("Daily context only; not used by H4 confirmed gate"),
+      expected: "no throw with skipped and warning details",
+    },
+    {
+      name: "no alternate Daily key or liquidity state regression",
+      run: ()=>{
+        const alternateDailyKey = ["d", "1"].join("");
+        const liquidityKey = ["liquidity", "OrderflowState"].join("");
+        return {
+          hasAlternateDailyKey: Boolean(marketPreparationState[alternateDailyKey]),
+          hasDailyLiquidity: Boolean(marketPreparationState.daily?.[liquidityKey]),
+          hasH1Liquidity: Boolean(marketPreparationState.h1?.[liquidityKey]),
+        };
+      },
+      verify: (actual)=>actual.hasAlternateDailyKey === false && actual.hasDailyLiquidity === false && actual.hasH1Liquidity === false,
+      expected: "no alternate Daily key, no Daily liquidity state, no H1 liquidity state",
+    },
+  ];
+  const results = fixtures.map((fixture)=>{
+    try{
+      const actual = fixture.run();
+      return makeResult(fixture.name, fixture.verify(actual), fixture.expected, actual);
+    } catch(error){
+      return makeResult(fixture.name, false, fixture.expected, error?.message || String(error), { error: true });
+    }
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined"){
+  window.buildDailyContextSnapshot = buildDailyContextSnapshot;
+  window.runDailyContextSnapshotFixtureTests = runDailyContextSnapshotFixtureTests;
+}
+
 function buildMarketPreparationMap(){
   try{
     const price = marketPreparationState.currentPrice;
@@ -7660,6 +7882,7 @@ function updateDailyMarketContext(candles, mode){
       clearDailySrOverlay();
       updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
       refreshFvgMtfContext();
+      renderDailyContextSummary();
       renderMarketPreparationMap(buildMarketPreparationMap());
       return;
     }
@@ -7680,6 +7903,7 @@ function updateDailyMarketContext(candles, mode){
     setDailyPatternSummary(pattern);
     updateMarketPreparationState({ daily: { candles, fvgZones, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
     refreshFvgMtfContext();
+    renderDailyContextSummary();
     scheduleDailyFvgOverlayRedraw();
     scheduleDailySrOverlayRedraw();
     renderDailyPatternOverlay();
@@ -7692,6 +7916,7 @@ function updateDailyMarketContext(candles, mode){
     clearDailySrOverlay();
     updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
     refreshFvgMtfContext();
+    renderDailyContextSummary();
     renderMarketPreparationMap(buildMarketPreparationMap());
   }
 }
@@ -8684,6 +8909,7 @@ function render1hSweepSummary(candles){
   }catch(e){ console.error('1H sweep scanner failed',e); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
 }
 function renderLowerTfReactionSummary(){
+  renderDailyContextSummary();
   if(!els.lowerTfReactionSummary) return;
   const nearest = active4hFvgs[0];
   const fvgTxt = nearest ? `${nearest.type} (${nearest.status})` : 'No active 4H FVG';
@@ -8916,6 +9142,7 @@ async function loadDashboard(){
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
 renderH4LiquidityDiagnosticsPanel();
+renderDailyContextSummary();
 loadDashboard();
 
 manualChartLines = loadManualChartLines();
