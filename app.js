@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 20:23";
+const APP_LAST_UPDATED = "2026-06-01 00:34";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -743,6 +743,66 @@ function detectH4LiquidityFailure(closedCandles, episode, options = {}){
   }
   return createEmptyH4LiquidityFailure({ boundary, scanStartIndex: start, barsChecked });
 }
+function hasH4LiquidityValidReclaim(episode){
+  return episode?.reclaim?.detected === true
+    && [LIQUIDITY_RECLAIM_STATUS.SAME_BAR, LIQUIDITY_RECLAIM_STATUS.NEXT_BAR, LIQUIDITY_RECLAIM_STATUS.LATE].includes(episode.reclaim.status);
+}
+function isH4LiquidityAvwapConfirmed(episode){
+  return episode?.avwap?.available === true
+    && isCorrectLiquidityAvwapSide(episode?.sweep?.type, episode.avwap.side)
+    && Number(episode.avwap.correctSideCloses) >= 1;
+}
+function getH4LiquidityReactionDirection(episode){
+  return getLiquidityReactionDirection(episode?.sweep?.type);
+}
+function hasH4LiquidityCorroborator(episode, context = {}){
+  const corroborators = [];
+  if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.STRONG_SPIKE) corroborators.push("Strong volume spike");
+  else if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.SPIKE) corroborators.push("Volume spike");
+  if(Number(episode?.avwap?.correctSideCloses) >= 2) corroborators.push("AVWAP persistence");
+  return { hasCorroborator: corroborators.length > 0, corroborators };
+}
+function hasH4LiquidityStrongConflict(episode, context = {}){
+  return context?.strongConflict === true;
+}
+function buildH4LiquidityConfirmationReason(episode, context = {}){
+  return [
+    "Close reclaim/reject confirmed on closed H4 candle.",
+    "AVWAP control supports the reaction context.",
+    "Additional corroborator is present.",
+    "No strong higher-timeframe conflict detected.",
+  ];
+}
+function shouldConfirmH4LiquidityEpisode(episode, context = {}, options = {}){
+  const blockers = [];
+  const threshold = Number.isFinite(Number(options.scoreThreshold)) ? Number(options.scoreThreshold) : 6;
+  const validReclaim = hasH4LiquidityValidReclaim(episode);
+  const avwapConfirmed = isH4LiquidityAvwapConfirmed(episode);
+  const corroboratorState = hasH4LiquidityCorroborator(episode, context);
+  const strongConflict = hasH4LiquidityStrongConflict(episode, context);
+  if(episode?.status !== LIQUIDITY_OF_STATE.VALID) blockers.push("not valid");
+  if(!validReclaim) blockers.push("no reclaim");
+  if(episode?.avwap?.available !== true) blockers.push("AVWAP unavailable");
+  else if(!isCorrectLiquidityAvwapSide(episode?.sweep?.type, episode.avwap.side)) blockers.push("AVWAP not on correct side");
+  if(Number(episode?.avwap?.correctSideCloses) < 1) blockers.push("correctSideCloses < 1");
+  if((Number(episode?.score) || 0) < threshold) blockers.push("score below threshold");
+  if(!corroboratorState.hasCorroborator) blockers.push("no corroborator");
+  if(strongConflict) blockers.push("strong conflict");
+  if(episode?.stale === true) blockers.push("stale");
+  if(episode?.failure?.detected === true) blockers.push("failure detected");
+  const confirmed = blockers.length === 0 && validReclaim && avwapConfirmed && corroboratorState.hasCorroborator && !strongConflict;
+  const closedCandles = Array.isArray(context?.closedCandles) ? context.closedCandles : [];
+  const confirmationIndex = confirmed && closedCandles.length ? closedCandles.length - 1 : null;
+  const confirmationAt = Number.isInteger(confirmationIndex) ? getOrderflowCandleTime(closedCandles[confirmationIndex]) : null;
+  return {
+    confirmed,
+    reasons: confirmed ? buildH4LiquidityConfirmationReason(episode, context) : [],
+    blockers,
+    corroborators: corroboratorState.corroborators,
+    confirmationAt,
+    confirmationIndex,
+  };
+}
 function buildH4LiquidityOrderflowState(input = {}){
   const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const closedCandles = getClosedOrderflowCandles(input.candles);
@@ -755,7 +815,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0 } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -771,6 +831,10 @@ function buildH4LiquidityOrderflowState(input = {}){
       failureBoundary,
       failureScanStartIndex,
       failureBarsChecked,
+      confirmationCorroborators,
+      confirmationBlockers,
+      confirmationAt,
+      confirmationIndex,
     };
   };
   if(!sweep){
@@ -856,6 +920,21 @@ function buildH4LiquidityOrderflowState(input = {}){
       },
     }
     : activeEpisode;
+  const confirmation = failure.detected
+    ? { confirmed: false, reasons: [], blockers: ["failure detected"], corroborators: [], confirmationAt: null, confirmationIndex: null }
+    : shouldConfirmH4LiquidityEpisode(failedEpisode, { closedCandles }, { scoreThreshold: 6 });
+  const finalEpisode = confirmation.confirmed
+    ? {
+      ...failedEpisode,
+      status: LIQUIDITY_OF_STATE.CONFIRMED,
+      stale: false,
+      displayStatus: "H4 liquidity sweep reaction confirmed",
+      reasons: [...new Set([
+        ...(failedEpisode.reasons || []),
+        ...confirmation.reasons,
+      ])],
+    }
+    : failedEpisode;
   const diagnostics = buildDiagnostics({
     barsAfterSweep: staleState.barsAfterSweep,
     reclaimWindowRemaining: staleState.reclaimWindowRemaining,
@@ -866,10 +945,14 @@ function buildH4LiquidityOrderflowState(input = {}){
     failureBoundary: failure.boundary,
     failureScanStartIndex: failure.scanStartIndex,
     failureBarsChecked: failure.barsChecked,
+    confirmationCorroborators: confirmation.corroborators,
+    confirmationBlockers: confirmation.blockers,
+    confirmationAt: confirmation.confirmationAt,
+    confirmationIndex: confirmation.confirmationIndex,
   });
   return {
     ...base,
-    activeEpisode: failedEpisode,
+    activeEpisode: finalEpisode,
     recentCompleted: [],
     diagnostics,
   };
