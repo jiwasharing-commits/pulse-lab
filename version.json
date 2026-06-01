@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 08:05",
-  "version": "v0.2.29",
+  "lastUpdated": "2026-06-01 08:22",
+  "version": "v0.2.30",
   "commitLabel": "manual",
-  "note": "Add Daily context phrase to Market Preparation summary"
+  "note": "Set Daily lower timeframe default to 3M and keep PDF compact row stable"
 }

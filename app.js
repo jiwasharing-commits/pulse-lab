@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 08:05";
+const APP_LAST_UPDATED = "2026-06-01 08:22";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -67,9 +67,9 @@ let latest4hStructureStatus = "No clear 4H structure shift";
 let latest1hSweepStatus = "No recent 1H liquidity sweep";
 let latest1hStructureStatus = "No clear 1H structure shift";
 let activeLowerTfMode = "3M";
-let activeDailyRange = "6M";
+let activeDailyRange = "3M";
 let ltfVisible = false;
-let dailyPreset = "6m";
+let dailyPreset = "3m";
 let ltfPreset = "3m";
 const DAILY_PRESET_LIMITS = { "3m": 92, "6m": 183, "1y": 365 };
 const CHART_ZOOM_OFF_INTERACTION_OPTIONS = {
@@ -217,7 +217,7 @@ const LIQUIDITY_VOLUME_STATUS = {
 const marketPreparationState = {
   currentPrice: null,
   weekly: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Weekly"), srSummary: null },
-  daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("6M"), meta: { rangeMode: "6M", preset: "6m", candleCount: 0, updatedAt: null } },
+  daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, structureStatus: null, candleContext: null, volumeStatus: null, recentReaction: null, pattern: createEmptyDailyPattern("3M"), meta: { rangeMode: "3M", preset: "3m", candleCount: 0, updatedAt: null } },
   h4: { fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("4H"), srSummary: null, structureStatus: null, rsiStatus: null, volumeStatus: null, liquidityOrderflowState: createEmptyLiquidityOrderflowState("4H", "context"), recentReaction: { lastBrokenFvg: null, lastMitigatedFvg: null, lastBrokenSupport: null, lastBrokenResistance: null, lastReactionLabel: null, updatedAt: null } },
   h1: { sweepStatus: null, structureStatus: null, stochastic: { ok: false, k: null, d: null, prevK: null, prevD: null, label: "Stoch unavailable", reason: null, status: "idle" } },
   mtf: { finalStatus: null, weeklyBias: null, reaction4h: null, timing1h: null },
@@ -4766,6 +4766,39 @@ function runDailyContextSnapshotFixtureTests(){
       expected: "no prohibited action wording",
     },
     {
+      name: "compact row stays PDF-safe while Market Preparation row keeps Daily phrase",
+      run: ()=>{
+        const priorPrice = marketPreparationState.currentPrice;
+        marketPreparationState.currentPrice = 100;
+        const detail = buildCurrentPriceDetailDataV2({ upside: [], downside: [] });
+        const map = buildMarketPreparationMap();
+        marketPreparationState.currentPrice = priorPrice;
+        return { compactRowText: detail.compactRowText, currentRowText: map.currentRowText };
+      },
+      verify: (actual)=>!String(actual.compactRowText).includes("Daily:") && String(actual.currentRowText).includes("Daily:"),
+      expected: "compactRowText excludes Daily while Market Preparation row includes it",
+    },
+    {
+      name: "Daily default range is 3M with legacy range buttons preserved",
+      run: ()=>({
+        activeDailyRange,
+        dailyPreset,
+        metaRangeMode: marketPreparationState.daily?.meta?.rangeMode,
+        metaPreset: marketPreparationState.daily?.meta?.preset,
+        limit3m: DAILY_PRESET_LIMITS["3m"],
+        limit6m: DAILY_PRESET_LIMITS["6m"],
+        limit1y: DAILY_PRESET_LIMITS["1y"],
+      }),
+      verify: (actual)=>actual.activeDailyRange === "3M"
+        && actual.dailyPreset === "3m"
+        && actual.metaRangeMode === "3M"
+        && actual.metaPreset === "3m"
+        && actual.limit3m === 92
+        && actual.limit6m === 183
+        && actual.limit1y === 365,
+      expected: "Daily defaults to 3M and keeps 6M/1Y limits",
+    },
+    {
       name: "no alternate Daily key or liquidity state regression",
       run: ()=>{
         const alternateDailyKey = ["d", "1"].join("");
@@ -5268,8 +5301,8 @@ function buildCurrentPriceDetailDataV2(mapData){
   const keyZone = getKeyZonePositionContext(mapData, marketPreparationState);
   return {
     compactRowText: Number.isFinite(price)
-      ? `● ${usd(price)} | ${dailyContextText} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
-      : "● Price unavailable | Daily: context unavailable | Waiting for ticker/4H/1H context",
+      ? `● ${usd(price)} | ${h4Status}${h4Rsi?.ok ? ` | ${h4Rsi.label}` : ""} | 1H ${h1Sweep} | 1H ${h1Structure}`
+      : "● Price unavailable | Waiting for ticker/4H/1H context",
     price: { value: Number.isFinite(price) ? price : null, text: Number.isFinite(price) ? usd(price) : "Price unavailable", change24hPct: Number.isFinite(change24hPct) ? change24hPct : null },
     sentiment: { value: toNullableNumber(sentiment.value), label: sentiment.label || null, meaning: getSentimentMeaning(toNullableNumber(sentiment.value), sentiment.label) },
     weekly: { bias: weeklyBias, fvg: weeklyFvgText, sr: weeklySrText, meaning: weeklyBias !== "Unavailable" ? "Weekly context still defines the main reaction zones." : "Weekly context unavailable." },
@@ -7674,16 +7707,16 @@ function setLtfPresetUI(preset){
 }
 function setDailyPresetUI(preset){
   dailyPreset = preset;
-  activeDailyRange = ({ "3m":"3M", "6m":"6M", "1y":"1Y" }[preset] || "6M");
+  activeDailyRange = ({ "3m":"3M", "6m":"6M", "1y":"1Y" }[preset] || "3M");
   const act=(el,on)=>{ if(!el) return; el.classList.toggle('active', on); };
   act(els.dailyPreset3m, preset==='3m');
   act(els.dailyPreset6m, preset==='6m');
   act(els.dailyPreset1y, preset==='1y');
 }
-function getDailyPresetLimit(preset){ return DAILY_PRESET_LIMITS[preset] || DAILY_PRESET_LIMITS["6m"]; }
+function getDailyPresetLimit(preset){ return DAILY_PRESET_LIMITS[preset] || DAILY_PRESET_LIMITS["3m"]; }
 
 function setupCollapsibleSections(){
-  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setDailyPresetUI(dailyPreset || '6m'); setLtfPresetUI('3m'); renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
+  els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setDailyPresetUI(dailyPreset || '3m'); setLtfPresetUI('3m'); renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
   els.fvgViewDetailsBtn?.addEventListener('click', ()=>{ setToggleState('fvg', true); document.getElementById('fvgPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'}); });
