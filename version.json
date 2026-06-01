@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 01:22",
-  "version": "v0.2.15",
+  "lastUpdated": "2026-06-01 02:05",
+  "version": "v0.2.16",
   "commitLabel": "manual",
-  "note": "Add H4 liquidity context diagnostics"
+  "note": "Add H4 liquidity nearest context diagnostics"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 01:22";
+const APP_LAST_UPDATED = "2026-06-01 02:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -906,6 +906,70 @@ function getLiquidityZoneDistancePct(price, zone){
   if(!Number.isFinite(value) || value <= 0 || !Number.isFinite(center)) return null;
   return Math.abs(value - center) / value * 100;
 }
+function calculateLiquidityZoneDistance(price, normalizedZone){
+  const value = Number(price);
+  const zone = normalizedZone?.lower !== undefined && normalizedZone?.upper !== undefined ? normalizedZone : normalizeLiquidityZone(normalizedZone);
+  if(!Number.isFinite(value) || value <= 0 || !zone) return { distanceAbs: null, distancePct: null, relation: "unknown" };
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  const center = Number(zone.center ?? ((lower + upper) / 2));
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)){
+    if(!Number.isFinite(center)) return { distanceAbs: null, distancePct: null, relation: "unknown" };
+    const pointDistance = Math.abs(value - center);
+    return { distanceAbs: pointDistance, distancePct: pointDistance / value * 100, relation: "near" };
+  }
+  if(lower === upper){
+    const pointDistance = Math.abs(value - lower);
+    return { distanceAbs: pointDistance, distancePct: pointDistance / value * 100, relation: pointDistance === 0 ? "inside" : "near" };
+  }
+  if(value >= lower && value <= upper) return { distanceAbs: 0, distancePct: 0, relation: "inside" };
+  const distanceAbs = value < lower ? lower - value : value - upper;
+  return {
+    distanceAbs,
+    distancePct: distanceAbs / value * 100,
+    relation: value < lower ? "below" : "above",
+  };
+}
+function createEmptyNearestLiquidityZone(source, reason){
+  return { found: false, source, reason, zone: null, distanceAbs: null, distancePct: null, relation: "unknown", lower: null, upper: null, label: null, direction: null, status: null, quality: null };
+}
+function summarizeNearestLiquidityZone(zone){
+  return zone ? { id: zone.id || null, source: zone.source || null, label: zone.label || null, type: zone.type || null, direction: zone.direction || null, lower: zone.lower, upper: zone.upper, status: zone.status || null, quality: zone.quality || null } : null;
+}
+function findNearestLiquidityZone(price, zones, options = {}){
+  const source = options.sourceLabel || null;
+  const value = Number(price);
+  if(!Number.isFinite(value) || value <= 0) return createEmptyNearestLiquidityZone(source, "invalid price");
+  if(!Array.isArray(zones) || !zones.length) return createEmptyNearestLiquidityZone(source, "no zones");
+  const maxScan = Math.max(1, Number(options.maxScan) || zones.length);
+  let nearest = null;
+  zones.slice(0, maxScan).forEach((rawZone)=>{
+    const zone = normalizeLiquidityZone(rawZone, source);
+    if(!zone) return;
+    const distance = calculateLiquidityZoneDistance(value, zone);
+    if(!Number.isFinite(distance.distanceAbs)) return;
+    if(!nearest || distance.distanceAbs < nearest.distance.distanceAbs){
+      nearest = { zone, distance };
+    }
+  });
+  if(!nearest) return createEmptyNearestLiquidityZone(source, "no valid normalized zones");
+  const summary = summarizeNearestLiquidityZone(nearest.zone);
+  return {
+    found: true,
+    source,
+    reason: null,
+    zone: summary,
+    distanceAbs: nearest.distance.distanceAbs,
+    distancePct: nearest.distance.distancePct,
+    relation: nearest.distance.relation,
+    lower: summary.lower,
+    upper: summary.upper,
+    label: summary.label,
+    direction: summary.direction,
+    status: summary.status,
+    quality: summary.quality,
+  };
+}
 function collectLiquidityMapRows(mapState){
   if(!mapState || typeof mapState !== "object") return [];
   const keys = ["upside", "downside", "rows", "zones", "upsideWatch", "downsideWatch"];
@@ -1012,6 +1076,58 @@ function findNearbyH4IfvgZones(episode, h4State, options = {}){
     .filter(Boolean)
     .slice(0, maxRows);
 }
+function collectMarketMapLiquidityZones(mapState){
+  return collectLiquidityMapRows(mapState).map((row, index)=>({ ...row, id: row.id || row.key || `marketMap-${index}` }));
+}
+function collectH4FvgLiquidityZones(h4FvgDetails){
+  if(!Array.isArray(h4FvgDetails)) return [];
+  return h4FvgDetails
+    .filter((detail)=>!isInactiveFvgDetail(detail))
+    .map((detail, index)=>({
+      ...(detail?.sourceZone || detail || {}),
+      id: detail?.key || detail?.id || `h4Fvg-${index}`,
+      source: "h4Fvg",
+      direction: detail?.direction || getFvgDirection(detail?.sourceZone || detail),
+      status: detail?.detailStatus || detail?.status || null,
+      quality: detail?.quality?.band || detail?.quality || null,
+      timeframe: detail?.timeframe || "4H",
+    }));
+}
+function collectH4IfvgLiquidityZones(h4State){
+  if(!h4State) return [];
+  const candidates = [
+    ...(Array.isArray(h4State.recentBrokenFvgDetails?.all) ? h4State.recentBrokenFvgDetails.all : []),
+    ...(Array.isArray(h4State.fvgDetails) ? h4State.fvgDetails.filter((detail)=>detail?.ifvg && detail.ifvg.state !== IFVG_STATE.NONE) : []),
+  ];
+  return candidates.map((detail, index)=>{
+    const ifvg = detail?.ifvg || {};
+    const sourceZone = ifvg.zone && Number.isFinite(Number(ifvg.zone.lower)) && Number.isFinite(Number(ifvg.zone.upper)) ? ifvg.zone : (detail?.sourceZone || detail || {});
+    return {
+      ...sourceZone,
+      id: detail?.key || ifvg.originalFvgId || `h4Ifvg-${index}`,
+      source: "h4Ifvg",
+      direction: ifvg.inversionSide || detail?.direction || getFvgDirection(detail?.sourceZone || detail),
+      status: ifvg.state || detail?.detailStatus || null,
+      quality: ifvg.quality?.band || detail?.quality?.band || null,
+      timeframe: detail?.timeframe || ifvg.timeframe || "4H",
+    };
+  });
+}
+function buildNearestLiquidityContextDiagnostics(input = {}){
+  const episode = input.episode || null;
+  const closedCandles = Array.isArray(input.closedCandles) ? input.closedCandles : [];
+  const contextPriceReference = getLiquidityPriceReference(episode);
+  const bufferState = getLiquidityContextBuffer(episode, closedCandles);
+  const contextBuffer = { buffer: bufferState.buffer, method: bufferState.method, fallbackUsed: bufferState.fallbackUsed };
+  const price = contextPriceReference.primaryPrice;
+  return {
+    contextPriceReference,
+    contextBuffer,
+    nearestMarketMapZone: findNearestLiquidityZone(price, collectMarketMapLiquidityZones(input.mapState), { sourceLabel: "marketMap" }),
+    nearestH4Fvg: findNearestLiquidityZone(price, collectH4FvgLiquidityZones(input.h4State?.fvgDetails), { sourceLabel: "h4Fvg" }),
+    nearestH4Ifvg: findNearestLiquidityZone(price, collectH4IfvgLiquidityZones(input.h4State), { sourceLabel: "h4Ifvg" }),
+  };
+}
 function classifyH4StructureAlignment(episode, h4State, options = {}){
   const source = h4State?.structureStatus || null;
   if(!source) return { alignment: "unknown", reason: "4H structure context unavailable.", source: null, eventTime: null, eventIndex: null, episodeAligned: false };
@@ -1033,6 +1149,7 @@ function buildH4LiquidityContextCorroborators(input = {}){
   const nearbyH4Fvgs = findNearbyH4FvgZones(episode, input.h4State?.fvgDetails, { bufferState, closedCandles, maxRows: 5 });
   const nearbyH4Ifvgs = findNearbyH4IfvgZones(episode, input.h4State, { bufferState, closedCandles, maxRows: 5 });
   const structureAlignment = classifyH4StructureAlignment(episode, input.h4State);
+  const nearestDiagnostics = buildNearestLiquidityContextDiagnostics({ episode, closedCandles, mapState: input.mapState, h4State: input.h4State });
   const contextCorroborators = [];
   const contextWarnings = [];
   const contextBlockers = [];
@@ -1053,6 +1170,11 @@ function buildH4LiquidityContextCorroborators(input = {}){
     nearbyH4Fvgs,
     nearbyH4Ifvgs,
     structureAlignment,
+    nearestMarketMapZone: nearestDiagnostics.nearestMarketMapZone,
+    nearestH4Fvg: nearestDiagnostics.nearestH4Fvg,
+    nearestH4Ifvg: nearestDiagnostics.nearestH4Ifvg,
+    contextPriceReference: nearestDiagnostics.contextPriceReference,
+    contextBuffer: nearestDiagnostics.contextBuffer,
     diagnostics: {
       priceReference,
       buffer: bufferState.buffer,
@@ -1073,7 +1195,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, contextPriceReference = null, contextBuffer = null, nearestMarketMapZone = null, nearestH4Fvg = null, nearestH4Ifvg = null, failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -1092,6 +1214,11 @@ function buildH4LiquidityOrderflowState(input = {}){
       nearbyH4Fvgs,
       nearbyH4Ifvgs,
       structureAlignment,
+      contextPriceReference,
+      contextBuffer,
+      nearestMarketMapZone,
+      nearestH4Fvg,
+      nearestH4Ifvg,
       failureBoundary,
       failureScanStartIndex,
       failureBarsChecked,
@@ -1218,6 +1345,11 @@ function buildH4LiquidityOrderflowState(input = {}){
     nearbyH4Fvgs: contextState.nearbyH4Fvgs,
     nearbyH4Ifvgs: contextState.nearbyH4Ifvgs,
     structureAlignment: contextState.structureAlignment,
+    contextPriceReference: contextState.contextPriceReference,
+    contextBuffer: contextState.contextBuffer,
+    nearestMarketMapZone: contextState.nearestMarketMapZone,
+    nearestH4Fvg: contextState.nearestH4Fvg,
+    nearestH4Ifvg: contextState.nearestH4Ifvg,
     failureBoundary: failure.boundary,
     failureScanStartIndex: failure.scanStartIndex,
     failureBarsChecked: failure.barsChecked,
