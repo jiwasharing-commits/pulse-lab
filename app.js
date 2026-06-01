@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 06:18";
+const APP_LAST_UPDATED = "2026-06-01 06:47";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -268,6 +268,20 @@ function buildH4MarketMapSampleClassification({ nearbyMarketMapZones = [], neare
   const hasDuplicateRisk = duplicateRisk.length > 0;
   const hasAlignedDirectionInference = directionInference.some((item)=>item?.alignment === "aligned");
   const hasConflictDirectionInference = directionInference.some((item)=>item?.alignment === "conflict");
+  const nearnessGap = marketMapDiagnostics.nearnessGap || null;
+  const gapToBufferAbs = Number(nearnessGap?.gapToBufferAbs);
+  const buffer = Number(nearnessGap?.buffer);
+  const hasNearnessGap = !!nearnessGap;
+  const isAlmostNearby = nearnessGap?.nearestFound === true
+    && Number(nearnessGap?.nearbyCount) === 0
+    && Number.isFinite(gapToBufferAbs)
+    && Number.isFinite(buffer)
+    && gapToBufferAbs <= buffer * 2;
+  const farFromNearby = nearnessGap?.nearestFound === true
+    && Number(nearnessGap?.nearbyCount) === 0
+    && Number.isFinite(gapToBufferAbs)
+    && Number.isFinite(buffer)
+    && gapToBufferAbs > buffer * 2;
   return {
     hasNearbyMarketMap,
     hasNearestMarketMap,
@@ -275,6 +289,9 @@ function buildH4MarketMapSampleClassification({ nearbyMarketMapZones = [], neare
     hasDuplicateRisk,
     hasAlignedDirectionInference,
     hasConflictDirectionInference,
+    hasNearnessGap,
+    isAlmostNearby,
+    farFromNearby,
     isUsefulFor2D4BReview: hasNearbyMarketMap || hasHtfCandidate || hasDuplicateRisk || hasAlignedDirectionInference || hasConflictDirectionInference,
   };
 }
@@ -335,6 +352,7 @@ function buildH4MarketMapRealStateSnapshot(label = null){
       duplicateRisk: marketMapDiagnostics.duplicateRisk,
       directionInference: marketMapDiagnostics.directionInference,
       distanceSummary: marketMapDiagnostics.distanceSummary,
+      nearnessGap: marketMapDiagnostics.nearnessGap,
       eligiblePreview: marketMapDiagnostics.eligiblePreview,
       warnings: marketMapDiagnostics.warnings,
       skipped: marketMapDiagnostics.skipped,
@@ -1435,6 +1453,9 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.marketMapDiagnostics.sourceBreakdown.length > 0,
         ({ result })=>result.marketMapDiagnostics.directionInference.some((item)=>item.alignment === "aligned"),
         ({ result })=>result.marketMapDiagnostics.distanceSummary.some((item)=>item.insideBuffer === true),
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.status === "nearby",
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.insideBuffer === true || result.marketMapDiagnostics.nearnessGap.nearbyCount > 0,
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.gapToBufferAbs === 0,
         ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
@@ -1478,6 +1499,10 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
         ({ result })=>result.confirmation.confirmed === false,
         ({ result })=>result.marketMapDiagnostics.distanceSummary.some((item)=>item.insideBuffer === false),
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.status === "nearest-outside-buffer",
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.insideBuffer === false,
+        ({ result })=>Number(result.marketMapDiagnostics.nearnessGap.gapToBufferAbs) > 0,
+        ({ result })=>Number(result.marketMapDiagnostics.nearnessGap.needsCloserBy) > 0,
         ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
@@ -1529,7 +1554,20 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.nearby.length === 0,
         ({ result })=>result.nearest.found === false,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.status === "no-market-map-zone",
         ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
+      ],
+    },
+    {
+      name: "Invalid Market Map reference reports invalid nearness gap",
+      episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE, closePrice: null }, sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW, levelPrice: null, breachPrice: null, breachBuffer: null } }),
+      mapState: { downside: [supportRow()] },
+      expected: "invalid reference price or buffer reports invalid-reference without eligibility",
+      checks: [
+        ({ result })=>result.nearby.length === 0,
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.status === "invalid-reference",
+        ({ result })=>result.marketMapDiagnostics.nearnessGap.reason === "Invalid reference price or buffer.",
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
       ],
     },
     {
@@ -2249,6 +2287,26 @@ function createEmptyMarketMapContextDiagnostics(reason = "No Market Map context 
     duplicateRisk: [],
     directionInference: [],
     distanceSummary: [],
+    nearnessGap: {
+      nearestFound: false,
+      nearbyCount: 0,
+      referencePrice: null,
+      referenceType: null,
+      buffer: null,
+      bufferMethod: null,
+      nearestLabel: null,
+      nearestLower: null,
+      nearestUpper: null,
+      nearestRelation: null,
+      nearestDistanceAbs: null,
+      nearestDistancePct: null,
+      insideBuffer: false,
+      gapToBufferAbs: null,
+      gapToBufferPct: null,
+      needsCloserBy: null,
+      status: "no-market-map-zone",
+      reason,
+    },
     eligiblePreview: {
       wouldBeEligible: false,
       reason: "Market Map remains diagnostics-only in Phase 2D4A2",
@@ -2369,6 +2427,58 @@ function buildMarketMapDistanceSummary(row, input){
     referenceType: contextPriceReference.referenceType || null,
   };
 }
+function buildMarketMapNearnessGap(input = {}){
+  const nearby = Array.isArray(input.nearbyMarketMapZones) ? input.nearbyMarketMapZones : [];
+  const nearest = input.nearestMarketMapZone?.found ? input.nearestMarketMapZone : null;
+  const contextPriceReference = input.contextPriceReference || {};
+  const contextBuffer = input.contextBuffer || {};
+  const referencePrice = Number(contextPriceReference.primaryPrice);
+  const buffer = Number(contextBuffer.buffer);
+  const nearestDistanceAbs = Number(nearest?.distanceAbs);
+  const nearestDistancePct = Number(nearest?.distancePct);
+  const hasValidReference = Number.isFinite(referencePrice) && referencePrice > 0 && Number.isFinite(buffer) && buffer >= 0;
+  const nearestFound = !!nearest;
+  const nearbyCount = nearby.length;
+  const insideBuffer = nearestFound && hasValidReference && Number.isFinite(nearestDistanceAbs) && nearestDistanceAbs <= buffer;
+  const gapToBufferAbs = nearestFound && hasValidReference && Number.isFinite(nearestDistanceAbs)
+    ? Math.max(0, nearestDistanceAbs - buffer)
+    : null;
+  const gapToBufferPct = Number.isFinite(gapToBufferAbs) && Number.isFinite(referencePrice) && referencePrice > 0
+    ? gapToBufferAbs / referencePrice * 100
+    : null;
+  let status = "no-market-map-zone";
+  let reason = "No Market Map zone found.";
+  if(!hasValidReference){
+    status = "invalid-reference";
+    reason = "Invalid reference price or buffer.";
+  } else if(nearbyCount > 0){
+    status = "nearby";
+    reason = "At least one Market Map zone is inside context buffer.";
+  } else if(nearestFound){
+    status = "nearest-outside-buffer";
+    reason = "Nearest Market Map zone is outside context buffer.";
+  }
+  return {
+    nearestFound,
+    nearbyCount,
+    referencePrice: Number.isFinite(referencePrice) ? referencePrice : null,
+    referenceType: contextPriceReference.referenceType || null,
+    buffer: Number.isFinite(buffer) ? buffer : null,
+    bufferMethod: contextBuffer.method || null,
+    nearestLabel: nearest?.label || nearest?.zone?.label || null,
+    nearestLower: nearest?.lower ?? nearest?.zone?.lower ?? null,
+    nearestUpper: nearest?.upper ?? nearest?.zone?.upper ?? null,
+    nearestRelation: nearest?.relation || null,
+    nearestDistanceAbs: Number.isFinite(nearestDistanceAbs) ? nearestDistanceAbs : null,
+    nearestDistancePct: Number.isFinite(nearestDistancePct) ? nearestDistancePct : null,
+    insideBuffer,
+    gapToBufferAbs,
+    gapToBufferPct,
+    needsCloserBy: gapToBufferAbs,
+    status,
+    reason,
+  };
+}
 function buildMarketMapContextDiagnostics(input = {}){
   const nearby = Array.isArray(input.nearbyMarketMapZones) ? input.nearbyMarketMapZones : [];
   const nearest = input.nearestMarketMapZone?.found ? input.nearestMarketMapZone : null;
@@ -2384,6 +2494,12 @@ function buildMarketMapContextDiagnostics(input = {}){
   const duplicateRisk = rows.map((row)=>buildMarketMapDuplicateRisk(row, input.eligibleContextCorroborators));
   const directionInference = rows.map((row)=>inferMarketMapDiagnosticDirection(row, input.episode));
   const distanceSummary = rows.map((row)=>buildMarketMapDistanceSummary(row, input));
+  const nearnessGap = buildMarketMapNearnessGap({
+    nearbyMarketMapZones: nearby,
+    nearestMarketMapZone: input.nearestMarketMapZone,
+    contextPriceReference: input.contextPriceReference,
+    contextBuffer: input.contextBuffer,
+  });
   const futureCandidateCount = sourceBreakdown.filter((item, index)=>item.hasHtfSource && item.multiSource && duplicateRisk[index]?.risk === "none").length;
   const duplicateRiskCount = duplicateRisk.filter((item)=>item.risk && item.risk !== "none").length;
   if(directionInference.some((item)=>item.alignment === "conflict")) warnings.push("Market Map direction conflict observed; diagnostics only.");
@@ -2393,6 +2509,7 @@ function buildMarketMapContextDiagnostics(input = {}){
     duplicateRisk,
     directionInference,
     distanceSummary,
+    nearnessGap,
     eligiblePreview: {
       wouldBeEligible: false,
       reason: "Market Map remains diagnostics-only in Phase 2D4A2",
