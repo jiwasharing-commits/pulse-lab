@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-06-01 08:22",
+  "version": "v0.2.30",
+  "commitLabel": "manual",
+  "note": "Set Daily lower timeframe default to 3M and keep PDF compact row stable"
+}
