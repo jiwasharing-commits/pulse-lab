@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 04:18",
-  "version": "v0.2.21",
+  "lastUpdated": "2026-06-01 04:44",
+  "version": "v0.2.22",
   "commitLabel": "manual",
-  "note": "Add H4 structure alignment fixture validation"
+  "note": "Enable episode-aligned 4H structure corroborator"
 }

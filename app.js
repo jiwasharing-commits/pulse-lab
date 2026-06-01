@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 04:18";
+const APP_LAST_UPDATED = "2026-06-01 04:44";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -760,7 +760,7 @@ function hasH4LiquidityCorroborator(episode, context = {}){
   if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.STRONG_SPIKE) corroborators.push("Strong volume spike");
   else if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.SPIKE) corroborators.push("Volume spike");
   if(Number(episode?.avwap?.correctSideCloses) >= 2) corroborators.push("AVWAP persistence");
-  const allowedContext = new Set(["H4 FVG proximity", "H4 IFVG context"]);
+  const allowedContext = new Set(["H4 FVG proximity", "H4 IFVG context", "4H structure alignment"]);
   (Array.isArray(context?.eligibleContextCorroborators) ? context.eligibleContextCorroborators : [])
     .filter((label)=>allowedContext.has(label))
     .forEach((label)=>corroborators.push(label));
@@ -822,6 +822,32 @@ function isLiquidityContextRelationEligible(relation){
 function isLiquidityContextStatusInactive(status){
   return /broken|failed|filled/i.test(String(status || ""));
 }
+function getH4StructureAlignmentCorroboratorEligibility(structureAlignment){
+  const skipped = [];
+  const warnings = [];
+  if(!structureAlignment || typeof structureAlignment !== "object"){
+    return { eligible: false, skipped: ["No 4H structure alignment context."], warnings };
+  }
+  const structureType = String(structureAlignment.structureType || "").toUpperCase();
+  const relationToReclaim = structureAlignment.relationToReclaim || "unknown";
+  const structureDirection = structureAlignment.structureDirection || null;
+  const reactionDirection = structureAlignment.reactionDirection || null;
+  if(structureAlignment.alignment === "conflict"){
+    warnings.push("4H structure conflict remains warning-only.");
+    return { eligible: false, skipped, warnings };
+  }
+  if(structureAlignment.alignment !== "aligned") skipped.push("4H structure alignment is not aligned.");
+  if(structureAlignment.episodeAligned !== true) skipped.push("4H structure is not episode-aligned.");
+  if(relationToReclaim !== "after"){
+    if(relationToReclaim === "unknown") skipped.push("4H structure alignment has no reclaim relationship.");
+    else skipped.push("4H structure did not occur after reclaim.");
+  }
+  if(!reactionDirection || structureDirection !== reactionDirection) skipped.push("4H structure direction does not match liquidity reaction.");
+  if(!["BOS", "CHOCH"].includes(structureType)) skipped.push("4H structure type is not BOS/CHOCH.");
+  if(!Number.isFinite(structureAlignment.eventIndex)) skipped.push("4H structure event index missing.");
+  if(structureAlignment.eventTime == null || structureAlignment.eventTime === "") skipped.push("4H structure event time missing.");
+  return { eligible: skipped.length === 0, skipped, warnings };
+}
 function getH4LiquidityEligibleContextCorroborators(contextDiagnostics){
   const eligible = new Set();
   const skipped = [];
@@ -859,6 +885,10 @@ function getH4LiquidityEligibleContextCorroborators(contextDiagnostics){
     if(!refKey){ skipped.push("H4 FVG context has no dedupe key."); return; }
     eligible.add("H4 FVG proximity");
   });
+  const structureEligibility = getH4StructureAlignmentCorroboratorEligibility(contextDiagnostics?.structureAlignment);
+  if(structureEligibility.eligible) eligible.add("4H structure alignment");
+  structureEligibility.skipped.forEach((reason)=>skipped.push(reason));
+  structureEligibility.warnings.forEach((reason)=>warnings.push(reason));
   return {
     eligibleCorroborators: [...eligible],
     skipped: [...new Set(skipped)],
@@ -908,6 +938,20 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
     refKey: "fixture-zone",
     ...overrides,
   });
+  const structureAlignment = (overrides = {})=>({
+    alignment: "aligned",
+    episodeAligned: true,
+    reactionDirection: "bullish",
+    structureDirection: "bullish",
+    structureType: "BOS",
+    eventIndex: 12,
+    eventTime: 1710000000,
+    relationToSweep: "after",
+    relationToReclaim: "after",
+    reason: "Fixture aligned structure.",
+    warnings: [],
+    ...overrides,
+  });
   const contextDiagnostics = (overrides = {})=>({
     nearbyH4Fvgs: [],
     nearbyH4Ifvgs: [],
@@ -944,12 +988,34 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
       ],
     },
     {
+      name: "Aligned 4H structure confirms when all core gates pass",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed true with 4H structure alignment",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ confirmation })=>confirmation.confirmed === true,
+        ({ confirmation })=>includes(confirmation.corroborators, "4H structure alignment"),
+      ],
+    },
+    {
       name: "H4 FVG context cannot bypass missing reclaim",
       episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE } }),
       context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
       expected: "confirmed false with no reclaim blocker",
       checks: [
         ({ gate })=>includes(gate.eligibleCorroborators, "H4 FVG proximity"),
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "no reclaim"),
+      ],
+    },
+    {
+      name: "Aligned 4H structure cannot bypass missing reclaim",
+      episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE } }),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed false with no reclaim blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
         ({ confirmation })=>confirmation.confirmed === false,
         ({ confirmation })=>includes(confirmation.blockers, "no reclaim"),
       ],
@@ -965,11 +1031,33 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
       ],
     },
     {
+      name: "Aligned 4H structure cannot bypass AVWAP wrong side",
+      episode: baseEpisode({ avwap: { side: LIQUIDITY_AVWAP_SIDE.BELOW } }),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed false with AVWAP wrong-side blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "AVWAP not on correct side"),
+      ],
+    },
+    {
       name: "H4 FVG context cannot bypass low score",
       episode: baseEpisode({ score: 5 }),
       context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
       expected: "confirmed false with score blocker",
       checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "score below threshold"),
+      ],
+    },
+    {
+      name: "Aligned 4H structure cannot bypass low score",
+      episode: baseEpisode({ score: 5 }),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed false with score blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
         ({ confirmation })=>confirmation.confirmed === false,
         ({ confirmation })=>includes(confirmation.blockers, "score below threshold"),
       ],
@@ -983,6 +1071,39 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
         ({ gate })=>notIncludes(gate.eligibleCorroborators, "H4 IFVG context"),
         ({ gate })=>gate.warnings.length > 0 || gate.skipped.length > 0,
         ({ confirmation })=>confirmation.confirmed === false,
+      ],
+    },
+    {
+      name: "Conflict structure is not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ structureAlignment: structureAlignment({ alignment: "conflict", structureDirection: "bearish", reason: "Fixture conflict.", warnings: ["Episode-aligned opposite 4H structure observed."] }) }),
+      expected: "no 4H structure alignment eligibility and warning present",
+      checks: [
+        ({ gate })=>notIncludes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ gate })=>gate.warnings.some((warning)=>/conflict/.test(warning)),
+        ({ confirmation })=>confirmation.confirmed === false,
+      ],
+    },
+    {
+      name: "Pre-reclaim structure is not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ structureAlignment: structureAlignment({ relationToReclaim: "before", episodeAligned: false, reason: "Fixture before reclaim." }) }),
+      expected: "no 4H structure alignment eligibility before reclaim",
+      checks: [
+        ({ gate })=>notIncludes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ gate })=>gate.skipped.some((reason)=>/after reclaim/.test(reason)),
+        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
+      ],
+    },
+    {
+      name: "Old string-only structure diagnostics are not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ structureAlignment: { alignment: "unknown", episodeAligned: false, reactionDirection: "bullish", structureDirection: "bullish", structureType: "BOS", eventIndex: null, eventTime: null, relationToReclaim: "unknown", warnings: ["Missing structure event index/time."] } }),
+      expected: "no 4H structure alignment eligibility without metadata",
+      checks: [
+        ({ gate })=>notIncludes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ gate })=>gate.skipped.length > 0,
+        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
       ],
     },
     {
@@ -1006,16 +1127,6 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
       ],
     },
     {
-      name: "Structure alignment is not eligible",
-      episode: baseEpisode(),
-      context: contextDiagnostics({ structureAlignment: { alignment: "aligned", episodeAligned: true, reason: "Fixture aligned" } }),
-      expected: "no structure context eligibility",
-      checks: [
-        ({ gate })=>gate.eligibleCorroborators.length === 0,
-        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
-      ],
-    },
-    {
       name: "Context cannot bypass failed episode",
       episode: baseEpisode({ failure: { detected: true } }),
       context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
@@ -1026,11 +1137,33 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
       ],
     },
     {
+      name: "Aligned 4H structure cannot bypass failed episode",
+      episode: baseEpisode({ failure: { detected: true } }),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed false with failure blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "failure detected"),
+      ],
+    },
+    {
       name: "Context cannot bypass stale episode",
       episode: baseEpisode({ stale: true }),
       context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
       expected: "confirmed false with stale blocker",
       checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "stale"),
+      ],
+    },
+    {
+      name: "Aligned 4H structure cannot bypass stale episode",
+      episode: baseEpisode({ stale: true }),
+      context: contextDiagnostics({ structureAlignment: structureAlignment() }),
+      expected: "confirmed false with stale blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "4H structure alignment"),
         ({ confirmation })=>confirmation.confirmed === false,
         ({ confirmation })=>includes(confirmation.blockers, "stale"),
       ],
@@ -1084,6 +1217,7 @@ function runH4LiquidityContextCorroboratorFixtureTests(){
 if(typeof window !== "undefined") {
   window.runH4LiquidityContextCorroboratorFixtureTests = runH4LiquidityContextCorroboratorFixtureTests;
 }
+
 
 function normalizeLiquidityZone(zone, sourceHint = null){
   if(!zone || typeof zone !== "object") return null;
@@ -1555,19 +1689,15 @@ function runH4StructureAlignmentFixtureTests(){
   const includes = (list, value)=>Array.isArray(list) && list.includes(value);
   const notIncludes = (list, value)=>!includes(list, value);
   const hasWarningContaining = (alignment, text)=>Array.isArray(alignment?.warnings) && alignment.warnings.some((warning)=>String(warning).includes(text));
-  const structureIsNotEligible = (alignment)=>{
+  const evaluateStructureEligibility = (alignment)=>{
     const gate = getH4LiquidityEligibleContextCorroborators({ nearbyH4Fvgs: [], nearbyH4Ifvgs: [], nearbyMarketMapZones: [], structureAlignment: alignment });
-    const corroboratorState = hasH4LiquidityCorroborator(baseEpisode(), { eligibleContextCorroborators: ["4H structure alignment"] });
-    const confirmation = shouldConfirmH4LiquidityEpisode(baseEpisode(), { closedCandles: candles, eligibleContextCorroborators: ["4H structure alignment"] }, { scoreThreshold: 6 });
+    const corroboratorState = hasH4LiquidityCorroborator(baseEpisode(), { eligibleContextCorroborators: gate.eligibleCorroborators });
+    const confirmation = shouldConfirmH4LiquidityEpisode(baseEpisode(), { closedCandles: candles, eligibleContextCorroborators: gate.eligibleCorroborators }, { scoreThreshold: 6 });
     return {
       gate,
       corroboratorState,
       confirmation,
-      passed: gate.eligibleCorroborators.length === 0
-        && corroboratorState.hasCorroborator === false
-        && confirmation.confirmed === false
-        && notIncludes(confirmation.corroborators, "4H structure alignment")
-        && includes(confirmation.blockers, "no corroborator"),
+      hasStructureLabel: includes(gate.eligibleCorroborators, "4H structure alignment"),
     };
   };
   const cases = [
@@ -1575,7 +1705,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "Structure after sweep but before reclaim remains diagnostics-only",
       episode: baseEpisode(),
       structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 105, status: "Bullish BOS" }),
-      expected: "relation after sweep / before reclaim with episodeAligned false",
+      expected: "relation after sweep / before reclaim with episodeAligned false and no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.reactionDirection === "bullish",
         ({ alignment })=>alignment.structureDirection === "bullish",
@@ -1586,10 +1717,11 @@ function runH4StructureAlignmentFixtureTests(){
       ],
     },
     {
-      name: "Structure after reclaim matching sweepLow direction aligns diagnostics",
+      name: "Structure after reclaim matching sweepLow direction becomes eligible diagnostics label",
       episode: baseEpisode(),
       structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 112, status: "Bullish BOS" }),
-      expected: "aligned and episodeAligned true",
+      expected: "aligned, episodeAligned true, and 4H structure alignment eligible",
+      eligible: true,
       checks: [
         ({ alignment })=>alignment.relationToSweep === "after",
         ({ alignment })=>alignment.relationToReclaim === "after",
@@ -1601,7 +1733,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "Structure after reclaim opposite sweepLow direction conflicts as warning-only diagnostics",
       episode: baseEpisode(),
       structure: structureEvent({ direction: "bearish", structureType: "BOS", eventIndex: 112, status: "Bearish BOS" }),
-      expected: "conflict and episodeAligned true with warning",
+      expected: "conflict and episodeAligned true with warning but no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.reactionDirection === "bullish",
         ({ alignment })=>alignment.structureDirection === "bearish",
@@ -1615,7 +1748,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "No reclaim keeps structure non-episode-aligned",
       episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE, candleIndex: null } }),
       structure: structureEvent({ direction: "bullish", structureType: "BOS", eventIndex: 112, status: "Bullish BOS" }),
-      expected: "relationToReclaim unknown and episodeAligned false",
+      expected: "relationToReclaim unknown, episodeAligned false, and no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.relationToSweep === "after",
         ({ alignment })=>alignment.relationToReclaim === "unknown",
@@ -1627,7 +1761,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "No clear structure remains unknown",
       episode: baseEpisode(),
       structure: structureEvent({ direction: "neutral", structureType: "none", eventIndex: 112, status: "No clear 4H structure shift", broken: null, brokenLevel: null, confidence: "low" }),
-      expected: "unknown and episodeAligned false",
+      expected: "unknown, episodeAligned false, and no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.alignment === "unknown",
         ({ alignment })=>alignment.episodeAligned === false,
@@ -1640,7 +1775,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "Old string-only structure lacks event metadata",
       episode: baseEpisode(),
       structure: "Bullish BOS",
-      expected: "unknown with missing event metadata warning",
+      expected: "unknown with missing event metadata warning and no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.alignment === "unknown",
         ({ alignment })=>alignment.episodeAligned === false,
@@ -1650,10 +1786,11 @@ function runH4StructureAlignmentFixtureTests(){
       ],
     },
     {
-      name: "sweepHigh bearish structure after reclaim aligns diagnostics",
+      name: "sweepHigh bearish structure after reclaim becomes eligible diagnostics label",
       episode: baseEpisode({ sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, anchorIndex: 100 } }),
       structure: structureEvent({ direction: "bearish", structureType: "BOS", eventIndex: 112, status: "Bearish BOS" }),
-      expected: "bearish reaction aligned",
+      expected: "bearish reaction aligned and 4H structure alignment eligible",
+      eligible: true,
       checks: [
         ({ alignment })=>alignment.reactionDirection === "bearish",
         ({ alignment })=>alignment.structureDirection === "bearish",
@@ -1665,7 +1802,8 @@ function runH4StructureAlignmentFixtureTests(){
       name: "sweepHigh bullish structure after reclaim conflicts diagnostics",
       episode: baseEpisode({ sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, anchorIndex: 100 } }),
       structure: structureEvent({ direction: "bullish", structureType: "CHOCH", eventIndex: 112, status: "Bullish CHoCH" }),
-      expected: "bearish reaction conflict with warning",
+      expected: "bearish reaction conflict with warning and no structure label",
+      eligible: false,
       checks: [
         ({ alignment })=>alignment.reactionDirection === "bearish",
         ({ alignment })=>alignment.structureDirection === "bullish",
@@ -1677,7 +1815,7 @@ function runH4StructureAlignmentFixtureTests(){
   ];
   const results = cases.map((testCase)=>{
     const alignment = classifyH4StructureEpisodeAlignment(testCase.episode, testCase.structure, candles);
-    const eligibility = structureIsNotEligible(alignment);
+    const eligibility = evaluateStructureEligibility(alignment);
     const details = {
       structureAlignment: alignment,
       contextGateEligibleCorroborators: eligibility.gate.eligibleCorroborators,
@@ -1688,7 +1826,10 @@ function runH4StructureAlignmentFixtureTests(){
       confirmationBlockers: eligibility.confirmation.blockers,
       confirmed: eligibility.confirmation.confirmed,
     };
-    const passed = testCase.checks.every((check)=>check({ alignment, details })) && eligibility.passed;
+    const eligibilityPassed = testCase.eligible
+      ? eligibility.hasStructureLabel && eligibility.confirmation.confirmed === true && includes(eligibility.confirmation.corroborators, "4H structure alignment")
+      : !eligibility.hasStructureLabel && notIncludes(eligibility.confirmation.corroborators, "4H structure alignment");
+    const passed = testCase.checks.every((check)=>check({ alignment, details })) && eligibilityPassed;
     return {
       name: testCase.name,
       passed,
@@ -1708,6 +1849,7 @@ function runH4StructureAlignmentFixtureTests(){
 if(typeof window !== "undefined") {
   window.runH4StructureAlignmentFixtureTests = runH4StructureAlignmentFixtureTests;
 }
+
 
 function buildH4LiquidityContextCorroborators(input = {}){
   const episode = input.episode || null;
