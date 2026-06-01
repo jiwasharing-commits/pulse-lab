@@ -212,6 +212,27 @@
 @media (max-width:1100px){.conclusion-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:700px){.conclusion-grid{grid-template-columns:1fr}}
 
+
+.h4-liquidity-diagnostics-panel{margin:12px 0 0;border:1px solid rgba(148,163,184,.16);border-radius:.85rem;background:rgba(15,23,42,.42);box-shadow:0 10px 22px rgba(2,6,23,.12);overflow:hidden}
+.h4-liquidity-diagnostics-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:.72rem .85rem;cursor:pointer;color:#dbeafe;font-weight:800;list-style-position:inside}
+.h4-liquidity-diagnostics-summary small{color:#9caecf;font-size:.7rem;font-weight:700;line-height:1.2;text-align:right}
+.h4-liquidity-diagnostics-body{border-top:1px solid rgba(148,163,184,.12);padding:.8rem .85rem;color:#d8e0f0;font-size:.76rem;line-height:1.35}
+.h4-liquidity-diagnostics-empty,.h4-liquidity-diagnostics-none,.h4-liquidity-diagnostics-note{margin:0;color:#9caecf;font-size:.73rem;line-height:1.35}
+.h4-liquidity-diagnostics-note{margin-bottom:.68rem}
+.h4-liquidity-diagnostics-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.h4-liquidity-diagnostics-section{min-width:0;border:1px solid rgba(148,163,184,.12);border-radius:.72rem;background:rgba(15,23,42,.36);padding:.58rem .62rem}
+.h4-liquidity-diagnostics-section h4{margin:0 0 .42rem;color:#e5edff;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase}
+.h4-liquidity-diagnostics-row{display:grid;grid-template-columns:minmax(82px,.82fr) minmax(0,1fr);gap:8px;align-items:start;padding:.18rem 0;border-top:1px solid rgba(148,163,184,.08)}
+.h4-liquidity-diagnostics-row:first-of-type{border-top:0}
+.h4-liquidity-diagnostics-row span,.h4-liquidity-diagnostics-list-block>span{color:#8fa0c4;font-size:.67rem;font-weight:800;letter-spacing:.035em;text-transform:uppercase}
+.h4-liquidity-diagnostics-row strong{min-width:0;color:#dbeafe;font-size:.74rem;font-weight:800;overflow-wrap:anywhere;text-align:right}
+.h4-liquidity-diagnostics-list-block{display:grid;gap:.28rem;margin-top:.42rem;padding-top:.42rem;border-top:1px solid rgba(148,163,184,.08)}
+.h4-liquidity-diagnostics-list-block:first-child{margin-top:0;padding-top:0;border-top:0}
+.h4-liquidity-diagnostics-list{margin:.05rem 0 0 1rem;padding:0;color:#dbeafe;font-size:.73rem;overflow-wrap:anywhere}
+.h4-liquidity-diagnostics-list li{margin:.12rem 0}
+@media (max-width:1180px){.h4-liquidity-diagnostics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.h4-liquidity-diagnostics-summary{display:grid;gap:4px}.h4-liquidity-diagnostics-summary small{text-align:left}.h4-liquidity-diagnostics-grid{grid-template-columns:1fr}.h4-liquidity-diagnostics-row{grid-template-columns:1fr}.h4-liquidity-diagnostics-row strong{text-align:left}}
+
 .hidden-metrics{display:none !important}
 
 .hidden-weekly-side{display:none !important}

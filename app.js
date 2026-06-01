@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 06:47";
+const APP_LAST_UPDATED = "2026-06-01 07:18";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -5136,11 +5136,105 @@ function renderMarketPreparationMap(mapData){
   renderCurrentPriceDetailCards(detail);
   applyH1LayerVisibility();
   setCurrentPriceDetailState(prepCurrentDetailOpen);
+  renderH4LiquidityDiagnosticsPanel();
 }
 
 function escapeHtml(value){
   return String(value ?? "").replace(/[&<>"]/g, (ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 }
+
+function formatDiagnosticValue(value){
+  if(value === null || value === undefined || value === "") return "—";
+  if(typeof value === "boolean") return value ? "Yes" : "No";
+  if(typeof value === "number" && Number.isFinite(value)) return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return String(value);
+}
+function formatDiagnosticPrice(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+}
+function renderDiagnosticRow(label, value){
+  return `<div class="h4-liquidity-diagnostics-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatDiagnosticValue(value))}</strong></div>`;
+}
+function renderDiagnosticList(items){
+  const list = Array.isArray(items) ? items.filter((item)=>item !== null && item !== undefined && item !== "") : [];
+  if(!list.length) return '<p class="h4-liquidity-diagnostics-none">None</p>';
+  return `<ul class="h4-liquidity-diagnostics-list">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+function renderDiagnosticSection(title, content){
+  return `<section class="h4-liquidity-diagnostics-section"><h4>${escapeHtml(title)}</h4>${content}</section>`;
+}
+function renderH4LiquidityDiagnosticsPanel(){
+  if(!els.h4LiquidityDiagnosticsBody) return;
+  const state = marketPreparationState?.h4?.liquidityOrderflowState;
+  if(!state){
+    els.h4LiquidityDiagnosticsBody.innerHTML = '<p class="h4-liquidity-diagnostics-empty">H4 liquidity diagnostics unavailable.</p>';
+    return;
+  }
+  const episode = state.activeEpisode || {};
+  const diagnostics = state.diagnostics || {};
+  const sweep = episode.sweep || {};
+  const reclaim = episode.reclaim || {};
+  const avwap = episode.avwap || {};
+  const failure = episode.failure || {};
+  const structure = diagnostics.structureAlignment || {};
+  const nearnessGap = diagnostics.marketMapDiagnostics?.nearnessGap || {};
+  const sections = [
+    renderDiagnosticSection("State", [
+      renderDiagnosticRow("State", episode.status),
+      renderDiagnosticRow("Display", episode.displayStatus),
+      renderDiagnosticRow("Stale", episode.stale),
+      renderDiagnosticRow("Failure", failure.detected),
+    ].join("")),
+    renderDiagnosticSection("Sweep / Reclaim", [
+      renderDiagnosticRow("Sweep", sweep.type),
+      renderDiagnosticRow("Level", formatDiagnosticPrice(sweep.levelPrice)),
+      renderDiagnosticRow("Breach", formatDiagnosticPrice(sweep.breachPrice)),
+      renderDiagnosticRow("Reclaim", reclaim.status),
+      renderDiagnosticRow("Reclaim close", formatDiagnosticPrice(reclaim.closePrice)),
+      renderDiagnosticRow("Bars after sweep", diagnostics.barsAfterSweep),
+    ].join("")),
+    renderDiagnosticSection("AVWAP", [
+      renderDiagnosticRow("AVWAP side", avwap.side),
+      renderDiagnosticRow("AVWAP value", formatDiagnosticPrice(avwap.value)),
+      renderDiagnosticRow("Correct-side closes", avwap.correctSideCloses),
+    ].join("")),
+    renderDiagnosticSection("Diagnostic Strength", [
+      renderDiagnosticRow("Diagnostic score", episode.score),
+      renderDiagnosticRow("Diagnostic band", episode.band),
+    ].join("")),
+    renderDiagnosticSection("Confirmation", [
+      '<div class="h4-liquidity-diagnostics-list-block"><span>Confirmation blockers</span>' + renderDiagnosticList(diagnostics.confirmationBlockers) + '</div>',
+      '<div class="h4-liquidity-diagnostics-list-block"><span>Confirmation corroborators</span>' + renderDiagnosticList(diagnostics.confirmationCorroborators) + '</div>',
+    ].join("")),
+    renderDiagnosticSection("Context", [
+      '<div class="h4-liquidity-diagnostics-list-block"><span>Eligible context</span>' + renderDiagnosticList(diagnostics.contextGateEligibleCorroborators) + '</div>',
+      '<div class="h4-liquidity-diagnostics-list-block"><span>Context skipped</span>' + renderDiagnosticList(diagnostics.contextGateSkipped) + '</div>',
+      '<div class="h4-liquidity-diagnostics-list-block"><span>Context warnings</span>' + renderDiagnosticList(diagnostics.contextGateWarnings) + '</div>',
+    ].join("")),
+    renderDiagnosticSection("Structure", [
+      renderDiagnosticRow("Alignment", structure.alignment),
+      renderDiagnosticRow("Episode aligned", structure.episodeAligned),
+      renderDiagnosticRow("Reaction", structure.reactionDirection),
+      renderDiagnosticRow("Structure direction", structure.structureDirection),
+      renderDiagnosticRow("Relation to reclaim", structure.relationToReclaim),
+    ].join("")),
+    renderDiagnosticSection("Market Map", [
+      renderDiagnosticRow("Market Map status", nearnessGap.status),
+      renderDiagnosticRow("Nearest", nearnessGap.nearestLabel),
+      renderDiagnosticRow("Distance", formatDiagnosticPrice(nearnessGap.nearestDistanceAbs)),
+      renderDiagnosticRow("Buffer", formatDiagnosticPrice(nearnessGap.buffer)),
+      renderDiagnosticRow("Needs closer by", formatDiagnosticPrice(nearnessGap.needsCloserBy)),
+      renderDiagnosticRow("Note", nearnessGap.reason),
+      '<p class="h4-liquidity-diagnostics-note">Market Map remains diagnostics-only.</p>',
+    ].join("")),
+  ];
+  els.h4LiquidityDiagnosticsBody.innerHTML = `
+    <p class="h4-liquidity-diagnostics-note">Diagnostics only; does not alter score, status, Market Map, Trade Plan, or PDF.</p>
+    <div class="h4-liquidity-diagnostics-grid">${sections.join("")}</div>
+  `;
+}
+
 function formatPdfDate(date = new Date()){
   return `${date.toISOString().slice(0,10)} ${date.toISOString().slice(11,16)} UTC`;
 }
@@ -8821,6 +8915,7 @@ async function loadDashboard(){
 
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
+renderH4LiquidityDiagnosticsPanel();
 loadDashboard();
 
 manualChartLines = loadManualChartLines();

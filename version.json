@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 06:47",
-  "version": "v0.2.26",
+  "lastUpdated": "2026-06-01 07:18",
+  "version": "v0.2.27",
   "commitLabel": "manual",
-  "note": "Add Market Map nearness gap diagnostics"
+  "note": "Add read-only H4 liquidity diagnostics panel"
 }
