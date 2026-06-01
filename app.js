@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 03:10";
+const APP_LAST_UPDATED = "2026-06-01 03:48";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1410,17 +1410,113 @@ function buildNearestLiquidityContextDiagnostics(input = {}){
     nearestH4Ifvg: findNearestLiquidityZone(price, collectH4IfvgLiquidityZones(input.h4State), { sourceLabel: "h4Ifvg" }),
   };
 }
-function classifyH4StructureAlignment(episode, h4State, options = {}){
-  const source = h4State?.structureStatus || null;
-  if(!source) return { alignment: "unknown", reason: "4H structure context unavailable.", source: null, eventTime: null, eventIndex: null, episodeAligned: false };
+function compareStructureEventRelation(eventIndex, referenceIndex){
+  if(!Number.isInteger(eventIndex) || !Number.isInteger(referenceIndex)) return "unknown";
+  if(eventIndex > referenceIndex) return "after";
+  if(eventIndex === referenceIndex) return "same";
+  return "before";
+}
+function normalizeH4StructureEvent(structureStatus, candles = []){
+  if(!structureStatus) return null;
+  if(typeof structureStatus === "string"){
+    const text = structureStatus;
+    const direction = /Bullish/i.test(text) ? "bullish" : (/Bearish/i.test(text) ? "bearish" : "neutral");
+    const structureType = /CHoCH/i.test(text) ? "CHOCH" : (/BOS/i.test(text) ? "BOS" : "none");
+    return { status: text, direction, structureType, eventIndex: null, eventTime: null, brokenLevel: null, sourceSwingIndex: null, sourceSwingTime: null, confidence: structureType === "none" ? "none" : "low" };
+  }
+  if(typeof structureStatus !== "object") return null;
+  const status = structureStatus.status || "No clear 4H structure shift";
+  const direction = structureStatus.direction || (/Bullish/i.test(status) ? "bullish" : (/Bearish/i.test(status) ? "bearish" : "neutral"));
+  const structureType = structureStatus.structureType || (/CHoCH/i.test(status) ? "CHOCH" : (/BOS/i.test(status) ? "BOS" : "none"));
+  let eventIndex = Number.isInteger(structureStatus.eventIndex) ? structureStatus.eventIndex : null;
+  const eventTime = structureStatus.eventTime ?? (Number.isInteger(eventIndex) ? getOrderflowCandleTime(candles[eventIndex]) : null);
+  if(!Number.isInteger(eventIndex) && eventTime != null && Array.isArray(candles)){
+    const foundIndex = candles.findIndex((c)=>String(getOrderflowCandleTime(c)) === String(eventTime));
+    eventIndex = foundIndex >= 0 ? foundIndex : null;
+  }
   return {
-    alignment: "unknown",
-    reason: "4H structure context is not episode-aligned.",
-    source,
-    eventTime: null,
-    eventIndex: null,
-    episodeAligned: false,
+    ...structureStatus,
+    status,
+    direction,
+    structureType,
+    eventIndex,
+    eventTime,
+    brokenLevel: normalizeLiquidityPrice(structureStatus.brokenLevel) ?? normalizeLiquidityPrice(structureStatus.broken),
+    sourceSwingIndex: Number.isInteger(structureStatus.sourceSwingIndex) ? structureStatus.sourceSwingIndex : null,
+    sourceSwingTime: structureStatus.sourceSwingTime ?? structureStatus.ref ?? null,
+    confidence: structureStatus.confidence || (structureType === "none" ? "none" : (Number.isInteger(eventIndex) ? "medium" : "low")),
   };
+}
+function classifyH4StructureEpisodeAlignment(episode, structureStatus, candles, options = {}){
+  const warnings = [];
+  const source = normalizeH4StructureEvent(structureStatus, candles);
+  const reactionDirection = getLiquidityReactionDirection(episode?.sweep?.type);
+  const eventIndex = Number.isInteger(source?.eventIndex) ? source.eventIndex : null;
+  const eventTime = source?.eventTime ?? null;
+  const structureDirection = source?.direction || null;
+  const structureType = source?.structureType || null;
+  const sweepIndex = Number(episode?.sweep?.anchorIndex ?? episode?.sweep?.candleIndex);
+  const reclaimIndex = episode?.reclaim?.detected === true ? Number(episode?.reclaim?.candleIndex) : NaN;
+  const relationToSweep = compareStructureEventRelation(eventIndex, Number.isInteger(sweepIndex) ? sweepIndex : null);
+  const relationToReclaim = episode?.reclaim?.detected === true
+    ? compareStructureEventRelation(eventIndex, Number.isInteger(reclaimIndex) ? reclaimIndex : null)
+    : "unknown";
+  const base = {
+    alignment: "unknown",
+    episodeAligned: false,
+    reactionDirection,
+    structureDirection,
+    structureType,
+    eventIndex,
+    eventTime,
+    relationToSweep,
+    relationToReclaim,
+    reason: "4H structure context unavailable.",
+    source: source?.status || (typeof structureStatus === "string" ? structureStatus : null),
+    warnings,
+  };
+  if(!source) return base;
+  if(!Number.isInteger(eventIndex) || eventTime == null){
+    return { ...base, reason: "4H structure event metadata is missing; keeping structure diagnostics only.", warnings: [...warnings, "Missing structure event index/time."] };
+  }
+  if(structureType === "none" || structureDirection === "neutral"){
+    return { ...base, reason: "No clear 4H BOS/CHoCH structure event to align with liquidity episode." };
+  }
+  if(!reactionDirection){
+    return { ...base, reason: "Liquidity reaction direction is unavailable for structure alignment." };
+  }
+  if(episode?.reclaim?.detected !== true || !Number.isInteger(reclaimIndex)){
+    const informative = relationToSweep === "after" && (structureDirection === reactionDirection || ["bullish", "bearish"].includes(structureDirection));
+    return {
+      ...base,
+      alignment: informative && structureDirection === reactionDirection ? "aligned" : (informative ? "conflict" : "unknown"),
+      episodeAligned: false,
+      reason: "4H structure event is not eligible for episode alignment until reclaim/reject exists.",
+      warnings: [...warnings, "No reclaim candle available for structure episode alignment."],
+    };
+  }
+  if(relationToReclaim !== "after"){
+    const alignment = relationToSweep === "after" && structureDirection === reactionDirection ? "aligned" : (relationToSweep === "after" ? "conflict" : "unknown");
+    return {
+      ...base,
+      alignment,
+      episodeAligned: false,
+      reason: "4H structure occurred before or on the reclaim candle; diagnostics only.",
+      warnings: [...warnings, "Structure did not occur after reclaim candle."],
+    };
+  }
+  if(structureDirection === reactionDirection){
+    return { ...base, alignment: "aligned", episodeAligned: true, reason: "4H structure occurred after reclaim and matches liquidity reaction direction." };
+  }
+  if(["bullish", "bearish"].includes(structureDirection)){
+    return { ...base, alignment: "conflict", episodeAligned: true, reason: "4H structure occurred after reclaim but opposes liquidity reaction direction.", warnings: [...warnings, "Episode-aligned opposite 4H structure observed."] };
+  }
+  return { ...base, reason: "4H structure direction is neutral or unavailable." };
+}
+function classifyH4StructureAlignment(episode, h4State, options = {}){
+  const source = options.structureStatus ?? h4State?.structureStatus ?? null;
+  if(!source) return classifyH4StructureEpisodeAlignment(episode, null, options.closedCandles || []);
+  return classifyH4StructureEpisodeAlignment(episode, source, options.closedCandles || []);
 }
 function buildH4LiquidityContextCorroborators(input = {}){
   const episode = input.episode || null;
@@ -1430,7 +1526,7 @@ function buildH4LiquidityContextCorroborators(input = {}){
   const nearbyMarketMapZones = findNearbyMarketMapZones(episode, input.mapState, { bufferState, closedCandles, maxRows: 5 });
   const nearbyH4Fvgs = findNearbyH4FvgZones(episode, input.h4State?.fvgDetails, { bufferState, closedCandles, maxRows: 5 });
   const nearbyH4Ifvgs = findNearbyH4IfvgZones(episode, input.h4State, { bufferState, closedCandles, maxRows: 5 });
-  const structureAlignment = classifyH4StructureAlignment(episode, input.h4State);
+  const structureAlignment = classifyH4StructureAlignment(episode, input.h4State, { structureStatus: input.structureStatus, closedCandles });
   const nearestDiagnostics = buildNearestLiquidityContextDiagnostics({ episode, closedCandles, mapState: input.mapState, h4State: input.h4State });
   const contextCorroborators = [];
   const contextWarnings = [];
@@ -1601,6 +1697,7 @@ function buildH4LiquidityOrderflowState(input = {}){
     closedCandles,
     mapState: marketPreparationState.map,
     h4State: marketPreparationState.h4,
+    structureStatus: input.structureStatus,
   });
   const contextGate = getH4LiquidityEligibleContextCorroborators(contextState);
   const confirmation = failure.detected
@@ -6930,15 +7027,31 @@ function find4hSwings(candles){
   return {highs,lows};
 }
 function detect4hStructure(candles){
-  const latest=candles[candles.length-1];
+  const latestIndex = Array.isArray(candles) ? candles.length - 1 : -1;
+  const latest = latestIndex >= 0 ? candles[latestIndex] : null;
+  const empty = {
+    status: 'No clear 4H structure shift',
+    broken: null,
+    ref: '—',
+    latestClose: latest?.close ?? null,
+    direction: 'neutral',
+    structureType: 'none',
+    eventIndex: latestIndex >= 0 ? latestIndex : null,
+    eventTime: latest ? getOrderflowCandleTime(latest) : null,
+    brokenLevel: null,
+    sourceSwingIndex: null,
+    sourceSwingTime: null,
+    confidence: latest ? 'low' : 'none',
+  };
+  if(!latest) return empty;
   const {highs,lows}=find4hSwings(candles);
   const sh=highs[highs.length-1], sl=lows[lows.length-1];
-  let status='No clear 4H structure shift', broken=null, ref='—';
+  let status=empty.status, broken=null, ref=empty.ref, direction='neutral', structureType='none', sourceSwingIndex=null, sourceSwingTime=null, confidence='low';
   const bearishTrend = lows.length>=2 && lows[lows.length-1].price<lows[lows.length-2].price;
   const bullishTrend = highs.length>=2 && highs[highs.length-1].price>highs[highs.length-2].price;
-  if(sh && latest.close>sh.price){ status = bearishTrend ? 'Bullish CHoCH' : 'Bullish BOS'; broken=sh.price; ref=String(sh.time); }
-  else if(sl && latest.close<sl.price){ status = bullishTrend ? 'Bearish CHoCH' : 'Bearish BOS'; broken=sl.price; ref=String(sl.time); }
-  return {status, broken, ref, latestClose: latest.close};
+  if(sh && latest.close>sh.price){ status = bearishTrend ? 'Bullish CHoCH' : 'Bullish BOS'; broken=sh.price; ref=String(sh.time); direction='bullish'; structureType=bearishTrend ? 'CHOCH' : 'BOS'; sourceSwingIndex=sh.index; sourceSwingTime=sh.time; confidence='medium'; }
+  else if(sl && latest.close<sl.price){ status = bullishTrend ? 'Bearish CHoCH' : 'Bearish BOS'; broken=sl.price; ref=String(sl.time); direction='bearish'; structureType=bullishTrend ? 'CHOCH' : 'BOS'; sourceSwingIndex=sl.index; sourceSwingTime=sl.time; confidence='medium'; }
+  return {status, broken, ref, latestClose: latest.close, direction, structureType, eventIndex: latestIndex, eventTime: getOrderflowCandleTime(latest), brokenLevel: broken, sourceSwingIndex, sourceSwingTime, confidence};
 }
 
 function scan4hFvg(candles){
@@ -7177,7 +7290,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, reason: "No possible H4 liquidity sweep detected." }); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, structureStatus: structure, reason: "No possible H4 liquidity sweep detected." }); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -7190,7 +7303,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const relation = nearest.distance===0 ? 'Inside' : (nearest.distance<=3 ? 'Near' : 'Far');
     if(els.lower4hReaction) els.lower4hReaction.textContent = `4H Reaction | Weekly FVG Relation: ${relation} | 4H FVG Active: ${active4hFvgs.length} | 4H Structure: ${structure.status}`;
     const srSummary = scan4hSupportResistance(candles);
-    const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, reason: "No possible H4 liquidity sweep detected." });
+    const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, structureStatus: structure, reason: "No possible H4 liquidity sweep detected." });
     latest4hSrSummary = srSummary;
     render4hSupportResistanceSummary(srSummary);
     updateMarketPreparationState({ h4: { fvgZones: active4hFvgs, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } });
