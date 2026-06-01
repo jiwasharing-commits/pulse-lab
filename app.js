@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 05:32";
+const APP_LAST_UPDATED = "2026-06-01 06:18";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -234,6 +234,138 @@ if(typeof window !== "undefined") {
   window.getPulseLabState = function getPulseLabState(){
     return marketPreparationState;
   };
+}
+
+const h4MarketMapRealStateSamples = [];
+function cloneMarketMapSampleValue(value){
+  if(value == null) return value;
+  try{
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    if(Array.isArray(value)) return value.slice();
+    if(typeof value === "object") return { ...value };
+    return value;
+  }
+}
+function marketMapSampleHasLabel(values){
+  return (Array.isArray(values) ? values : []).some((value)=>{
+    const label = String(value || "").toLowerCase();
+    return label.includes("market map") || label.includes("marketmap");
+  });
+}
+function getPulseLabStateForMarketMapSample(){
+  if(typeof window !== "undefined" && typeof window.getPulseLabState === "function") return window.getPulseLabState();
+  return marketPreparationState;
+}
+function buildH4MarketMapSampleClassification({ nearbyMarketMapZones = [], nearestMarketMapZone = null, marketMapDiagnostics = {} } = {}){
+  const sourceBreakdown = Array.isArray(marketMapDiagnostics.sourceBreakdown) ? marketMapDiagnostics.sourceBreakdown : [];
+  const duplicateRisk = Array.isArray(marketMapDiagnostics.duplicateRisk) ? marketMapDiagnostics.duplicateRisk : [];
+  const directionInference = Array.isArray(marketMapDiagnostics.directionInference) ? marketMapDiagnostics.directionInference : [];
+  const eligiblePreview = marketMapDiagnostics.eligiblePreview || {};
+  const hasNearbyMarketMap = nearbyMarketMapZones.length > 0;
+  const hasNearestMarketMap = nearestMarketMapZone?.found === true;
+  const hasHtfCandidate = sourceBreakdown.some((item)=>item?.hasHtfSource || item?.multiSource) || Number(eligiblePreview.futureCandidateCount) > 0;
+  const hasDuplicateRisk = duplicateRisk.length > 0;
+  const hasAlignedDirectionInference = directionInference.some((item)=>item?.alignment === "aligned");
+  const hasConflictDirectionInference = directionInference.some((item)=>item?.alignment === "conflict");
+  return {
+    hasNearbyMarketMap,
+    hasNearestMarketMap,
+    hasHtfCandidate,
+    hasDuplicateRisk,
+    hasAlignedDirectionInference,
+    hasConflictDirectionInference,
+    isUsefulFor2D4BReview: hasNearbyMarketMap || hasHtfCandidate || hasDuplicateRisk || hasAlignedDirectionInference || hasConflictDirectionInference,
+  };
+}
+function buildH4MarketMapRealStateSnapshot(label = null){
+  const state = getPulseLabStateForMarketMapSample() || {};
+  const h4Liquidity = state.h4?.liquidityOrderflowState || {};
+  const diagnostics = h4Liquidity.diagnostics || {};
+  const mapState = state.map || {};
+  const active = h4Liquidity.activeEpisode || {};
+  const marketMapDiagnostics = diagnostics.marketMapDiagnostics || createEmptyMarketMapContextDiagnostics("Market Map diagnostics unavailable in current state.");
+  const contextGateEligibleCorroborators = Array.isArray(diagnostics.contextGateEligibleCorroborators) ? diagnostics.contextGateEligibleCorroborators : [];
+  const confirmationCorroborators = Array.isArray(diagnostics.confirmationCorroborators) ? diagnostics.confirmationCorroborators : [];
+  const nearbyMarketMapZones = Array.isArray(diagnostics.nearbyMarketMapZones) ? diagnostics.nearbyMarketMapZones : [];
+  const marketMapAllowListProbe = hasH4LiquidityCorroborator(active, { eligibleContextCorroborators: ["Market Map confluence", "Nearby Market Map context"] });
+  const safetyFlags = {
+    hasMarketMapEligibleLabel: marketMapSampleHasLabel(contextGateEligibleCorroborators),
+    hasMarketMapConfirmationLabel: marketMapSampleHasLabel(confirmationCorroborators),
+    hasMarketMapAllowListLeak: marketMapSampleHasLabel(marketMapAllowListProbe.corroborators),
+    nearestOnlyEligibleLeak: diagnostics.nearestMarketMapZone?.found === true && nearbyMarketMapZones.length === 0 && marketMapSampleHasLabel(contextGateEligibleCorroborators),
+    h1HasLiquidityState: Boolean(state.h1?.liquidityOrderflowState),
+  };
+  const sampleClassification = buildH4MarketMapSampleClassification({
+    nearbyMarketMapZones,
+    nearestMarketMapZone: diagnostics.nearestMarketMapZone,
+    marketMapDiagnostics,
+  });
+  const warnings = Object.values(safetyFlags).some(Boolean) ? ["Safety flag failed — investigate before proceeding."] : [];
+  return cloneMarketMapSampleValue({
+    id: `h4-market-map-sample-${h4MarketMapRealStateSamples.length + 1}`,
+    label: label ? String(label) : `sample-${h4MarketMapRealStateSamples.length + 1}`,
+    timestamp: new Date().toISOString(),
+    activeEpisode: {
+      status: active.status,
+      stale: active.stale,
+      reclaim: active.reclaim?.status,
+      avwap: active.avwap?.side,
+      correctSideCloses: active.avwap?.correctSideCloses,
+      score: active.score,
+      band: active.band,
+      failure: active.failure?.detected,
+      display: active.displayStatus,
+    },
+    mapShapeSummary: {
+      keys: Object.keys(mapState),
+      upsideCount: Array.isArray(mapState.upside) ? mapState.upside.length : null,
+      downsideCount: Array.isArray(mapState.downside) ? mapState.downside.length : null,
+      rowsCount: Array.isArray(mapState.rows) ? mapState.rows.length : null,
+      zonesCount: Array.isArray(mapState.zones) ? mapState.zones.length : null,
+      upsideWatchCount: Array.isArray(mapState.upsideWatch) ? mapState.upsideWatch.length : null,
+      downsideWatchCount: Array.isArray(mapState.downsideWatch) ? mapState.downsideWatch.length : null,
+      firstUpsideKeys: Array.isArray(mapState.upside) && mapState.upside[0] ? Object.keys(mapState.upside[0]) : [],
+      firstDownsideKeys: Array.isArray(mapState.downside) && mapState.downside[0] ? Object.keys(mapState.downside[0]) : [],
+    },
+    marketMap: {
+      nearbyMarketMapZones,
+      nearestMarketMapZone: diagnostics.nearestMarketMapZone,
+      sourceBreakdown: marketMapDiagnostics.sourceBreakdown,
+      duplicateRisk: marketMapDiagnostics.duplicateRisk,
+      directionInference: marketMapDiagnostics.directionInference,
+      distanceSummary: marketMapDiagnostics.distanceSummary,
+      eligiblePreview: marketMapDiagnostics.eligiblePreview,
+      warnings: marketMapDiagnostics.warnings,
+      skipped: marketMapDiagnostics.skipped,
+    },
+    gate: {
+      contextGateEligibleCorroborators,
+      confirmationCorroborators,
+      confirmationBlockers: Array.isArray(diagnostics.confirmationBlockers) ? diagnostics.confirmationBlockers : [],
+    },
+    safetyFlags,
+    sampleClassification,
+    warnings,
+  });
+}
+function runH4MarketMapRealStateSample(label = null){
+  const snapshot = buildH4MarketMapRealStateSnapshot(label);
+  h4MarketMapRealStateSamples.push(snapshot);
+  return snapshot;
+}
+function getH4MarketMapRealStateSamples(){
+  return h4MarketMapRealStateSamples.map((sample)=>cloneMarketMapSampleValue(sample));
+}
+function clearH4MarketMapRealStateSamples(){
+  const countBefore = h4MarketMapRealStateSamples.length;
+  h4MarketMapRealStateSamples.length = 0;
+  return { cleared: true, countBefore };
+}
+if(typeof window !== "undefined") {
+  window.runH4MarketMapRealStateSample = runH4MarketMapRealStateSample;
+  window.getH4MarketMapRealStateSamples = getH4MarketMapRealStateSamples;
+  window.clearH4MarketMapRealStateSamples = clearH4MarketMapRealStateSamples;
 }
 
 function createEmptyLiquidityOrderflowState(timeframe = "4H", role = "context", reason = "Liquidity/orderflow state not evaluated yet."){

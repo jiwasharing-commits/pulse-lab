@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 05:32",
-  "version": "v0.2.24",
+  "lastUpdated": "2026-06-01 06:18",
+  "version": "v0.2.25",
   "commitLabel": "manual",
-  "note": "Add Market Map diagnostics detail fields"
+  "note": "Add Market Map real-state sampling helper"
 }
