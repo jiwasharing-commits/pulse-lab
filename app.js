@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 00:34";
+const APP_LAST_UPDATED = "2026-06-01 01:22";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -803,6 +803,264 @@ function shouldConfirmH4LiquidityEpisode(episode, context = {}, options = {}){
     confirmationIndex,
   };
 }
+function normalizeLiquidityZone(zone, sourceHint = null){
+  if(!zone || typeof zone !== "object") return null;
+  const nested = zone.sourceZone || zone.zone || zone.priceZone || null;
+  const readNumber = (...values)=>{
+    for(const value of values){
+      const number = Number(value);
+      if(Number.isFinite(number)) return number;
+    }
+    return null;
+  };
+  const lowerValue = readNumber(zone.lower, zone.low, zone.min, nested?.lower, nested?.low, nested?.min);
+  const upperValue = readNumber(zone.upper, zone.high, zone.max, nested?.upper, nested?.high, nested?.max);
+  const pointValue = readNumber(zone.price, zone.level, zone.center, zone.mid, nested?.price, nested?.level, nested?.center, nested?.ce);
+  let lower = lowerValue;
+  let upper = upperValue;
+  if(!Number.isFinite(lower) && !Number.isFinite(upper) && Number.isFinite(pointValue)){
+    lower = pointValue;
+    upper = pointValue;
+  } else if(Number.isFinite(lower) && !Number.isFinite(upper)){
+    upper = lower;
+  } else if(!Number.isFinite(lower) && Number.isFinite(upper)){
+    lower = upper;
+  }
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  const min = Math.min(lower, upper);
+  const max = Math.max(lower, upper);
+  const textForDirection = `${zone.direction || nested?.direction || zone.type || nested?.type || zone.label || nested?.label || ""}`.toLowerCase();
+  const direction = textForDirection.includes("bullish") ? "bullish" : (textForDirection.includes("bearish") ? "bearish" : (zone.direction || nested?.direction || null));
+  const source = sourceHint || zone.source || nested?.source || zone.timeframe || nested?.timeframe || null;
+  const id = zone.id || zone.key || nested?.id || nested?.key || null;
+  const label = zone.label || zone.name || nested?.label || nested?.name || zone.type || nested?.type || source || "Liquidity zone";
+  const type = zone.type || nested?.type || zone.kind || nested?.kind || null;
+  const status = zone.status || zone.detailStatus || zone.baseStatus || nested?.status || zone.ifvg?.state || null;
+  const quality = zone.quality || zone.band || zone.strength || zone.priorityScore || nested?.quality || nested?.strength || null;
+  return {
+    id,
+    source,
+    label,
+    type,
+    direction,
+    lower: min,
+    upper: max,
+    center: (min + max) / 2,
+    status,
+    quality,
+    timeframe: zone.timeframe || nested?.timeframe || null,
+    side: zone.side || nested?.side || null,
+    ref: { id, key: zone.key || nested?.key || null, label, source, type, status },
+  };
+}
+function getLiquidityPriceReference(episode){
+  const reclaimClose = Number(episode?.reclaim?.closePrice);
+  if(Number.isFinite(reclaimClose)) return { primaryPrice: reclaimClose, referenceType: "reclaimClose" };
+  const levelPrice = Number(episode?.sweep?.levelPrice);
+  if(Number.isFinite(levelPrice)) return { primaryPrice: levelPrice, referenceType: "sweepLevel" };
+  const breachPrice = Number(episode?.sweep?.breachPrice);
+  if(Number.isFinite(breachPrice)) return { primaryPrice: breachPrice, referenceType: "breachPrice" };
+  return { primaryPrice: null, referenceType: "none" };
+}
+function getLiquidityContextBuffer(episode, closedCandles){
+  const { primaryPrice } = getLiquidityPriceReference(episode);
+  const breachBuffer = Number(episode?.sweep?.breachBuffer);
+  const fallback = Number.isFinite(primaryPrice) && primaryPrice > 0 ? primaryPrice * 0.003 : null;
+  const cap = Number.isFinite(primaryPrice) && primaryPrice > 0 ? primaryPrice * 0.005 : null;
+  const hasBreachBuffer = Number.isFinite(breachBuffer) && breachBuffer > 0;
+  let buffer = hasBreachBuffer ? breachBuffer : fallback;
+  if(Number.isFinite(buffer) && Number.isFinite(fallback)) buffer = Math.max(buffer, fallback);
+  if(Number.isFinite(buffer) && Number.isFinite(cap)) buffer = Math.min(buffer, cap);
+  return {
+    buffer: Number.isFinite(buffer) && buffer > 0 ? buffer : null,
+    method: hasBreachBuffer ? "breachBuffer+fallbackPct" : (Number.isFinite(fallback) ? "fallbackPct" : "unavailable"),
+    fallbackUsed: !hasBreachBuffer,
+  };
+}
+function isPriceNearZone(price, zone, buffer){
+  const value = Number(price);
+  const padding = Number(buffer);
+  const normalized = zone?.lower !== undefined && zone?.upper !== undefined ? zone : normalizeLiquidityZone(zone);
+  if(!Number.isFinite(value) || !normalized || !Number.isFinite(padding) || padding < 0) return false;
+  const lower = Number(normalized.lower);
+  const upper = Number(normalized.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return false;
+  return value >= lower - padding && value <= upper + padding;
+}
+function buildLiquidityContextDedupeKey(item){
+  if(!item || typeof item !== "object") return null;
+  const timeframe = item.timeframe || "4H";
+  const source = item.source || "unknown";
+  if(item.id) return `${timeframe}:${source}:${item.id}`;
+  return `${timeframe}:${source}:${item.type || "zone"}:${item.lower ?? ""}:${item.upper ?? ""}:${item.direction || ""}`;
+}
+function getLiquidityZoneRelation(price, zone, buffer){
+  if(!isPriceNearZone(price, zone, buffer)) return null;
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  return Number.isFinite(lower) && Number.isFinite(upper) && price >= lower && price <= upper ? "inside" : "near";
+}
+function getLiquidityZoneDistancePct(price, zone){
+  const value = Number(price);
+  const center = Number(zone?.center ?? ((Number(zone?.lower) + Number(zone?.upper)) / 2));
+  if(!Number.isFinite(value) || value <= 0 || !Number.isFinite(center)) return null;
+  return Math.abs(value - center) / value * 100;
+}
+function collectLiquidityMapRows(mapState){
+  if(!mapState || typeof mapState !== "object") return [];
+  const keys = ["upside", "downside", "rows", "zones", "upsideWatch", "downsideWatch"];
+  return keys.flatMap((key)=>Array.isArray(mapState[key]) ? mapState[key] : []);
+}
+function findNearbyMarketMapZones(episode, mapState, options = {}){
+  const { primaryPrice } = getLiquidityPriceReference(episode);
+  const bufferState = options.bufferState || getLiquidityContextBuffer(episode, options.closedCandles);
+  const buffer = Number(bufferState.buffer);
+  if(!Number.isFinite(primaryPrice) || !Number.isFinite(buffer) || !mapState) return [];
+  const maxRows = Math.max(1, Number(options.maxRows) || 5);
+  return collectLiquidityMapRows(mapState)
+    .map((row, index)=>({ row, index, zone: normalizeLiquidityZone(row, "marketMap") }))
+    .filter((item)=>item.zone && isPriceNearZone(primaryPrice, item.zone, buffer))
+    .slice(0, maxRows)
+    .map(({ row, index, zone })=>({
+      id: zone.id || `marketMap-${index}`,
+      source: "marketMap",
+      label: zone.label,
+      type: zone.type,
+      side: row.side || zone.side || null,
+      direction: zone.direction,
+      lower: zone.lower,
+      upper: zone.upper,
+      distancePct: getLiquidityZoneDistancePct(primaryPrice, zone),
+      relation: getLiquidityZoneRelation(primaryPrice, zone, buffer),
+      quality: zone.quality,
+    }));
+}
+function isInactiveFvgDetail(detail){
+  const status = String(detail?.detailStatus || detail?.status || detail?.baseStatus || "").toLowerCase();
+  return status.includes("broken") || status.includes("failed") || status.includes("filled");
+}
+function findNearbyH4FvgZones(episode, h4FvgDetails, options = {}){
+  const { primaryPrice } = getLiquidityPriceReference(episode);
+  const bufferState = options.bufferState || getLiquidityContextBuffer(episode, options.closedCandles);
+  const buffer = Number(bufferState.buffer);
+  if(!Array.isArray(h4FvgDetails) || !h4FvgDetails.length || !Number.isFinite(primaryPrice) || !Number.isFinite(buffer)) return [];
+  const maxRows = Math.max(1, Number(options.maxRows) || 5);
+  const reactionDirection = getH4LiquidityReactionDirection(episode);
+  const seen = new Set();
+  return h4FvgDetails
+    .filter((detail)=>!isInactiveFvgDetail(detail))
+    .map((detail, index)=>{
+      const zone = normalizeLiquidityZone({ ...(detail.sourceZone || detail), id: detail.key || detail.id || null, direction: detail.direction || getFvgDirection(detail.sourceZone || detail), status: detail.detailStatus || detail.status || null, quality: detail.quality?.band || detail.quality || null, timeframe: detail.timeframe || "4H" }, "h4Fvg");
+      if(!zone || !isPriceNearZone(primaryPrice, zone, buffer)) return null;
+      const refKey = buildLiquidityContextDedupeKey({ ...zone, id: detail.key || zone.id || `h4Fvg-${index}`, source: "h4Fvg", timeframe: "4H" });
+      if(seen.has(refKey)) return null;
+      seen.add(refKey);
+      return {
+        id: detail.key || zone.id || `h4Fvg-${index}`,
+        source: "h4Fvg",
+        direction: zone.direction,
+        lower: zone.lower,
+        upper: zone.upper,
+        status: detail.detailStatus || zone.status,
+        quality: detail.quality?.band || zone.quality,
+        relation: getLiquidityZoneRelation(primaryPrice, zone, buffer),
+        distancePct: getLiquidityZoneDistancePct(primaryPrice, zone),
+        sameDirection: !!reactionDirection && zone.direction === reactionDirection,
+        refKey,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, maxRows);
+}
+function findNearbyH4IfvgZones(episode, h4State, options = {}){
+  const { primaryPrice } = getLiquidityPriceReference(episode);
+  const bufferState = options.bufferState || getLiquidityContextBuffer(episode, options.closedCandles);
+  const buffer = Number(bufferState.buffer);
+  if(!h4State || !Number.isFinite(primaryPrice) || !Number.isFinite(buffer)) return [];
+  const maxRows = Math.max(1, Number(options.maxRows) || 5);
+  const reactionDirection = getH4LiquidityReactionDirection(episode);
+  const candidates = [
+    ...(Array.isArray(h4State.recentBrokenFvgDetails?.all) ? h4State.recentBrokenFvgDetails.all : []),
+    ...(Array.isArray(h4State.fvgDetails) ? h4State.fvgDetails.filter((detail)=>detail?.ifvg && detail.ifvg.state !== IFVG_STATE.NONE) : []),
+  ];
+  const seen = new Set();
+  return candidates
+    .map((detail, index)=>{
+      const ifvg = detail?.ifvg || {};
+      const sourceZone = ifvg.zone && Number.isFinite(Number(ifvg.zone.lower)) && Number.isFinite(Number(ifvg.zone.upper)) ? ifvg.zone : (detail?.sourceZone || detail);
+      const direction = ifvg.inversionSide || detail?.direction || getFvgDirection(detail?.sourceZone || detail);
+      const zone = normalizeLiquidityZone({ ...sourceZone, id: detail?.key || ifvg.originalFvgId || null, direction, status: ifvg.state || detail?.detailStatus || null, quality: ifvg.quality?.band || detail?.quality?.band || null, timeframe: detail?.timeframe || "4H" }, "h4Ifvg");
+      if(!zone || !isPriceNearZone(primaryPrice, zone, buffer)) return null;
+      const refKey = buildLiquidityContextDedupeKey({ ...zone, id: detail?.key || ifvg.originalFvgId || `h4Ifvg-${index}`, source: "h4Ifvg", timeframe: "4H" });
+      if(seen.has(refKey)) return null;
+      seen.add(refKey);
+      return {
+        id: detail?.key || ifvg.originalFvgId || `h4Ifvg-${index}`,
+        source: "h4Ifvg",
+        direction: zone.direction,
+        lower: zone.lower,
+        upper: zone.upper,
+        ifvgState: ifvg.state || null,
+        status: detail?.detailStatus || zone.status,
+        band: ifvg.quality?.band || null,
+        relation: getLiquidityZoneRelation(primaryPrice, zone, buffer),
+        distancePct: getLiquidityZoneDistancePct(primaryPrice, zone),
+        sameDirection: !!reactionDirection && zone.direction === reactionDirection,
+        refKey,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, maxRows);
+}
+function classifyH4StructureAlignment(episode, h4State, options = {}){
+  const source = h4State?.structureStatus || null;
+  if(!source) return { alignment: "unknown", reason: "4H structure context unavailable.", source: null, eventTime: null, eventIndex: null, episodeAligned: false };
+  return {
+    alignment: "unknown",
+    reason: "4H structure context is not episode-aligned.",
+    source,
+    eventTime: null,
+    eventIndex: null,
+    episodeAligned: false,
+  };
+}
+function buildH4LiquidityContextCorroborators(input = {}){
+  const episode = input.episode || null;
+  const closedCandles = Array.isArray(input.closedCandles) ? input.closedCandles : [];
+  const bufferState = getLiquidityContextBuffer(episode, closedCandles);
+  const priceReference = getLiquidityPriceReference(episode);
+  const nearbyMarketMapZones = findNearbyMarketMapZones(episode, input.mapState, { bufferState, closedCandles, maxRows: 5 });
+  const nearbyH4Fvgs = findNearbyH4FvgZones(episode, input.h4State?.fvgDetails, { bufferState, closedCandles, maxRows: 5 });
+  const nearbyH4Ifvgs = findNearbyH4IfvgZones(episode, input.h4State, { bufferState, closedCandles, maxRows: 5 });
+  const structureAlignment = classifyH4StructureAlignment(episode, input.h4State);
+  const contextCorroborators = [];
+  const contextWarnings = [];
+  const contextBlockers = [];
+  if(nearbyMarketMapZones.length) contextCorroborators.push("Nearby Market Map context");
+  if(nearbyH4Fvgs.some((zone)=>zone.sameDirection)) contextCorroborators.push("Nearby same-direction H4 FVG context");
+  if(nearbyH4Fvgs.some((zone)=>zone.sameDirection === false)) contextWarnings.push("Nearby opposite-direction H4 FVG context observed.");
+  const supportiveIfvgs = nearbyH4Ifvgs.filter((zone)=>zone.sameDirection && [IFVG_STATE.CONFIRMED, IFVG_STATE.VALID].includes(zone.ifvgState));
+  if(supportiveIfvgs.length) contextCorroborators.push("Nearby same-direction H4 IFVG context");
+  if(nearbyH4Ifvgs.some((zone)=>zone.sameDirection === false)) contextWarnings.push("Nearby opposite-direction H4 IFVG context observed.");
+  if(nearbyH4Ifvgs.some((zone)=>[IFVG_STATE.FAILED].includes(zone.ifvgState) || zone.status === "Failed")) contextWarnings.push("Nearby failed H4 IFVG context observed.");
+  if(structureAlignment.alignment === "conflict") contextWarnings.push("4H structure context conflict observed.");
+  else if(structureAlignment.source && structureAlignment.episodeAligned === false) contextWarnings.push("4H structure context is not episode-aligned.");
+  return {
+    contextCorroborators: [...new Set(contextCorroborators)],
+    contextWarnings: [...new Set(contextWarnings)],
+    contextBlockers,
+    nearbyMarketMapZones,
+    nearbyH4Fvgs,
+    nearbyH4Ifvgs,
+    structureAlignment,
+    diagnostics: {
+      priceReference,
+      buffer: bufferState.buffer,
+      bufferMethod: bufferState.method,
+      bufferFallbackUsed: bufferState.fallbackUsed,
+    },
+  };
+}
 function buildH4LiquidityOrderflowState(input = {}){
   const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const closedCandles = getClosedOrderflowCandles(input.candles);
@@ -815,7 +1073,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -827,7 +1085,13 @@ function buildH4LiquidityOrderflowState(input = {}){
       confirmationWindowBars,
       deepBreachPct,
       scoreComponents,
+      contextCorroborators,
       contextWarnings,
+      contextBlockers,
+      nearbyMarketMapZones,
+      nearbyH4Fvgs,
+      nearbyH4Ifvgs,
+      structureAlignment,
       failureBoundary,
       failureScanStartIndex,
       failureBarsChecked,
@@ -935,13 +1199,25 @@ function buildH4LiquidityOrderflowState(input = {}){
       ])],
     }
     : failedEpisode;
+  const contextState = buildH4LiquidityContextCorroborators({
+    episode: activeEpisode,
+    closedCandles,
+    mapState: marketPreparationState.map,
+    h4State: marketPreparationState.h4,
+  });
   const diagnostics = buildDiagnostics({
     barsAfterSweep: staleState.barsAfterSweep,
     reclaimWindowRemaining: staleState.reclaimWindowRemaining,
     confirmationWindowBars: staleState.confirmationWindowBars,
     deepBreachPct: deepBreachWarning.deepBreachPct,
     scoreComponents: scoreState.components,
-    contextWarnings: [],
+    contextCorroborators: contextState.contextCorroborators,
+    contextWarnings: contextState.contextWarnings,
+    contextBlockers: contextState.contextBlockers,
+    nearbyMarketMapZones: contextState.nearbyMarketMapZones,
+    nearbyH4Fvgs: contextState.nearbyH4Fvgs,
+    nearbyH4Ifvgs: contextState.nearbyH4Ifvgs,
+    structureAlignment: contextState.structureAlignment,
     failureBoundary: failure.boundary,
     failureScanStartIndex: failure.scanStartIndex,
     failureBarsChecked: failure.barsChecked,
