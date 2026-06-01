@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 02:37",
-  "version": "v0.2.18",
+  "lastUpdated": "2026-06-01 03:10",
+  "version": "v0.2.19",
   "commitLabel": "manual",
-  "note": "Enable H4 FVG IFVG liquidity context corroborators"
+  "note": "Add H4 liquidity context corroborator fixture validation"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 02:37";
+const APP_LAST_UPDATED = "2026-06-01 03:10";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -865,6 +865,226 @@ function getH4LiquidityEligibleContextCorroborators(contextDiagnostics){
     warnings: [...new Set(warnings)],
   };
 }
+function runH4LiquidityContextCorroboratorFixtureTests(){
+  const closedCandles = [{ time: 1710000000, close: 100 }];
+  const baseEpisode = (overrides = {})=>({
+    status: LIQUIDITY_OF_STATE.VALID,
+    stale: false,
+    sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW },
+    reclaim: { detected: true, status: LIQUIDITY_RECLAIM_STATUS.SAME_BAR, candleIndex: 0, closePrice: 101 },
+    avwap: { available: true, side: LIQUIDITY_AVWAP_SIDE.ABOVE, correctSideCloses: 1 },
+    volume: { status: LIQUIDITY_VOLUME_STATUS.NORMAL },
+    score: 6,
+    failure: { detected: false },
+    ...overrides,
+    sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW, ...(overrides.sweep || {}) },
+    reclaim: { detected: true, status: LIQUIDITY_RECLAIM_STATUS.SAME_BAR, candleIndex: 0, closePrice: 101, ...(overrides.reclaim || {}) },
+    avwap: { available: true, side: LIQUIDITY_AVWAP_SIDE.ABOVE, correctSideCloses: 1, ...(overrides.avwap || {}) },
+    volume: { status: LIQUIDITY_VOLUME_STATUS.NORMAL, ...(overrides.volume || {}) },
+    failure: { detected: false, ...(overrides.failure || {}) },
+  });
+  const h4Fvg = (overrides = {})=>({
+    id: "fixture-fvg",
+    source: "h4Fvg",
+    direction: "bullish",
+    lower: 99,
+    upper: 101,
+    relation: "inside",
+    sameDirection: true,
+    status: "Active",
+    refKey: "fixture-zone",
+    ...overrides,
+  });
+  const h4Ifvg = (overrides = {})=>({
+    id: "fixture-ifvg",
+    source: "h4Ifvg",
+    direction: "bullish",
+    lower: 99,
+    upper: 101,
+    relation: "inside",
+    sameDirection: true,
+    ifvgState: IFVG_STATE.VALID,
+    status: "Valid",
+    refKey: "fixture-zone",
+    ...overrides,
+  });
+  const contextDiagnostics = (overrides = {})=>({
+    nearbyH4Fvgs: [],
+    nearbyH4Ifvgs: [],
+    nearbyMarketMapZones: [],
+    nearestH4Fvg: null,
+    nearestH4Ifvg: null,
+    nearestMarketMapZone: null,
+    structureAlignment: { alignment: "unknown", episodeAligned: false },
+    ...overrides,
+  });
+  const includes = (list, value)=>Array.isArray(list) && list.includes(value);
+  const notIncludes = (list, value)=>!includes(list, value);
+  const cases = [
+    {
+      name: "H4 FVG eligible confirms when all core gates pass",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed true with H4 FVG proximity",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "H4 FVG proximity"),
+        ({ confirmation })=>confirmation.confirmed === true,
+        ({ confirmation })=>includes(confirmation.corroborators, "H4 FVG proximity"),
+      ],
+    },
+    {
+      name: "H4 IFVG eligible confirms when all core gates pass",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearbyH4Ifvgs: [h4Ifvg()] }),
+      expected: "confirmed true with H4 IFVG context",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "H4 IFVG context"),
+        ({ confirmation })=>confirmation.confirmed === true,
+        ({ confirmation })=>includes(confirmation.corroborators, "H4 IFVG context"),
+      ],
+    },
+    {
+      name: "H4 FVG context cannot bypass missing reclaim",
+      episode: baseEpisode({ reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.NONE } }),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed false with no reclaim blocker",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "H4 FVG proximity"),
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "no reclaim"),
+      ],
+    },
+    {
+      name: "H4 FVG context cannot bypass AVWAP wrong side",
+      episode: baseEpisode({ avwap: { side: LIQUIDITY_AVWAP_SIDE.BELOW } }),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed false with AVWAP wrong-side blocker",
+      checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "AVWAP not on correct side"),
+      ],
+    },
+    {
+      name: "H4 FVG context cannot bypass low score",
+      episode: baseEpisode({ score: 5 }),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed false with score blocker",
+      checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "score below threshold"),
+      ],
+    },
+    {
+      name: "Opposite-direction H4 IFVG is not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearbyH4Ifvgs: [h4Ifvg({ sameDirection: false, direction: "bearish" })] }),
+      expected: "no H4 IFVG context eligibility and warning present",
+      checks: [
+        ({ gate })=>notIncludes(gate.eligibleCorroborators, "H4 IFVG context"),
+        ({ gate })=>gate.warnings.length > 0 || gate.skipped.length > 0,
+        ({ confirmation })=>confirmation.confirmed === false,
+      ],
+    },
+    {
+      name: "Nearest-only H4 zones are not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearestH4Fvg: { found: true, source: "h4Fvg", label: "Nearest FVG" } }),
+      expected: "no nearest-only context eligibility",
+      checks: [
+        ({ gate })=>gate.eligibleCorroborators.length === 0,
+        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
+      ],
+    },
+    {
+      name: "Market Map proximity is not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearbyMarketMapZones: [{ source: "marketMap", relation: "inside", label: "Fixture Map Zone" }] }),
+      expected: "no Market Map context eligibility",
+      checks: [
+        ({ gate })=>gate.eligibleCorroborators.length === 0,
+        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
+      ],
+    },
+    {
+      name: "Structure alignment is not eligible",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ structureAlignment: { alignment: "aligned", episodeAligned: true, reason: "Fixture aligned" } }),
+      expected: "no structure context eligibility",
+      checks: [
+        ({ gate })=>gate.eligibleCorroborators.length === 0,
+        ({ confirmation })=>includes(confirmation.blockers, "no corroborator"),
+      ],
+    },
+    {
+      name: "Context cannot bypass failed episode",
+      episode: baseEpisode({ failure: { detected: true } }),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed false with failure blocker",
+      checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "failure detected"),
+      ],
+    },
+    {
+      name: "Context cannot bypass stale episode",
+      episode: baseEpisode({ stale: true }),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()] }),
+      expected: "confirmed false with stale blocker",
+      checks: [
+        ({ confirmation })=>confirmation.confirmed === false,
+        ({ confirmation })=>includes(confirmation.blockers, "stale"),
+      ],
+    },
+    {
+      name: "H4 IFVG is preferred over H4 FVG for the same zone",
+      episode: baseEpisode(),
+      context: contextDiagnostics({ nearbyH4Fvgs: [h4Fvg()], nearbyH4Ifvgs: [h4Ifvg()] }),
+      expected: "only H4 IFVG context eligible for same zone",
+      checks: [
+        ({ gate })=>includes(gate.eligibleCorroborators, "H4 IFVG context"),
+        ({ gate })=>notIncludes(gate.eligibleCorroborators, "H4 FVG proximity"),
+        ({ confirmation })=>confirmation.confirmed === true,
+        ({ confirmation })=>includes(confirmation.corroborators, "H4 IFVG context"),
+        ({ confirmation })=>notIncludes(confirmation.corroborators, "H4 FVG proximity"),
+      ],
+    },
+  ];
+  const results = cases.map((testCase)=>{
+    const gate = getH4LiquidityEligibleContextCorroborators(testCase.context);
+    const confirmation = shouldConfirmH4LiquidityEpisode(
+      testCase.episode,
+      { closedCandles, eligibleContextCorroborators: gate.eligibleCorroborators },
+      { scoreThreshold: 6 }
+    );
+    const details = {
+      eligibleContextCorroborators: gate.eligibleCorroborators,
+      skipped: gate.skipped,
+      warnings: gate.warnings,
+      confirmationCorroborators: confirmation.corroborators,
+      confirmationBlockers: confirmation.blockers,
+      confirmed: confirmation.confirmed,
+    };
+    const passed = testCase.checks.every((check)=>check({ gate, confirmation, details }));
+    return {
+      name: testCase.name,
+      passed,
+      expected: testCase.expected,
+      actual: passed ? "matched" : "mismatch",
+      details,
+    };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return {
+    passed: failed === 0,
+    total: results.length,
+    failed,
+    results,
+  };
+}
+if(typeof window !== "undefined") {
+  window.runH4LiquidityContextCorroboratorFixtureTests = runH4LiquidityContextCorroboratorFixtureTests;
+}
+
 function normalizeLiquidityZone(zone, sourceHint = null){
   if(!zone || typeof zone !== "object") return null;
   const nested = zone.sourceZone || zone.zone || zone.priceZone || null;
