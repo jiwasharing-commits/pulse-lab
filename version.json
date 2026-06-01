@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 02:19",
-  "version": "v0.2.17",
+  "lastUpdated": "2026-06-01 02:37",
+  "version": "v0.2.18",
   "commitLabel": "manual",
-  "note": "Fix H4 liquidity context price reference"
+  "note": "Enable H4 FVG IFVG liquidity context corroborators"
 }

@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 02:19";
+const APP_LAST_UPDATED = "2026-06-01 02:37";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -760,7 +760,11 @@ function hasH4LiquidityCorroborator(episode, context = {}){
   if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.STRONG_SPIKE) corroborators.push("Strong volume spike");
   else if(episode?.volume?.status === LIQUIDITY_VOLUME_STATUS.SPIKE) corroborators.push("Volume spike");
   if(Number(episode?.avwap?.correctSideCloses) >= 2) corroborators.push("AVWAP persistence");
-  return { hasCorroborator: corroborators.length > 0, corroborators };
+  const allowedContext = new Set(["H4 FVG proximity", "H4 IFVG context"]);
+  (Array.isArray(context?.eligibleContextCorroborators) ? context.eligibleContextCorroborators : [])
+    .filter((label)=>allowedContext.has(label))
+    .forEach((label)=>corroborators.push(label));
+  return { hasCorroborator: corroborators.length > 0, corroborators: [...new Set(corroborators)] };
 }
 function hasH4LiquidityStrongConflict(episode, context = {}){
   return context?.strongConflict === true;
@@ -801,6 +805,64 @@ function shouldConfirmH4LiquidityEpisode(episode, context = {}, options = {}){
     corroborators: corroboratorState.corroborators,
     confirmationAt,
     confirmationIndex,
+  };
+}
+function buildH4LiquidityContextZoneKey(zone, crossSource = false){
+  if(!zone || typeof zone !== "object") return null;
+  if(!crossSource && zone.refKey) return zone.refKey;
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  const direction = zone.direction || "unknown";
+  return crossSource ? `${lower}:${upper}:${direction}` : `${zone.source || "context"}:${lower}:${upper}:${direction}`;
+}
+function isLiquidityContextRelationEligible(relation){
+  return relation === "inside" || relation === "near";
+}
+function isLiquidityContextStatusInactive(status){
+  return /broken|failed|filled/i.test(String(status || ""));
+}
+function getH4LiquidityEligibleContextCorroborators(contextDiagnostics){
+  const eligible = new Set();
+  const skipped = [];
+  const warnings = [];
+  const ifvgZoneKeys = new Set();
+  const ifvgItems = Array.isArray(contextDiagnostics?.nearbyH4Ifvgs) ? contextDiagnostics.nearbyH4Ifvgs : [];
+  const fvgItems = Array.isArray(contextDiagnostics?.nearbyH4Fvgs) ? contextDiagnostics.nearbyH4Fvgs : [];
+  if(!ifvgItems.length) skipped.push("No nearby H4 IFVG context.");
+  if(!fvgItems.length) skipped.push("No nearby H4 FVG context.");
+  ifvgItems.forEach((zone)=>{
+    const refKey = buildH4LiquidityContextZoneKey(zone) || buildH4LiquidityContextZoneKey(zone, true);
+    const zoneKey = buildH4LiquidityContextZoneKey(zone, true);
+    const lower = Number(zone?.lower);
+    const upper = Number(zone?.upper);
+    const ifvgState = String(zone?.ifvgState || "").toLowerCase();
+    if(zone?.sameDirection !== true){ warnings.push("Opposite-direction H4 IFVG context skipped."); return; }
+    if(!isLiquidityContextRelationEligible(zone?.relation)){ skipped.push("H4 IFVG context outside nearby relation."); return; }
+    if(!["valid", "confirmed"].includes(ifvgState)){ skipped.push("H4 IFVG context is not valid or confirmed."); return; }
+    if(isLiquidityContextStatusInactive(zone?.status) || zone?.stale === true){ warnings.push("Inactive H4 IFVG context skipped."); return; }
+    if(!Number.isFinite(lower) || !Number.isFinite(upper)){ skipped.push("H4 IFVG context has invalid zone bounds."); return; }
+    if(!refKey){ skipped.push("H4 IFVG context has no dedupe key."); return; }
+    if(zoneKey) ifvgZoneKeys.add(zoneKey);
+    eligible.add("H4 IFVG context");
+  });
+  fvgItems.forEach((zone)=>{
+    const refKey = buildH4LiquidityContextZoneKey(zone) || buildH4LiquidityContextZoneKey(zone, true);
+    const zoneKey = buildH4LiquidityContextZoneKey(zone, true);
+    const lower = Number(zone?.lower);
+    const upper = Number(zone?.upper);
+    if(zoneKey && ifvgZoneKeys.has(zoneKey)){ skipped.push("H4 FVG proximity skipped because valid H4 IFVG context uses the same zone."); return; }
+    if(zone?.sameDirection !== true){ warnings.push("Opposite-direction H4 FVG context skipped."); return; }
+    if(!isLiquidityContextRelationEligible(zone?.relation)){ skipped.push("H4 FVG context outside nearby relation."); return; }
+    if(isLiquidityContextStatusInactive(zone?.status)){ skipped.push("Inactive H4 FVG context skipped."); return; }
+    if(!Number.isFinite(lower) || !Number.isFinite(upper)){ skipped.push("H4 FVG context has invalid zone bounds."); return; }
+    if(!refKey){ skipped.push("H4 FVG context has no dedupe key."); return; }
+    eligible.add("H4 FVG proximity");
+  });
+  return {
+    eligibleCorroborators: [...eligible],
+    skipped: [...new Set(skipped)],
+    warnings: [...new Set(warnings)],
   };
 }
 function normalizeLiquidityZone(zone, sourceHint = null){
@@ -1195,7 +1257,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, contextPriceReference = null, contextBuffer = null, nearestMarketMapZone = null, nearestH4Fvg = null, nearestH4Ifvg = null, failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, contextPriceReference = null, contextBuffer = null, nearestMarketMapZone = null, nearestH4Fvg = null, nearestH4Ifvg = null, contextGateEligibleCorroborators = [], contextGateSkipped = [], contextGateWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -1219,6 +1281,9 @@ function buildH4LiquidityOrderflowState(input = {}){
       nearestMarketMapZone,
       nearestH4Fvg,
       nearestH4Ifvg,
+      contextGateEligibleCorroborators,
+      contextGateSkipped,
+      contextGateWarnings,
       failureBoundary,
       failureScanStartIndex,
       failureBarsChecked,
@@ -1311,9 +1376,16 @@ function buildH4LiquidityOrderflowState(input = {}){
       },
     }
     : activeEpisode;
+  const contextState = buildH4LiquidityContextCorroborators({
+    episode: activeEpisode,
+    closedCandles,
+    mapState: marketPreparationState.map,
+    h4State: marketPreparationState.h4,
+  });
+  const contextGate = getH4LiquidityEligibleContextCorroborators(contextState);
   const confirmation = failure.detected
     ? { confirmed: false, reasons: [], blockers: ["failure detected"], corroborators: [], confirmationAt: null, confirmationIndex: null }
-    : shouldConfirmH4LiquidityEpisode(failedEpisode, { closedCandles }, { scoreThreshold: 6 });
+    : shouldConfirmH4LiquidityEpisode(failedEpisode, { closedCandles, eligibleContextCorroborators: contextGate.eligibleCorroborators }, { scoreThreshold: 6 });
   const finalEpisode = confirmation.confirmed
     ? {
       ...failedEpisode,
@@ -1326,12 +1398,6 @@ function buildH4LiquidityOrderflowState(input = {}){
       ])],
     }
     : failedEpisode;
-  const contextState = buildH4LiquidityContextCorroborators({
-    episode: activeEpisode,
-    closedCandles,
-    mapState: marketPreparationState.map,
-    h4State: marketPreparationState.h4,
-  });
   const diagnostics = buildDiagnostics({
     barsAfterSweep: staleState.barsAfterSweep,
     reclaimWindowRemaining: staleState.reclaimWindowRemaining,
@@ -1350,6 +1416,9 @@ function buildH4LiquidityOrderflowState(input = {}){
     nearestMarketMapZone: contextState.nearestMarketMapZone,
     nearestH4Fvg: contextState.nearestH4Fvg,
     nearestH4Ifvg: contextState.nearestH4Ifvg,
+    contextGateEligibleCorroborators: contextGate.eligibleCorroborators,
+    contextGateSkipped: contextGate.skipped,
+    contextGateWarnings: contextGate.warnings,
     failureBoundary: failure.boundary,
     failureScanStartIndex: failure.scanStartIndex,
     failureBarsChecked: failure.barsChecked,
