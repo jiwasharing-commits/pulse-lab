@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-05-31 20:06";
+const APP_LAST_UPDATED = "2026-05-31 20:23";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -689,6 +689,60 @@ function scoreH4LiquidityEpisode(episode, context = {}, options = {}){
   if(score > 0) reasons.push(`H4 liquidity/orderflow context score: ${score}/10.`);
   return { score, band, components, reasons };
 }
+function createEmptyH4LiquidityFailure({ boundary = null, scanStartIndex = null, barsChecked = 0 } = {}){
+  return { detected: false, at: null, price: null, reason: null, priorStateBeforeFailure: null, candleIndex: null, boundary, scanStartIndex, barsChecked };
+}
+function getH4LiquidityFailureBoundary(episode){
+  const levelPrice = Number(episode?.sweep?.levelPrice);
+  const breachBuffer = Number.isFinite(Number(episode?.sweep?.breachBuffer)) ? Number(episode.sweep.breachBuffer) : 0;
+  const sweepType = episode?.sweep?.type;
+  if(!Number.isFinite(levelPrice)) return { boundary: null, direction: null };
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) return { boundary: levelPrice - breachBuffer, direction: "below" };
+  if(sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) return { boundary: levelPrice + breachBuffer, direction: "above" };
+  return { boundary: null, direction: null };
+}
+function getH4LiquidityFailureStartIndex(episode){
+  if(!episode) return null;
+  const reclaimIndex = Number(episode?.reclaim?.candleIndex);
+  if(episode.status === LIQUIDITY_OF_STATE.VALID && Number.isInteger(reclaimIndex) && reclaimIndex >= 0) return reclaimIndex + 1;
+  const anchorIndex = Number(episode?.sweep?.anchorIndex ?? episode?.sweep?.candleIndex);
+  if(!Number.isInteger(anchorIndex) || anchorIndex < 0) return null;
+  return anchorIndex + 1;
+}
+function buildH4LiquidityFailureReason(episode){
+  if(episode?.sweep?.type === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW) return "Failure detected after H4 close moved back below swept liquidity level.";
+  if(episode?.sweep?.type === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH) return "Failure detected after H4 close moved back above swept liquidity level.";
+  return "Failure detected after H4 close invalidated swept liquidity level.";
+}
+function detectH4LiquidityFailure(closedCandles, episode, options = {}){
+  const boundaryState = getH4LiquidityFailureBoundary(episode);
+  const scanStartIndex = getH4LiquidityFailureStartIndex(episode);
+  const boundary = Number(boundaryState.boundary);
+  if(!Array.isArray(closedCandles) || !closedCandles.length || !episode || !Number.isFinite(boundary) || !Number.isInteger(scanStartIndex)) return createEmptyH4LiquidityFailure({ boundary: boundaryState.boundary ?? null, scanStartIndex });
+  const start = Math.max(0, scanStartIndex);
+  if(start >= closedCandles.length) return createEmptyH4LiquidityFailure({ boundary, scanStartIndex: start });
+  let barsChecked = 0;
+  for(let index = start; index < closedCandles.length; index += 1){
+    const candle = closedCandles[index];
+    if(!isValidOrderflowCandle(candle)) continue;
+    barsChecked += 1;
+    const closePrice = Number(candle.close);
+    const failed = boundaryState.direction === "below" ? closePrice < boundary : (boundaryState.direction === "above" ? closePrice > boundary : false);
+    if(!failed) continue;
+    return {
+      detected: true,
+      at: getOrderflowCandleTime(candle),
+      price: closePrice,
+      reason: buildH4LiquidityFailureReason(episode, candle),
+      priorStateBeforeFailure: [LIQUIDITY_OF_STATE.POSSIBLE, LIQUIDITY_OF_STATE.VALID].includes(episode.status) ? episode.status : null,
+      candleIndex: index,
+      boundary,
+      scanStartIndex: start,
+      barsChecked,
+    };
+  }
+  return createEmptyH4LiquidityFailure({ boundary, scanStartIndex: start, barsChecked });
+}
 function buildH4LiquidityOrderflowState(input = {}){
   const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
   const closedCandles = getClosedOrderflowCandles(input.candles);
@@ -701,7 +755,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [] } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0 } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -714,6 +768,9 @@ function buildH4LiquidityOrderflowState(input = {}){
       deepBreachPct,
       scoreComponents,
       contextWarnings,
+      failureBoundary,
+      failureScanStartIndex,
+      failureBarsChecked,
     };
   };
   if(!sweep){
@@ -770,6 +827,35 @@ function buildH4LiquidityOrderflowState(input = {}){
       ...(deepBreachWarning.triggered && deepBreachWarning.reason ? [deepBreachWarning.reason] : []),
       ...(staleState.stale && staleState.reason ? [staleState.reason] : []),
     ];
+  const activeEpisode = {
+    ...episode,
+    stale: staleState.stale,
+    band: scoreState.band,
+    score: scoreState.score,
+    reasons,
+  };
+  const failure = detectH4LiquidityFailure(closedCandles, activeEpisode);
+  const failedEpisode = failure.detected
+    ? {
+      ...activeEpisode,
+      status: LIQUIDITY_OF_STATE.FAILED,
+      stale: false,
+      displayStatus: "H4 liquidity sweep reaction failed",
+      band: LIQUIDITY_BAND.WEAK,
+      score: 0,
+      reasons: [
+        ...(activeEpisode.reasons || []),
+        failure.reason || "Failure detected after H4 close invalidated swept liquidity level.",
+      ],
+      failure: {
+        detected: true,
+        at: failure.at,
+        price: failure.price,
+        reason: failure.reason,
+        priorStateBeforeFailure: failure.priorStateBeforeFailure,
+      },
+    }
+    : activeEpisode;
   const diagnostics = buildDiagnostics({
     barsAfterSweep: staleState.barsAfterSweep,
     reclaimWindowRemaining: staleState.reclaimWindowRemaining,
@@ -777,16 +863,13 @@ function buildH4LiquidityOrderflowState(input = {}){
     deepBreachPct: deepBreachWarning.deepBreachPct,
     scoreComponents: scoreState.components,
     contextWarnings: [],
+    failureBoundary: failure.boundary,
+    failureScanStartIndex: failure.scanStartIndex,
+    failureBarsChecked: failure.barsChecked,
   });
   return {
     ...base,
-    activeEpisode: {
-      ...episode,
-      stale: staleState.stale,
-      band: scoreState.band,
-      score: scoreState.score,
-      reasons,
-    },
+    activeEpisode: failedEpisode,
     recentCompleted: [],
     diagnostics,
   };
