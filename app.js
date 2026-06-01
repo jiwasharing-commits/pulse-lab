@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 02:05";
+const APP_LAST_UPDATED = "2026-06-01 02:19";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -855,11 +855,11 @@ function normalizeLiquidityZone(zone, sourceHint = null){
 }
 function getLiquidityPriceReference(episode){
   const reclaimClose = Number(episode?.reclaim?.closePrice);
-  if(Number.isFinite(reclaimClose)) return { primaryPrice: reclaimClose, referenceType: "reclaimClose" };
+  if(episode?.reclaim?.detected === true && Number.isFinite(reclaimClose) && reclaimClose > 0) return { primaryPrice: reclaimClose, referenceType: "reclaimClose" };
   const levelPrice = Number(episode?.sweep?.levelPrice);
-  if(Number.isFinite(levelPrice)) return { primaryPrice: levelPrice, referenceType: "sweepLevel" };
+  if(Number.isFinite(levelPrice) && levelPrice > 0) return { primaryPrice: levelPrice, referenceType: "sweepLevel" };
   const breachPrice = Number(episode?.sweep?.breachPrice);
-  if(Number.isFinite(breachPrice)) return { primaryPrice: breachPrice, referenceType: "breachPrice" };
+  if(Number.isFinite(breachPrice) && breachPrice > 0) return { primaryPrice: breachPrice, referenceType: "breachPrice" };
   return { primaryPrice: null, referenceType: "none" };
 }
 function getLiquidityContextBuffer(episode, closedCandles){
