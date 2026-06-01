@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-01 04:44",
-  "version": "v0.2.22",
+  "lastUpdated": "2026-06-01 05:06",
+  "version": "v0.2.23",
   "commitLabel": "manual",
-  "note": "Enable episode-aligned 4H structure corroborator"
+  "note": "Add Market Map diagnostics fixture validation"
 }

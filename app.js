@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 04:44";
+const APP_LAST_UPDATED = "2026-06-01 05:06";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1218,6 +1218,230 @@ if(typeof window !== "undefined") {
   window.runH4LiquidityContextCorroboratorFixtureTests = runH4LiquidityContextCorroboratorFixtureTests;
 }
 
+function runH4MarketMapContextFixtureTests(){
+  const closedCandles = [{ time: 1710000000, close: 100 }];
+  const baseEpisode = (overrides = {})=>({
+    status: LIQUIDITY_OF_STATE.VALID,
+    stale: false,
+    sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW, levelPrice: 100, breachPrice: 99.5, breachBuffer: 0.4, ...(overrides.sweep || {}) },
+    reclaim: { detected: true, status: LIQUIDITY_RECLAIM_STATUS.SAME_BAR, candleIndex: 0, closePrice: 100, ...(overrides.reclaim || {}) },
+    avwap: { available: true, side: LIQUIDITY_AVWAP_SIDE.ABOVE, correctSideCloses: 1, ...(overrides.avwap || {}) },
+    volume: { status: LIQUIDITY_VOLUME_STATUS.NORMAL, ...(overrides.volume || {}) },
+    score: 6,
+    failure: { detected: false, ...(overrides.failure || {}) },
+    ...overrides,
+  });
+  const supportRow = (overrides = {})=>({ lower: 98, upper: 101, label: "Daily Support", source: "daily_sr", side: "downside", quality: "Touch 3x", ...overrides });
+  const resistanceRow = (overrides = {})=>({ lower: 99, upper: 102, label: "Daily Resistance", source: "daily_sr", side: "upside", quality: "Touch 3x", ...overrides });
+  const emptyContext = { nearbyH4Fvgs: [], nearbyH4Ifvgs: [], structureAlignment: { alignment: "unknown", episodeAligned: false } };
+  const includes = (list, value)=>Array.isArray(list) && list.includes(value);
+  const notIncludes = (list, value)=>!includes(list, value);
+  const sourceList = (row)=>Array.isArray(row?.sources) && row.sources.length ? row.sources : [row].filter(Boolean);
+  const summarizeMarketMapFixtureSource = (row)=>sourceList(row).map((source)=>source?.source || source?.primarySource || source?.label || "unknown");
+  const detectMarketMapDuplicateRisk = (row)=>sourceList(row).some((source)=>/h4[_\s-]*fvg|4h\s*fvg/i.test(`${source?.source || ""} ${source?.primarySource || ""} ${source?.label || ""}`));
+  const classifyMarketMapFixtureDirection = (row, sweepType)=>{
+    const reaction = getLiquidityReactionDirection(sweepType);
+    const text = `${row?.side || ""} ${row?.label || ""} ${row?.source || ""} ${summarizeMarketMapFixtureSource(row).join(" ")}`.toLowerCase();
+    const supportLike = /support|demand|bullish|downside/.test(text);
+    const resistanceLike = /resistance|supply|bearish|upside/.test(text);
+    const aligned = reaction === "bullish" ? supportLike && !resistanceLike : reaction === "bearish" ? resistanceLike && !supportLike : false;
+    const conflict = reaction === "bullish" ? resistanceLike && !supportLike : reaction === "bearish" ? supportLike && !resistanceLike : false;
+    return { reaction, aligned, conflict, reason: aligned ? "Map row appears aligned with reaction side." : conflict ? "Map row appears opposite to reaction side." : "Map row direction is ambiguous." };
+  };
+  const isFutureHtfCandidate = (row)=>{
+    const sources = summarizeMarketMapFixtureSource(row).join(" ").toLowerCase();
+    const htf = /weekly|daily|weekly_fvg|weekly_sr|daily_fvg|daily_sr/.test(sources);
+    return htf && sourceList(row).length > 1 && !detectMarketMapDuplicateRisk(row);
+  };
+  const evaluate = (testCase)=>{
+    const episode = testCase.episode || baseEpisode();
+    const mapState = testCase.mapState || { upside: [], downside: [] };
+    const nearby = findNearbyMarketMapZones(episode, mapState, { closedCandles, maxRows: 5 });
+    const nearest = buildNearestLiquidityContextDiagnostics({ episode, closedCandles, mapState, h4State: {} }).nearestMarketMapZone;
+    const gate = getH4LiquidityEligibleContextCorroborators({ ...emptyContext, nearbyMarketMapZones: nearby });
+    const marketMapAllowListProbe = hasH4LiquidityCorroborator(episode, { eligibleContextCorroborators: ["Market Map confluence", "Nearby Market Map context"] });
+    const confirmation = shouldConfirmH4LiquidityEpisode(episode, { closedCandles, eligibleContextCorroborators: ["Market Map confluence"] }, { scoreThreshold: 6 });
+    const firstRow = [...(mapState.upside || []), ...(mapState.downside || []), ...(mapState.rows || []), ...(mapState.zones || []), ...(mapState.upsideWatch || []), ...(mapState.downsideWatch || [])][0] || null;
+    const direction = firstRow ? classifyMarketMapFixtureDirection(firstRow, episode?.sweep?.type) : null;
+    const duplicateRisk = firstRow ? detectMarketMapDuplicateRisk(firstRow) : false;
+    const futureCandidate = firstRow ? isFutureHtfCandidate(firstRow) : false;
+    return {
+      nearby,
+      nearest,
+      gate,
+      marketMapAllowListProbe,
+      confirmation,
+      duplicateRisk,
+      futureCandidate,
+      direction,
+      normalizedFirstRow: firstRow ? normalizeLiquidityZone(firstRow, "marketMap") : null,
+      sourceBreakdown: firstRow ? summarizeMarketMapFixtureSource(firstRow) : [],
+    };
+  };
+  const cases = [
+    {
+      name: "Nearby support Market Map zone for sweepLow is diagnostics-only",
+      episode: baseEpisode(),
+      mapState: { downside: [supportRow()] },
+      expected: "nearby and nearest map diagnostics exist, but Market Map is not eligible",
+      checks: [
+        ({ result })=>result.nearby.length === 1,
+        ({ result })=>result.nearest.found === true,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
+        ({ result })=>notIncludes(result.confirmation.corroborators, "Market Map confluence"),
+        ({ result })=>result.direction.aligned === true,
+      ],
+    },
+    {
+      name: "Nearby resistance Market Map zone for sweepHigh is diagnostics-only",
+      episode: baseEpisode({ sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH, levelPrice: 100, breachPrice: 100.5, breachBuffer: 0.4 }, avwap: { side: LIQUIDITY_AVWAP_SIDE.BELOW } }),
+      mapState: { upside: [resistanceRow()] },
+      expected: "nearby and nearest map diagnostics exist, but Market Map is not eligible",
+      checks: [
+        ({ result })=>result.nearby.length === 1,
+        ({ result })=>result.nearest.found === true,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
+        ({ result })=>result.direction.aligned === true,
+      ],
+    },
+    {
+      name: "Opposite-side Market Map zone remains diagnostics-only",
+      episode: baseEpisode(),
+      mapState: { upside: [resistanceRow({ lower: 99, upper: 100.5 })] },
+      expected: "nearby opposite-side row can be observed without eligibility or blocker",
+      checks: [
+        ({ result })=>result.nearby.length === 1,
+        ({ result })=>result.direction.conflict === true,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>!result.confirmation.blockers.includes("strong conflict"),
+      ],
+    },
+    {
+      name: "Far Market Map zone is nearest-only and ineligible",
+      episode: baseEpisode(),
+      mapState: { upside: [resistanceRow({ lower: 120, upper: 121, label: "Far Daily Resistance" })] },
+      expected: "nearest is found but nearby list is empty and no Market Map eligibility exists",
+      checks: [
+        ({ result })=>result.nearest.found === true,
+        ({ result })=>result.nearby.length === 0,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.confirmation.confirmed === false,
+      ],
+    },
+    {
+      name: "Nearest-only Market Map zone does not count as corroborator",
+      episode: baseEpisode(),
+      mapState: { zones: [supportRow({ lower: 90, upper: 91, label: "Nearest-only Support" })] },
+      expected: "nearest-only map diagnostics do not satisfy corroborator gate",
+      checks: [
+        ({ result })=>result.nearest.found === true,
+        ({ result })=>result.nearby.length === 0,
+        ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
+        ({ result })=>includes(result.confirmation.blockers, "no corroborator"),
+      ],
+    },
+    {
+      name: "Market Map row with H4 FVG source flags duplicate risk",
+      episode: baseEpisode(),
+      mapState: { downside: [{ ...supportRow({ label: "Confluence Zone", source: "h4_fvg" }), sources: [{ source: "h4_fvg", label: "4H Bullish FVG", lower: 98, upper: 101 }] }] },
+      expected: "duplicate H4 FVG source risk is visible in fixture details and not eligible",
+      checks: [
+        ({ result })=>result.duplicateRisk === true,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>notIncludes(result.confirmation.corroborators, "Market Map confluence"),
+      ],
+    },
+    {
+      name: "HTF confluence Market Map row is future candidate only",
+      episode: baseEpisode(),
+      mapState: { downside: [{ ...supportRow({ label: "Confluence Zone", source: "weekly_fvg" }), sources: [{ source: "weekly_fvg", label: "W Bullish FVG", lower: 98, upper: 101 }, { source: "daily_sr", label: "Daily Support", lower: 98.5, upper: 101 }] }] },
+      expected: "HTF confluence can be identified for future study but remains ineligible",
+      checks: [
+        ({ result })=>result.futureCandidate === true,
+        ({ result })=>result.nearby.length === 1,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+      ],
+    },
+    {
+      name: "Invalid Market Map bounds fail safely",
+      episode: baseEpisode(),
+      mapState: { downside: [{ label: "Invalid Map Row", source: "daily_sr", side: "downside" }] },
+      expected: "invalid row is skipped without throw or eligibility",
+      checks: [
+        ({ result })=>result.normalizedFirstRow === null,
+        ({ result })=>result.nearby.length === 0,
+        ({ result })=>result.nearest.found === false,
+        ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+      ],
+    },
+    {
+      name: "Market Map shape coverage remains diagnostics-safe",
+      episode: baseEpisode(),
+      mapState: { rows: [] },
+      expected: "supported shapes normalize and zoneLow/zoneHigh-only shape is documented unsupported",
+      custom: ()=>{
+        const shapes = [
+          { name: "lowerUpper", row: { lower: 98, upper: 101, label: "Lower Upper Support", source: "daily_sr" }, shouldNormalize: true },
+          { name: "priceLevel", row: { price: 100, label: "Point Zone", source: "manual" }, shouldNormalize: true },
+          { name: "nestedZone", row: { zone: { lower: 98, upper: 101 }, label: "Nested Zone", source: "daily_sr" }, shouldNormalize: true },
+          { name: "zoneLowHigh", row: { zoneLow: 98, zoneHigh: 101, label: "Unsupported Zone Low High", source: "daily_sr" }, shouldNormalize: false },
+        ];
+        const normalized = shapes.map((shape)=>({ ...shape, normalized: normalizeLiquidityZone(shape.row, "marketMap") }));
+        const passed = normalized.every((shape)=>shape.shouldNormalize ? !!shape.normalized : !shape.normalized);
+        return {
+          passed,
+          details: {
+            shapes: normalized.map((shape)=>({ name: shape.name, supported: !!shape.normalized, expectedSupported: shape.shouldNormalize })),
+            eligibleContextCorroborators: [],
+            note: "zoneLow/zoneHigh-only rows are currently unsupported and fail safely.",
+          },
+        };
+      },
+    },
+    {
+      name: "Market Map confluence label is rejected by corroborator allow-list",
+      episode: baseEpisode(),
+      mapState: { downside: [supportRow()] },
+      expected: "Market Map labels are not accepted by hasH4LiquidityCorroborator",
+      checks: [
+        ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
+        ({ result })=>notIncludes(result.marketMapAllowListProbe.corroborators, "Market Map confluence"),
+        ({ result })=>notIncludes(result.confirmation.corroborators, "Market Map confluence"),
+      ],
+    },
+  ];
+  const results = cases.map((testCase)=>{
+    if(typeof testCase.custom === "function"){
+      const custom = testCase.custom();
+      return { name: testCase.name, passed: custom.passed, expected: testCase.expected, actual: custom.passed ? "matched" : "mismatch", details: custom.details };
+    }
+    const result = evaluate(testCase);
+    const details = {
+      nearbyMarketMapZones: result.nearby,
+      nearestMarketMapZone: result.nearest,
+      contextGateEligibleCorroborators: result.gate.eligibleCorroborators,
+      contextGateSkipped: result.gate.skipped,
+      contextGateWarnings: result.gate.warnings,
+      marketMapAllowListProbe: result.marketMapAllowListProbe,
+      confirmationCorroborators: result.confirmation.corroborators,
+      confirmationBlockers: result.confirmation.blockers,
+      duplicateRisk: result.duplicateRisk,
+      futureCandidate: result.futureCandidate,
+      direction: result.direction,
+      normalizedFirstRow: result.normalizedFirstRow,
+      sourceBreakdown: result.sourceBreakdown,
+    };
+    const passed = testCase.checks.every((check)=>check({ result, details }));
+    return { name: testCase.name, passed, expected: testCase.expected, actual: passed ? "matched" : "mismatch", details };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined") {
+  window.runH4MarketMapContextFixtureTests = runH4MarketMapContextFixtureTests;
+}
 
 function normalizeLiquidityZone(zone, sourceHint = null){
   if(!zone || typeof zone !== "object") return null;
