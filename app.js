@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 05:06";
+const APP_LAST_UPDATED = "2026-06-01 05:32";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -1259,6 +1259,14 @@ function runH4MarketMapContextFixtureTests(){
     const nearby = findNearbyMarketMapZones(episode, mapState, { closedCandles, maxRows: 5 });
     const nearest = buildNearestLiquidityContextDiagnostics({ episode, closedCandles, mapState, h4State: {} }).nearestMarketMapZone;
     const gate = getH4LiquidityEligibleContextCorroborators({ ...emptyContext, nearbyMarketMapZones: nearby });
+    const marketMapDiagnostics = buildMarketMapContextDiagnostics({
+      episode,
+      nearbyMarketMapZones: nearby,
+      nearestMarketMapZone: nearest,
+      contextPriceReference: getLiquidityPriceReference(episode),
+      contextBuffer: getLiquidityContextBuffer(episode, closedCandles),
+      eligibleContextCorroborators: gate.eligibleCorroborators,
+    });
     const marketMapAllowListProbe = hasH4LiquidityCorroborator(episode, { eligibleContextCorroborators: ["Market Map confluence", "Nearby Market Map context"] });
     const confirmation = shouldConfirmH4LiquidityEpisode(episode, { closedCandles, eligibleContextCorroborators: ["Market Map confluence"] }, { scoreThreshold: 6 });
     const firstRow = [...(mapState.upside || []), ...(mapState.downside || []), ...(mapState.rows || []), ...(mapState.zones || []), ...(mapState.upsideWatch || []), ...(mapState.downsideWatch || [])][0] || null;
@@ -1269,6 +1277,7 @@ function runH4MarketMapContextFixtureTests(){
       nearby,
       nearest,
       gate,
+      marketMapDiagnostics,
       marketMapAllowListProbe,
       confirmation,
       duplicateRisk,
@@ -1291,6 +1300,10 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
         ({ result })=>notIncludes(result.confirmation.corroborators, "Market Map confluence"),
         ({ result })=>result.direction.aligned === true,
+        ({ result })=>result.marketMapDiagnostics.sourceBreakdown.length > 0,
+        ({ result })=>result.marketMapDiagnostics.directionInference.some((item)=>item.alignment === "aligned"),
+        ({ result })=>result.marketMapDiagnostics.distanceSummary.some((item)=>item.insideBuffer === true),
+        ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
     {
@@ -1304,6 +1317,8 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
         ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
         ({ result })=>result.direction.aligned === true,
+        ({ result })=>result.marketMapDiagnostics.directionInference.some((item)=>item.alignment === "aligned"),
+        ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
     {
@@ -1316,6 +1331,8 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.direction.conflict === true,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
         ({ result })=>!result.confirmation.blockers.includes("strong conflict"),
+        ({ result })=>result.marketMapDiagnostics.directionInference.some((item)=>item.alignment === "conflict"),
+        ({ result })=>result.marketMapDiagnostics.warnings.includes("Market Map direction conflict observed; diagnostics only."),
       ],
     },
     {
@@ -1328,6 +1345,8 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.nearby.length === 0,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
         ({ result })=>result.confirmation.confirmed === false,
+        ({ result })=>result.marketMapDiagnostics.distanceSummary.some((item)=>item.insideBuffer === false),
+        ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
     {
@@ -1340,6 +1359,7 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.nearby.length === 0,
         ({ result })=>result.marketMapAllowListProbe.hasCorroborator === false,
         ({ result })=>includes(result.confirmation.blockers, "no corroborator"),
+        ({ result })=>result.marketMapDiagnostics.distanceSummary.some((item)=>item.insideBuffer === false),
       ],
     },
     {
@@ -1351,6 +1371,7 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.duplicateRisk === true,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
         ({ result })=>notIncludes(result.confirmation.corroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapDiagnostics.duplicateRisk.some((item)=>item.risk === "h4_fvg" || item.risk === "h4_only"),
       ],
     },
     {
@@ -1362,6 +1383,8 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.futureCandidate === true,
         ({ result })=>result.nearby.length === 1,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapDiagnostics.sourceBreakdown.some((item)=>item.hasHtfSource && item.multiSource),
+        ({ result })=>result.marketMapDiagnostics.eligiblePreview.futureCandidateCount >= 1,
       ],
     },
     {
@@ -1374,6 +1397,7 @@ function runH4MarketMapContextFixtureTests(){
         ({ result })=>result.nearby.length === 0,
         ({ result })=>result.nearest.found === false,
         ({ result })=>notIncludes(result.gate.eligibleCorroborators, "Market Map confluence"),
+        ({ result })=>result.marketMapDiagnostics.eligiblePreview.wouldBeEligible === false,
       ],
     },
     {
@@ -1424,6 +1448,7 @@ function runH4MarketMapContextFixtureTests(){
       contextGateEligibleCorroborators: result.gate.eligibleCorroborators,
       contextGateSkipped: result.gate.skipped,
       contextGateWarnings: result.gate.warnings,
+      marketMapDiagnostics: result.marketMapDiagnostics,
       marketMapAllowListProbe: result.marketMapAllowListProbe,
       confirmationCorroborators: result.confirmation.corroborators,
       confirmationBlockers: result.confirmation.blockers,
@@ -1625,19 +1650,30 @@ function findNearbyMarketMapZones(episode, mapState, options = {}){
     .map((row, index)=>({ row, index, zone: normalizeLiquidityZone(row, "marketMap") }))
     .filter((item)=>item.zone && isPriceNearZone(primaryPrice, item.zone, buffer))
     .slice(0, maxRows)
-    .map(({ row, index, zone })=>({
-      id: zone.id || `marketMap-${index}`,
-      source: "marketMap",
-      label: zone.label,
-      type: zone.type,
-      side: row.side || zone.side || null,
-      direction: zone.direction,
-      lower: zone.lower,
-      upper: zone.upper,
-      distancePct: getLiquidityZoneDistancePct(primaryPrice, zone),
-      relation: getLiquidityZoneRelation(primaryPrice, zone, buffer),
-      quality: zone.quality,
-    }));
+    .map(({ row, index, zone })=>{
+      const distance = calculateLiquidityZoneDistance(primaryPrice, zone);
+      const sources = Array.isArray(row.sources)
+        ? row.sources.map((source)=>({ source: source?.source || source?.primarySource || null, label: source?.label || null, type: source?.type || null, lower: source?.lower ?? null, upper: source?.upper ?? null })).filter(Boolean)
+        : [];
+      return {
+        id: zone.id || `marketMap-${index}`,
+        source: "marketMap",
+        label: zone.label,
+        type: zone.type,
+        side: row.side || zone.side || null,
+        direction: zone.direction,
+        lower: zone.lower,
+        upper: zone.upper,
+        status: zone.status,
+        distanceAbs: distance.distanceAbs,
+        distancePct: getLiquidityZoneDistancePct(primaryPrice, zone),
+        relation: getLiquidityZoneRelation(primaryPrice, zone, buffer),
+        quality: zone.quality,
+        sources,
+        primarySource: row.primarySource || row.source || zone.source || null,
+        confluenceCount: Number(row.confluenceCount) || sources.length || null,
+      };
+    });
 }
 function isInactiveFvgDetail(detail){
   const status = String(detail?.detailStatus || detail?.status || detail?.baseStatus || "").toLowerCase();
@@ -2075,6 +2111,169 @@ if(typeof window !== "undefined") {
 }
 
 
+function createEmptyMarketMapContextDiagnostics(reason = "No Market Map context diagnostics available."){
+  return {
+    sourceBreakdown: [],
+    duplicateRisk: [],
+    directionInference: [],
+    distanceSummary: [],
+    eligiblePreview: {
+      wouldBeEligible: false,
+      reason: "Market Map remains diagnostics-only in Phase 2D4A2",
+      futureCandidateCount: 0,
+      duplicateRiskCount: 0,
+      nearbyCount: 0,
+      nearestFound: false,
+    },
+    warnings: [],
+    skipped: reason ? [reason] : [],
+  };
+}
+function getMarketMapDiagnosticSources(row){
+  if(!row || typeof row !== "object") return [];
+  const rawSources = Array.isArray(row.sources) && row.sources.length ? row.sources : [row];
+  return rawSources.map((source)=>({
+    source: source?.source || source?.primarySource || row.primarySource || row.source || null,
+    label: source?.label || null,
+    type: source?.type || null,
+    lower: source?.lower ?? null,
+    upper: source?.upper ?? null,
+  })).filter((source)=>source.source || source.label || source.type || source.lower != null || source.upper != null);
+}
+function getMarketMapDiagnosticText(row){
+  const sources = getMarketMapDiagnosticSources(row);
+  return [
+    row?.label,
+    row?.type,
+    row?.source,
+    row?.primarySource,
+    row?.side,
+    row?.direction,
+    row?.quality,
+    ...sources.flatMap((source)=>[source.source, source.label, source.type]),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+function summarizeMarketMapDiagnosticSource(row){
+  const sources = getMarketMapDiagnosticSources(row);
+  const text = getMarketMapDiagnosticText(row);
+  const hasH4Source = /\bh4\b|\b4h\b|h4_fvg|4h\s*fvg|h4\s*s\/?r|4h\s*s\/?r/.test(text);
+  const hasHtfSource = /weekly|\bw\b|daily|\bd\b|\b1d\b|weekly\s*fvg|daily\s*fvg|weekly\s*s\/?r|daily\s*s\/?r/.test(text);
+  const multiSource = sources.length > 1 || Number(row?.confluenceCount) > 1 || /confluence/.test(`${row?.label || ""} ${row?.type || ""}`.toLowerCase());
+  return {
+    label: row?.label || null,
+    side: row?.side || null,
+    type: row?.type || null,
+    source: row?.source || null,
+    sources,
+    primarySource: row?.primarySource || row?.source || null,
+    confluenceCount: Number(row?.confluenceCount) || sources.length || null,
+    quality: row?.quality || null,
+    status: row?.status || null,
+    lower: row?.lower ?? null,
+    upper: row?.upper ?? null,
+    distanceAbs: row?.distanceAbs ?? null,
+    distancePct: row?.distancePct ?? null,
+    relation: row?.relation || null,
+    hasH4Source,
+    hasHtfSource,
+    multiSource,
+  };
+}
+function inferMarketMapDiagnosticDirection(row, episode){
+  const reactionDirection = getLiquidityReactionDirection(episode?.sweep?.type);
+  const text = getMarketMapDiagnosticText(row);
+  const explicit = String(row?.direction || "").toLowerCase();
+  const supportLike = /support|demand|bullish|downside/.test(text) || explicit === "bullish";
+  const resistanceLike = /resistance|supply|bearish|upside/.test(text) || explicit === "bearish";
+  let inferredMapDirection = null;
+  let inferenceBasis = "unavailable";
+  let confidence = "low";
+  if(supportLike && !resistanceLike){ inferredMapDirection = "bullish"; inferenceBasis = "support/demand/bullish/downside text"; confidence = row?.side || explicit ? "medium" : "low"; }
+  else if(resistanceLike && !supportLike){ inferredMapDirection = "bearish"; inferenceBasis = "resistance/supply/bearish/upside text"; confidence = row?.side || explicit ? "medium" : "low"; }
+  else if(supportLike && resistanceLike){ inferenceBasis = "mixed support/resistance or bullish/bearish text"; }
+  const alignment = reactionDirection && inferredMapDirection
+    ? (reactionDirection === inferredMapDirection ? "aligned" : "conflict")
+    : "unknown";
+  return {
+    label: row?.label || null,
+    reactionDirection,
+    inferredMapDirection,
+    inferenceBasis,
+    alignment,
+    confidence: alignment === "unknown" ? "low" : confidence,
+    reason: alignment === "aligned" ? "Market Map row direction appears to support the liquidity reaction."
+      : alignment === "conflict" ? "Market Map row direction appears opposite to the liquidity reaction."
+      : "Market Map row direction is unclear; diagnostics only.",
+  };
+}
+function buildMarketMapDuplicateRisk(row, eligibleContextCorroborators = []){
+  const eligible = new Set(Array.isArray(eligibleContextCorroborators) ? eligibleContextCorroborators : []);
+  const text = getMarketMapDiagnosticText(row);
+  const sources = getMarketMapDiagnosticSources(row);
+  const hasH4Fvg = /h4_fvg|h4\s*fvg|4h\s*fvg/.test(text);
+  const hasH4Ifvg = /h4_ifvg|4h\s*ifvg|\bifvg\b|recent\s*broken\s*fvg/.test(text);
+  const h4Only = sources.length > 0 && sources.every((source)=>/\bh4\b|\b4h\b|h4_|4h\s*/.test(`${source.source || ""} ${source.label || ""}`.toLowerCase()));
+  if(hasH4Fvg && eligible.has("H4 FVG proximity")) return { label: row?.label || null, duplicateWith: "H4 FVG proximity", risk: "h4_fvg", reason: "Market Map row references H4 FVG context already eligible separately." };
+  if(hasH4Ifvg && eligible.has("H4 IFVG context")) return { label: row?.label || null, duplicateWith: "H4 IFVG context", risk: "h4_ifvg", reason: "Market Map row references H4 IFVG/recent broken FVG context already eligible separately." };
+  if(h4Only || hasH4Fvg || hasH4Ifvg) return { label: row?.label || null, duplicateWith: null, risk: hasH4Ifvg ? "h4_ifvg" : hasH4Fvg ? "h4_fvg" : "h4_only", reason: "Market Map row is H4-only or references H4 liquidity context; avoid double counting." };
+  return { label: row?.label || null, duplicateWith: null, risk: "none", reason: "No H4 duplicate risk detected." };
+}
+function buildMarketMapDistanceSummary(row, input){
+  const contextPriceReference = input.contextPriceReference || {};
+  const contextBuffer = input.contextBuffer || {};
+  const buffer = Number(contextBuffer.buffer);
+  const distanceAbs = Number(row?.distanceAbs);
+  const relation = row?.relation || null;
+  const insideBuffer = ["inside", "near"].includes(relation) || (Number.isFinite(distanceAbs) && Number.isFinite(buffer) && distanceAbs <= buffer);
+  return {
+    label: row?.label || null,
+    relation,
+    distanceAbs: Number.isFinite(distanceAbs) ? distanceAbs : null,
+    distancePct: Number.isFinite(Number(row?.distancePct)) ? Number(row.distancePct) : null,
+    buffer: Number.isFinite(buffer) ? buffer : null,
+    insideBuffer,
+    bufferMethod: contextBuffer.method || null,
+    referencePrice: contextPriceReference.primaryPrice ?? null,
+    referenceType: contextPriceReference.referenceType || null,
+  };
+}
+function buildMarketMapContextDiagnostics(input = {}){
+  const nearby = Array.isArray(input.nearbyMarketMapZones) ? input.nearbyMarketMapZones : [];
+  const nearest = input.nearestMarketMapZone?.found ? input.nearestMarketMapZone : null;
+  const rows = [
+    ...nearby.map((row)=>({ ...row, diagnosticScope: "nearby" })),
+    ...(nearest ? [{ ...nearest.zone, ...nearest, diagnosticScope: "nearest" }] : []),
+  ];
+  const warnings = [];
+  const skipped = [];
+  if(!nearby.length) skipped.push("No nearby Market Map zones inside context buffer.");
+  if(!nearest) skipped.push("No nearest Market Map zone available.");
+  const sourceBreakdown = rows.map((row)=>summarizeMarketMapDiagnosticSource(row));
+  const duplicateRisk = rows.map((row)=>buildMarketMapDuplicateRisk(row, input.eligibleContextCorroborators));
+  const directionInference = rows.map((row)=>inferMarketMapDiagnosticDirection(row, input.episode));
+  const distanceSummary = rows.map((row)=>buildMarketMapDistanceSummary(row, input));
+  const futureCandidateCount = sourceBreakdown.filter((item, index)=>item.hasHtfSource && item.multiSource && duplicateRisk[index]?.risk === "none").length;
+  const duplicateRiskCount = duplicateRisk.filter((item)=>item.risk && item.risk !== "none").length;
+  if(directionInference.some((item)=>item.alignment === "conflict")) warnings.push("Market Map direction conflict observed; diagnostics only.");
+  if(duplicateRiskCount) warnings.push("Market Map duplicate H4 source risk observed; diagnostics only.");
+  return {
+    sourceBreakdown,
+    duplicateRisk,
+    directionInference,
+    distanceSummary,
+    eligiblePreview: {
+      wouldBeEligible: false,
+      reason: "Market Map remains diagnostics-only in Phase 2D4A2",
+      futureCandidateCount,
+      duplicateRiskCount,
+      nearbyCount: nearby.length,
+      nearestFound: !!nearest,
+    },
+    warnings: [...new Set(warnings)],
+    skipped: [...new Set(skipped)],
+  };
+}
+
 function buildH4LiquidityContextCorroborators(input = {}){
   const episode = input.episode || null;
   const closedCandles = Array.isArray(input.closedCandles) ? input.closedCandles : [];
@@ -2085,6 +2284,14 @@ function buildH4LiquidityContextCorroborators(input = {}){
   const nearbyH4Ifvgs = findNearbyH4IfvgZones(episode, input.h4State, { bufferState, closedCandles, maxRows: 5 });
   const structureAlignment = classifyH4StructureAlignment(episode, input.h4State, { structureStatus: input.structureStatus, closedCandles });
   const nearestDiagnostics = buildNearestLiquidityContextDiagnostics({ episode, closedCandles, mapState: input.mapState, h4State: input.h4State });
+  const marketMapDiagnostics = buildMarketMapContextDiagnostics({
+    episode,
+    nearbyMarketMapZones,
+    nearestMarketMapZone: nearestDiagnostics.nearestMarketMapZone,
+    contextPriceReference: nearestDiagnostics.contextPriceReference,
+    contextBuffer: nearestDiagnostics.contextBuffer,
+    eligibleContextCorroborators: input.eligibleContextCorroborators,
+  });
   const contextCorroborators = [];
   const contextWarnings = [];
   const contextBlockers = [];
@@ -2110,6 +2317,7 @@ function buildH4LiquidityContextCorroborators(input = {}){
     nearestH4Ifvg: nearestDiagnostics.nearestH4Ifvg,
     contextPriceReference: nearestDiagnostics.contextPriceReference,
     contextBuffer: nearestDiagnostics.contextBuffer,
+    marketMapDiagnostics,
     diagnostics: {
       priceReference,
       buffer: bufferState.buffer,
@@ -2130,7 +2338,7 @@ function buildH4LiquidityOrderflowState(input = {}){
   const sweep = detectH4LiquiditySweepEpisode(closedCandles, primaryCandidates, input.options || {});
   const base = createEmptyLiquidityOrderflowState("4H", "context", input.reason || "No possible H4 liquidity sweep detected.");
   base.lastUpdated = Date.now();
-  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, contextPriceReference = null, contextBuffer = null, nearestMarketMapZone = null, nearestH4Fvg = null, nearestH4Ifvg = null, contextGateEligibleCorroborators = [], contextGateSkipped = [], contextGateWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
+  const buildDiagnostics = ({ warnings = dataWarnings, barsAfterSweep = null, reclaimWindowRemaining = null, confirmationWindowBars = null, deepBreachPct = null, scoreComponents = [], contextCorroborators = [], contextWarnings = [], contextBlockers = [], nearbyMarketMapZones = [], nearbyH4Fvgs = [], nearbyH4Ifvgs = [], structureAlignment = null, contextPriceReference = null, contextBuffer = null, nearestMarketMapZone = null, nearestH4Fvg = null, nearestH4Ifvg = null, marketMapDiagnostics = null, contextGateEligibleCorroborators = [], contextGateSkipped = [], contextGateWarnings = [], failureBoundary = null, failureScanStartIndex = null, failureBarsChecked = 0, confirmationCorroborators = [], confirmationBlockers = [], confirmationAt = null, confirmationIndex = null } = {})=>{
     const endedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
     return {
       closedBarsUsed: closedCandles.length,
@@ -2152,6 +2360,7 @@ function buildH4LiquidityOrderflowState(input = {}){
       contextPriceReference,
       contextBuffer,
       nearestMarketMapZone,
+      marketMapDiagnostics,
       nearestH4Fvg,
       nearestH4Ifvg,
       contextGateEligibleCorroborators,
@@ -2260,6 +2469,14 @@ function buildH4LiquidityOrderflowState(input = {}){
   const confirmation = failure.detected
     ? { confirmed: false, reasons: [], blockers: ["failure detected"], corroborators: [], confirmationAt: null, confirmationIndex: null }
     : shouldConfirmH4LiquidityEpisode(failedEpisode, { closedCandles, eligibleContextCorroborators: contextGate.eligibleCorroborators }, { scoreThreshold: 6 });
+  const marketMapDiagnostics = buildMarketMapContextDiagnostics({
+    episode: activeEpisode,
+    nearbyMarketMapZones: contextState.nearbyMarketMapZones,
+    nearestMarketMapZone: contextState.nearestMarketMapZone,
+    contextPriceReference: contextState.contextPriceReference,
+    contextBuffer: contextState.contextBuffer,
+    eligibleContextCorroborators: contextGate.eligibleCorroborators,
+  });
   const finalEpisode = confirmation.confirmed
     ? {
       ...failedEpisode,
@@ -2288,6 +2505,7 @@ function buildH4LiquidityOrderflowState(input = {}){
     contextPriceReference: contextState.contextPriceReference,
     contextBuffer: contextState.contextBuffer,
     nearestMarketMapZone: contextState.nearestMarketMapZone,
+    marketMapDiagnostics,
     nearestH4Fvg: contextState.nearestH4Fvg,
     nearestH4Ifvg: contextState.nearestH4Ifvg,
     contextGateEligibleCorroborators: contextGate.eligibleCorroborators,
