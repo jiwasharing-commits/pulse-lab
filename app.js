@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 00:18";
+const APP_LAST_UPDATED = "2026-06-02 00:42";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -87,13 +87,13 @@ const CHART_ZOOM_OFF_INTERACTION_OPTIONS = {
 };
 const CHART_ZOOM_ON_INTERACTION_OPTIONS = {
   handleScroll: {
-    mouseWheel: true,
+    mouseWheel: false,
     pressedMouseMove: true,
     horzTouchDrag: true,
     vertTouchDrag: false,
   },
   handleScale: {
-    mouseWheel: true,
+    mouseWheel: false,
     pinch: true,
     axisPressedMouseMove: true,
   },

@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 00:18",
-  "version": "v0.2.31",
+  "lastUpdated": "2026-06-02 00:42",
+  "version": "v0.2.32",
   "commitLabel": "manual",
-  "note": "Fix Daily runtime 3M default fallback"
+  "note": "Clarify lower timeframe cap and disable chart wheel trap"
 }

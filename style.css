@@ -365,3 +365,5 @@
   .pdf-report{width:210mm;margin:0 !important;box-shadow:none !important}
   .pdf-page{width:210mm;min-height:297mm;padding:11mm;box-shadow:none !important;border-top:0 !important}
 }
+
+.lower-tf-cap-note{color:var(--muted);font-size:.78rem;margin-top:.15rem}
