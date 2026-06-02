@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 00:42";
+const APP_LAST_UPDATED = "2026-06-02 01:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -2962,7 +2962,9 @@ function applyChartZoomModeToCharts(){
 }
 function updateChartZoomToggleUI(){
   if(!els.chartZoomToggleBtn) return;
-  els.chartZoomToggleBtn.textContent = chartZoomMode ? "Chart Zoom: ON" : "Chart Zoom: OFF";
+  els.chartZoomToggleBtn.textContent = chartZoomMode ? "Chart Interaction: ON" : "Chart Interaction: OFF";
+  els.chartZoomToggleBtn.title = "Mouse wheel scrolls the page; use drag, axis drag, or pinch for chart interaction.";
+  els.chartZoomToggleBtn.setAttribute("aria-label", `Chart interaction ${chartZoomMode ? "on" : "off"}. Mouse wheel scrolls the page; use drag, axis drag, or pinch for chart interaction.`);
   els.chartZoomToggleBtn.classList.toggle("is-active", chartZoomMode);
   els.chartZoomToggleBtn.setAttribute("aria-pressed", String(chartZoomMode));
 }

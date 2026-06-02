@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 00:42",
-  "version": "v0.2.32",
+  "lastUpdated": "2026-06-02 01:05",
+  "version": "v0.2.33",
   "commitLabel": "manual",
-  "note": "Clarify lower timeframe cap and disable chart wheel trap"
+  "note": "Clarify chart interaction toggle wording"
 }
