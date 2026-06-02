@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 01:28";
+const APP_LAST_UPDATED = "2026-06-02 01:57";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -151,7 +151,7 @@ const TRADE_SCENARIO_STATUS = {
   ACTIVE: "Active Scenario",
   INVALIDATED: "Invalidated",
 };
-const TRADE_SCENARIO_DISCLAIMER = "Scenario planning only; not a direct trading signal.";
+const TRADE_SCENARIO_DISCLAIMER = "Scenario planning only · not financial advice or a direct trading signal.";
 const IFVG_STATE = {
   NONE: "none",
   POSSIBLE: "possible",
@@ -3852,12 +3852,16 @@ function getMapRowFvgQuality(row){
   if(/valid|active|unfilled|partial|touched/i.test(fallback)) return "Valid";
   return null;
 }
+function formatFvgQualityLabelForDisplay(label){
+  return label === "High-Probability" ? "High-Confluence" : label;
+}
 function formatMapRowFvgBadges(row){
   if(!isFvgMapRow(row)) return null;
   const status = getMapRowFvgStatus(row);
   const quality = getMapRowFvgQuality(row);
-  if(!status && !quality) return null;
-  return [status ? `Status: ${status}` : null, quality ? `Quality: ${quality}` : null].filter(Boolean).join(" · ");
+  const displayQuality = formatFvgQualityLabelForDisplay(quality);
+  if(!status && !displayQuality) return null;
+  return [status ? `Status: ${status}` : null, displayQuality ? `Quality: ${displayQuality}` : null].filter(Boolean).join(" · ");
 }
 function getScenarioRowQuality(row){
   const fvgQuality = getMapRowFvgQuality(row);
@@ -3908,11 +3912,11 @@ function buildScenarioInvalidation(row, side, currentPrice){
   if(!Number.isFinite(buffer)) return null;
   if(side === "buy"){
     const price = row.lower - buffer;
-    return { price, rule: "Scenario invalid if 4H/Daily close is below invalidation zone.", buffer, basis: "Entry zone lower boundary - buffer" };
+    return { price, rule: "Scenario invalid if 4H/Daily close is below invalidation zone.", buffer, basis: "Scenario zone lower boundary - buffer" };
   }
   if(side === "sell"){
     const price = row.upper + buffer;
-    return { price, rule: "Scenario invalid if 4H/Daily close is above invalidation zone.", buffer, basis: "Entry zone upper boundary + buffer" };
+    return { price, rule: "Scenario invalid if 4H/Daily close is above invalidation zone.", buffer, basis: "Scenario zone upper boundary + buffer" };
   }
   return null;
 }
@@ -3990,10 +3994,10 @@ function isScenarioEntryNear(row, currentPrice){
 function buildScenarioStopLogic(entryZone, invalidation, side){
   if(!entryZone || !invalidation) return null;
   const boundary = side === "buy" ? entryZone.lower : entryZone.upper;
-  return { text: side === "buy" ? "Plan invalidation below the entry zone with buffer." : "Plan invalidation above the entry zone with buffer.", boundary, bufferType: "zone width / percentage buffer" };
+  return { text: side === "buy" ? "Planning invalidation below the scenario zone with buffer." : "Planning invalidation above the scenario zone with buffer.", boundary, bufferType: "zone width / percentage buffer" };
 }
-function createEmptyEstimatedRR(reason = "Missing valid entry, invalidation, or target.", warnings = []){
-  return { ok: false, status: "unavailable", assumption: "Estimated using midpoint of entry zone.", reason, warnings };
+function createEmptyEstimatedRR(reason = "Missing valid scenario zone, invalidation, or reference level.", warnings = []){
+  return { ok: false, status: "unavailable", assumption: "Estimated using midpoint of scenario zone.", reason, warnings };
 }
 function calculateTargetRR(side, entryMid, risk, target){
   if(!Number.isFinite(target)) return null;
@@ -4004,22 +4008,22 @@ function calculateTargetRR(side, entryMid, risk, target){
   return { target, reward, rr: Math.round(rr * 100) / 100, ok: true };
 }
 function calculateScenarioEstimatedRR(scenario){
-  const assumption = "Estimated using midpoint of entry zone.";
+  const assumption = "Estimated using midpoint of scenario zone.";
   const warnings = [];
   if(!scenario || !["buy", "sell"].includes(scenario.side)) return createEmptyEstimatedRR("Missing valid scenario side.");
   const entry = scenario.entryZone || {};
   const invalidation = scenario.invalidation || {};
   const targets = scenario.targets || {};
   if(!Number.isFinite(entry.lower) || !Number.isFinite(entry.upper) || entry.upper <= entry.lower || !Number.isFinite(invalidation.price)){
-    return createEmptyEstimatedRR("Missing valid entry, invalidation, or target.");
+    return createEmptyEstimatedRR("Missing valid scenario zone, invalidation, or reference level.");
   }
   const entryMid = (entry.lower + entry.upper) / 2;
   const risk = scenario.side === "buy" ? entryMid - invalidation.price : invalidation.price - entryMid;
   const minRisk = Math.max(entryMid * 0.0005, 1);
   if(!Number.isFinite(risk) || risk <= minRisk) return createEmptyEstimatedRR("Risk distance is too small or invalid for a reliable estimate.");
   const zoneWidth = entry.upper - entry.lower;
-  if(Number.isFinite(zoneWidth) && zoneWidth / entryMid > 0.03) warnings.push("Entry zone is wide; estimate may be less precise.");
-  if(scenario.status === TRADE_SCENARIO_STATUS.WAIT) warnings.push("Estimated only if setup becomes valid.");
+  if(Number.isFinite(zoneWidth) && zoneWidth / entryMid > 0.03) warnings.push("Scenario zone is wide; estimate may be less precise.");
+  if(scenario.status === TRADE_SCENARIO_STATUS.WAIT) warnings.push("Estimated only if scenario context becomes valid.");
   const result = { ok: false, status: "unavailable", assumption, entryMid, risk, tp1: null, tp2: null, tp3: null, validTargets: [], warnings };
   for(const key of ["tp1", "tp2", "tp3"]){
     const targetResult = calculateTargetRR(scenario.side, entryMid, risk, targets[key]);
@@ -4036,7 +4040,7 @@ function calculateScenarioEstimatedRR(scenario){
   return result;
 }
 function buildNoTradeScenario(side, reason, blockers = []){
-  return { side, status: TRADE_SCENARIO_STATUS.NO_TRADE, entryZone: null, invalidation: null, stopLogic: null, targets: { tp1: null, tp2: null, tp3: null }, estimatedRR: null, riskLabel: "No Trade", activationCondition: "Wait for a clean scenario zone and confirmation.", invalidationReason: null, reason, blockers, warnings: [], evidence: { timingStatus: marketPreparationState.fvgMtfContext?.timingZone?.timingStatus || "Unavailable", timingDirection: marketPreparationState.fvgMtfContext?.timingZone?.direction || null, conflictLabel: marketPreparationState.fvgMtfContext?.conflict?.label || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: null } };
+  return { side, status: TRADE_SCENARIO_STATUS.NO_TRADE, entryZone: null, invalidation: null, stopLogic: null, targets: { tp1: null, tp2: null, tp3: null }, estimatedRR: null, riskLabel: "No Trade", activationCondition: "Wait for independent confirmation and a clean scenario zone.", invalidationReason: null, reason, blockers, warnings: [], evidence: { timingStatus: marketPreparationState.fvgMtfContext?.timingZone?.timingStatus || "Unavailable", timingDirection: marketPreparationState.fvgMtfContext?.timingZone?.direction || null, conflictLabel: marketPreparationState.fvgMtfContext?.conflict?.label || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: null } };
 }
 function buildTradeScenarioForSide(side, mapData){
   const currentPrice = marketPreparationState.currentPrice;
@@ -4045,26 +4049,26 @@ function buildTradeScenarioForSide(side, mapData){
   const isEntry = side === "buy" ? isBuyEntryRow : isSellEntryRow;
   if(!rows.length) return buildNoTradeScenario(side, `No ${side === "buy" ? "downside" : "upside"} scenario zones are available.`, ["Map rows unavailable"]);
   const entryRow = rows.find((row)=>isEntry(row) && isScenarioQualityAtLeast(row, "Valid") && !["Broken", "Filled"].includes(getMapRowFvgStatus(row)) && Number.isFinite(row.lower) && Number.isFinite(row.upper) && row.upper > row.lower);
-  if(!entryRow) return buildNoTradeScenario(side, `No valid ${side} entry zone is available.`, ["No valid entry zone"]);
+  if(!entryRow) return buildNoTradeScenario(side, `No valid ${side === "buy" ? "bullish" : "bearish"} scenario zone is available.`, ["No valid scenario zone"]);
   const entryZone = normalizeScenarioEntryZone(entryRow, side);
   const invalidation = buildScenarioInvalidation(entryRow, side, currentPrice);
   const targets = buildScenarioTargets(side, mapData, entryRow);
   const blockers = [];
   const warnings = [];
-  if(!entryZone) blockers.push("Entry zone invalid");
+  if(!entryZone) blockers.push("Scenario zone invalid");
   if(!invalidation) blockers.push("Invalidation unavailable");
-  if(!Number.isFinite(targets.tp1)) blockers.push("TP1 unavailable");
+  if(!Number.isFinite(targets.tp1)) blockers.push("Level 1 reference unavailable");
   const rowStatus = entryZone?.status || getMapRowFvgStatus(entryRow);
-  if(["Broken", "Filled"].includes(rowStatus)) blockers.push(`Entry row ${rowStatus}`);
+  if(["Broken", "Filled"].includes(rowStatus)) blockers.push(`Scenario row ${rowStatus}`);
   const hard = getScenarioHardBlockers(side);
   blockers.push(...hard.blockers);
   warnings.push(...hard.warnings);
   const timing = getScenarioTimingGate(side);
   const entryNear = isScenarioEntryNear(entryRow, currentPrice);
-  if(!entryNear) warnings.push("Current price has not reached the entry zone.");
+  if(!entryNear) warnings.push("Current price has not reached the scenario zone.");
   const invalidated = !!invalidation && ((side === "buy" && currentPrice < invalidation.price) || (side === "sell" && currentPrice > invalidation.price));
   let status = TRADE_SCENARIO_STATUS.NO_TRADE;
-  let reason = `${side === "buy" ? "Buy" : "Sell"} scenario is not available.`;
+  let reason = `${side === "buy" ? "Bullish" : "Bearish"} scenario is not available.`;
   if(invalidated || hard.parentBroken || ["Broken", "Filled"].includes(rowStatus)){
     status = TRADE_SCENARIO_STATUS.INVALIDATED;
     reason = invalidated ? "Current price has crossed the scenario invalidation level." : "Scenario is invalidated by broken/filled context.";
@@ -4073,23 +4077,23 @@ function buildTradeScenarioForSide(side, mapData){
     reason = blockers.join("; ");
   } else if(hard.activeBlocked){
     status = TRADE_SCENARIO_STATUS.WAIT;
-    reason = `${hard.conflictLabel || "MTF conflict"}; wait for 1H/4H confirmation.`;
+    reason = `${hard.conflictLabel || "MTF conflict"}; wait for independent 1H/4H context.`;
   } else if(!entryNear || ["Waiting", "Pullback", "Unavailable"].includes(timing.timingStatus)){
     status = TRADE_SCENARIO_STATUS.WAIT;
-    reason = !entryNear ? "Scenario zone exists, but price is not near the entry zone." : "Scenario zone exists, but 1H timing confirmation is not active.";
+    reason = !entryNear ? "Scenario zone exists, but price is not near the scenario zone." : "Scenario zone exists, but 1H timing context is not active.";
   } else if(timing.timingStatus === "Conflict"){
     status = TRADE_SCENARIO_STATUS.WAIT;
-    reason = "1H timing conflicts with the scenario direction; wait for confirmation.";
+    reason = "1H timing conflicts with the scenario direction; wait for independent confirmation.";
   } else if(timing.aligned && entryNear && isScenarioQualityAtLeast(entryRow, "Strong")){
     status = TRADE_SCENARIO_STATUS.ACTIVE;
-    reason = "Scenario planning conditions are active with aligned 1H timing confirmation.";
+    reason = "Scenario planning context is active with aligned 1H timing.";
   } else {
     status = TRADE_SCENARIO_STATUS.CANDIDATE;
-    reason = "Scenario zone, invalidation, and TP1 are available, but active conditions are not fully confirmed.";
+    reason = "Scenario zone, invalidation, and Level 1 reference are available, but active context is not fully confirmed.";
   }
   const riskLabel = status === TRADE_SCENARIO_STATUS.ACTIVE ? (isScenarioQualityAtLeast(entryRow, "High-Probability") ? "Low" : "Medium") : (status === TRADE_SCENARIO_STATUS.CANDIDATE ? "Medium" : (status === TRADE_SCENARIO_STATUS.NO_TRADE ? "No Trade" : "High"));
   const estimatedRR = status === TRADE_SCENARIO_STATUS.INVALIDATED || status === TRADE_SCENARIO_STATUS.NO_TRADE ? null : calculateScenarioEstimatedRR({ side, status, entryZone, invalidation, targets });
-  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR, riskLabel, activationCondition: side === "buy" ? "Wait for bullish 1H confirmation near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
+  return { side, status, entryZone, invalidation, stopLogic: buildScenarioStopLogic(entryZone, invalidation, side), targets, estimatedRR, riskLabel, activationCondition: side === "buy" ? "Wait for bullish 1H context near the scenario zone." : "Wait for bearish 1H context near the scenario zone.", invalidationReason: invalidated ? reason : null, reason, blockers, warnings, evidence: { timingStatus: timing.timingStatus, timingDirection: timing.timingDirection, conflictLabel: hard.conflictLabel, parentFvgBrokenContext: hard.parentBrokenContext || null, fvgQualityLabel: marketPreparationState.fvgQuality?.label || null, rowQuality: entryZone?.quality || null } };
 }
 function selectPrimaryTradeScenario(buyScenario, sellScenario){
   const rank = { [TRADE_SCENARIO_STATUS.ACTIVE]: 4, [TRADE_SCENARIO_STATUS.CANDIDATE]: 3, [TRADE_SCENARIO_STATUS.WAIT]: 2, [TRADE_SCENARIO_STATUS.INVALIDATED]: 1, [TRADE_SCENARIO_STATUS.NO_TRADE]: 0 };
@@ -4123,14 +4127,14 @@ function refreshTradePlanScenario(mapData = marketPreparationState.map){
 function formatScenarioSide(side, status){
   const normalizedStatus = String(status || "").toLowerCase();
   if(side === "buy"){
-    if(normalizedStatus.includes("active")) return "Active Buy Scenario";
-    if(normalizedStatus.includes("invalid")) return "Invalidated Buy Setup";
-    return "Potential Buy Setup";
+    if(normalizedStatus.includes("active")) return "Active Bullish Scenario";
+    if(normalizedStatus.includes("invalid")) return "Invalidated Bullish Scenario";
+    return "Potential Bullish Scenario";
   }
   if(side === "sell"){
-    if(normalizedStatus.includes("active")) return "Active Sell Scenario";
-    if(normalizedStatus.includes("invalid")) return "Invalidated Sell Setup";
-    return "Potential Sell Setup";
+    if(normalizedStatus.includes("active")) return "Active Bearish Scenario";
+    if(normalizedStatus.includes("invalid")) return "Invalidated Bearish Scenario";
+    return "Potential Bearish Scenario";
   }
   return "Neutral / No Trade";
 }
@@ -4152,11 +4156,11 @@ function formatScenarioActivationCondition(scenario){
   const side = scenario?.side;
   const status = String(scenario?.status || "").toLowerCase();
   const timingDirection = scenario?.evidence?.timingDirection;
-  if(side === "buy" && timingDirection === "bearish") return "Current 1H timing is bearish; wait for bullish confirmation before considering this setup.";
-  if(side === "sell" && timingDirection === "bullish") return "Current 1H timing is bullish; wait for bearish confirmation before considering this setup.";
-  if(side === "buy") return status.includes("active") ? "Bullish 1H timing confirmed near the entry zone." : "Wait for bullish 1H confirmation near the entry zone.";
-  if(side === "sell") return status.includes("active") ? "Bearish 1H timing confirmed near the entry zone." : "Wait for bearish 1H confirmation near the entry zone.";
-  return "Wait for confirmation and a clean scenario zone.";
+  if(side === "buy" && timingDirection === "bearish") return "Current 1H timing is bearish; wait for bullish context before considering this scenario.";
+  if(side === "sell" && timingDirection === "bullish") return "Current 1H timing is bullish; wait for bearish context before considering this scenario.";
+  if(side === "buy") return status.includes("active") ? "Bullish 1H timing context is active near the scenario zone." : "Wait for bullish 1H context near the scenario zone.";
+  if(side === "sell") return status.includes("active") ? "Bearish 1H timing context is active near the scenario zone." : "Wait for bearish 1H context near the scenario zone.";
+  return "Wait for independent confirmation and a clean scenario zone.";
 }
 function formatScenarioWarningText(item){
   return String(item || "");
@@ -4167,7 +4171,7 @@ function formatEstimatedRRValue(rr){
 function formatEstimatedRRLine(estimatedRR){
   if(!estimatedRR?.ok || !estimatedRR.tp1?.ok) return null;
   return ["tp1", "tp2", "tp3"]
-    .map((key)=>estimatedRR[key]?.ok ? `${key.toUpperCase()} ${formatEstimatedRRValue(estimatedRR[key].rr)}` : null)
+    .map((key)=>estimatedRR[key]?.ok ? `${({ tp1: "Level 1", tp2: "Level 2", tp3: "Level 3" }[key] || key.toUpperCase())} ${formatEstimatedRRValue(estimatedRR[key].rr)}` : null)
     .filter(Boolean)
     .join(" · ");
 }
@@ -4177,11 +4181,11 @@ function renderEstimatedRRSection(scenario){
   if(!scenario || status === TRADE_SCENARIO_STATUS.NO_TRADE || status === TRADE_SCENARIO_STATUS.INVALIDATED) return "";
   const rrLine = formatEstimatedRRLine(scenario.estimatedRR);
   if(!rrLine) return "";
-  const title = statusText.includes("wait") ? "Estimated R:R if setup becomes valid" : "Estimated R:R";
-  return `<div class="trade-plan-row trade-plan-rr"><span class="trade-plan-rr-title">${escapeHtml(title)}</span><strong class="trade-plan-rr-values">${escapeHtml(rrLine)}</strong><small class="trade-plan-rr-note">Based on midpoint of entry zone. Scenario only.</small></div>`;
+  const title = statusText.includes("wait") ? "Scenario R:R if context becomes valid" : "Scenario R:R";
+  return `<div class="trade-plan-row trade-plan-rr"><span class="trade-plan-rr-title">${escapeHtml(title)}</span><strong class="trade-plan-rr-values">${escapeHtml(rrLine)}</strong><small class="trade-plan-rr-note">Based on midpoint of scenario zone. Scenario only.</small></div>`;
 }
 function formatTradePlanScenarioPanel(scenarioState){
-  const state = scenarioState || createEmptyTradePlanScenario("Trade Plan Scenario: Unavailable");
+  const state = scenarioState || createEmptyTradePlanScenario("Preparation Scenario: Unavailable");
   const selected = state.selectedScenario || null;
   const status = formatScenarioStatus(selected?.status || state.primaryStatus || "Unavailable");
   const side = formatScenarioSide(selected?.side || state.primarySide, status);
@@ -4194,32 +4198,32 @@ function formatTradePlanScenarioPanel(scenarioState){
   const invalidationSide = selected?.side === "sell" ? "Above" : (selected?.side === "buy" ? "Below" : "At");
   const entryText = entryZone ? (entryZone.zoneText || `${formatScenarioPrice(entryZone.lower)}–${formatScenarioPrice(entryZone.upper)}`) : "—";
   const invalidationText = invalidation ? `${invalidationSide} ${formatScenarioPrice(invalidation.price)}` : "—";
-  const targetText = `TP1: ${formatScenarioPrice(targets.tp1)} · TP2: ${formatScenarioPrice(targets.tp2)} · TP3: ${formatScenarioPrice(targets.tp3)}`;
+  const targetText = `Level 1: ${formatScenarioPrice(targets.tp1)} · Level 2: ${formatScenarioPrice(targets.tp2)} · Level 3: ${formatScenarioPrice(targets.tp3)}`;
   const warningHtml = warnings.length ? `<div class="trade-plan-warning"><strong>Warnings</strong><ul>${warnings.map((item)=>`<li>${escapeHtml(formatScenarioWarningText(item))}</li>`).join("")}</ul></div>` : "";
   const blockerHtml = blockers.length ? `<div class="trade-plan-warning trade-plan-blocker"><strong>Blockers</strong><ul>${blockers.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
   const estimatedRRHtml = renderEstimatedRRSection(selected);
   return `
     <div class="trade-plan-header">
       <div>
-        <h3>Trade Plan Scenario</h3>
-        <p>${escapeHtml(state.disclaimer || "Scenario planning only; not a direct trading signal.")}</p>
+        <h3>Preparation Scenario</h3>
+        <p>${escapeHtml(state.disclaimer || "Scenario planning only · not financial advice or a direct trading signal.")}</p>
       </div>
       <span class="trade-plan-status ${getScenarioStatusClass(status)}">${escapeHtml(status)}</span>
     </div>
     <div class="trade-plan-grid">
       <div class="trade-plan-row"><span>Side</span><strong>${escapeHtml(side)}</strong></div>
-      <div class="trade-plan-row"><span>Entry Zone</span><strong>${escapeHtml(entryText)}</strong></div>
+      <div class="trade-plan-row"><span>Scenario Zone</span><strong>${escapeHtml(entryText)}</strong></div>
       <div class="trade-plan-row"><span>Invalidation</span><strong>${escapeHtml(invalidationText)}</strong>${invalidation?.rule ? `<small>${escapeHtml(invalidation.rule)}</small>` : ""}</div>
-      <div class="trade-plan-row"><span>Stop Logic</span><strong>${escapeHtml(stopLogic?.text || "—")}</strong></div>
-      <div class="trade-plan-row trade-plan-targets"><span>Targets</span><strong>${escapeHtml(targetText)}</strong></div>
+      <div class="trade-plan-row"><span>Invalidation Logic</span><strong>${escapeHtml(stopLogic?.text || "—")}</strong></div>
+      <div class="trade-plan-row trade-plan-targets"><span>Reference Levels</span><strong>${escapeHtml(targetText)}</strong></div>
       ${estimatedRRHtml}
       <div class="trade-plan-row"><span>Risk</span><strong>${escapeHtml(selected?.riskLabel || "No Trade")}</strong></div>
-      <div class="trade-plan-row trade-plan-wide"><span>Activation Condition</span><strong>${escapeHtml(formatScenarioActivationCondition(selected))}</strong></div>
-      <div class="trade-plan-row trade-plan-wide"><span>Reason</span><strong>${escapeHtml(selected?.reason || state.reason || "Trade Plan Scenario: Unavailable")}</strong></div>
+      <div class="trade-plan-row trade-plan-wide"><span>Scenario Condition</span><strong>${escapeHtml(formatScenarioActivationCondition(selected))}</strong></div>
+      <div class="trade-plan-row trade-plan-wide"><span>Reason</span><strong>${escapeHtml(selected?.reason || state.reason || "Preparation Scenario: Unavailable")}</strong></div>
     </div>
     ${warningHtml}
     ${blockerHtml}
-    <p class="trade-plan-footer">Scenario only. Wait for confirmation and use risk management.</p>
+    <p class="trade-plan-footer">Scenario only. Use independent confirmation and risk controls.</p>
   `;
 }
 function renderTradePlanScenario(){
@@ -5549,7 +5553,7 @@ function renderH4LiquidityDiagnosticsPanel(){
     ].join("")),
   ];
   els.h4LiquidityDiagnosticsBody.innerHTML = `
-    <p class="h4-liquidity-diagnostics-note">Diagnostics only; does not alter score, status, Market Map, Trade Plan, or PDF.</p>
+    <p class="h4-liquidity-diagnostics-note">Diagnostics only; does not alter score, status, Market Map, Preparation Scenario, or PDF.</p>
     <div class="h4-liquidity-diagnostics-grid">${sections.join("")}</div>
   `;
 }
@@ -7552,8 +7556,8 @@ function buildFvgQualityScore(){
     result.label = getFvgQualityLabel(result);
     if(!result.reason){
       result.reason = result.label === "High-Probability"
-        ? "High-probability FVG context with MTF overlap, relevant price position, and timing/reaction confirmation."
-        : `${result.label} FVG context${result.allowHighProbability ? "." : "; wait for timing/reaction confirmation before upgrading."}`;
+        ? "High-confluence FVG context with MTF overlap, relevant price position, and timing/reaction confirmation."
+        : `${formatFvgQualityLabelForDisplay(result.label)} FVG context${result.allowHighProbability ? "." : "; wait for timing/reaction confirmation before upgrading."}`;
     }
     delete result.allowHighProbability;
     return result;
@@ -7563,9 +7567,10 @@ function buildFvgQualityScore(){
 }
 function formatFvgQualitySummary(scoreResult){
   if(!scoreResult || scoreResult.label === "Unavailable") return "Unavailable";
-  if(scoreResult.override === "conflict") return `${scoreResult.label} · wait confirmation`;
-  if(scoreResult.override === "broken_parent") return `${scoreResult.label} · parent zone broken`;
-  return `${scoreResult.label} · score ${scoreResult.score}/${scoreResult.maxScore || 10}`;
+  const displayLabel = formatFvgQualityLabelForDisplay(scoreResult.label);
+  if(scoreResult.override === "conflict") return `${displayLabel} · wait confirmation`;
+  if(scoreResult.override === "broken_parent") return `${displayLabel} · parent zone broken`;
+  return `${displayLabel} · score ${scoreResult.score}/${scoreResult.maxScore || 10}`;
 }
 function renderFvgPanel(dataset){
   try {
@@ -8373,7 +8378,7 @@ async function renderLowerTimeframeMode(mode="3M"){
   if(h4.status==='fulfilled'){
     try {
       const candles=mapKlinesToCandles(h4.value, hasRange ? undefined : limit4h);
-      if(!candles.length) { setLtfMeta(els.lower4hMeta, '4H Reaction · range unavailable'); toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
+      if(!candles.length) { setLtfMeta(els.lower4hMeta, '4H Reaction · range unavailable'); toggleLtfError(els.lower4hError,'No 4H candles found for selected range.'); if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No diagnostic context detected (4H FVG).'; render4hSupportResistanceSummary({ok:false,reason:'not_enough_candles'}); }
       else {
         setLtfMeta(els.lower4hMeta, formatIntradayRangeMeta({ role:'4H Reaction', mode:selectedModeLabel, candles, isCustom:hasRange }));
         const r=renderSingleLtfChart(els.lower4hChart,candles, els.lower4hChart?.clientHeight || 400);
@@ -8730,7 +8735,7 @@ function render4hFvgSummaryAndOverlay(candles){
     const structure = detect4hStructure(candles);
     latest4hStructureStatus = structure.status;
     if(els.lower4hStructure) els.lower4hStructure.textContent = `4H Structure | Status: ${structure.status} | Broken: ${structure.broken?usd(structure.broken):'—'} | Latest Close: ${usd(structure.latestClose)}`;
-    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No signal detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, structureStatus: structure, reason: "No possible H4 liquidity sweep detected." }); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
+    if(!active4hFvgs.length){ mtfState.h4Structure = structure.status; mtfState.h4FvgNearest = null; if(els.lower4hFvgSummary) els.lower4hFvgSummary.textContent='No diagnostic context detected (4H FVG).'; if(els.lower4hReaction) els.lower4hReaction.textContent='4H Reaction: No active Weekly FVG zone detected.'; const srSummary = scan4hSupportResistance(candles); const liquidityOrderflowState = buildH4LiquidityOrderflowState({ candles, srSummary, structureStatus: structure, reason: "No possible H4 liquidity sweep detected." }); latest4hSrSummary = srSummary; render4hSupportResistanceSummary(srSummary); updateMarketPreparationState({ h4: { fvgZones: [], fvgDetails: [], recentFvgReaction, recentBrokenFvgDetails, srSummary, structureStatus: structure.status, rsiStatus, volumeStatus, liquidityOrderflowState }, meta: { sourcesReady: { h4: true } } }); refreshFvgMtfContext(); renderMarketPreparationMap(buildMarketPreparationMap()); schedule4hSrOverlayRedraw(candles); renderLowerTfReactionSummary(); renderMtfSummary(); return; }
     const nearest = active4hFvgs[0];
     mtfState.h4Structure = structure.status;
     mtfState.h4FvgNearest = nearest ? nearest.type : null;
@@ -9001,7 +9006,7 @@ function render1hSweepSummary(candles){
     renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
-    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No signal detected (1H liquidity sweep).'; return; }
+    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No diagnostic context detected (1H liquidity sweep).'; return; }
     els.lower1hSweepSummary.textContent=`1H Liquidity Sweep | Status: ${sweep.status} | Swept Level: ${usd(sweep.level)} | Candle Time: ${sweep.time} | Distance: ${f1(sweep.distance)}%`;
   }catch(e){ console.error('1H sweep scanner failed',e); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
 }

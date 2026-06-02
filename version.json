@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 01:28",
-  "version": "v0.2.34",
+  "lastUpdated": "2026-06-02 01:57",
+  "version": "v0.2.35",
   "commitLabel": "manual",
-  "note": "Refine lower timeframe labels and header tooltips"
+  "note": "Soften scenario and UI trading-action wording"
 }
