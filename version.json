@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 01:57",
-  "version": "v0.2.35",
+  "lastUpdated": "2026-06-02 02:09",
+  "version": "v0.2.36",
   "commitLabel": "manual",
-  "note": "Soften scenario and UI trading-action wording"
+  "note": "Clean up residual weekly candle context wording"
 }

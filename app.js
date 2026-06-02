@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 01:57";
+const APP_LAST_UPDATED = "2026-06-02 02:09";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -6113,7 +6113,7 @@ function getWeeklyCandleCharacterSummary(dataset){
   else if(c3 === "Strong Bullish" && c2 === "Strong Bullish" && c1 === "Strong Bullish") reading = "Bullish continuation";
   else if(c3 === "Strong Bearish" && c2 === "Strong Bearish" && c1 === "Strong Bearish") reading = "Bearish continuation";
 
-  let condition = "No clear 3W candle signal";
+  let condition = "No clear 3W candle context";
   if(reading.includes("pressure weakening")) condition = "Needs 4H validation";
   else if(reading.includes("continuation")) condition = "Weekly pressure continues";
   else if(reading.includes("volatility expansion")) condition = "Watch reaction around key zones";
