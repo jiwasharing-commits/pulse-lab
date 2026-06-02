@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 12:02";
+const APP_LAST_UPDATED = "2026-06-02 12:35";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -5062,13 +5062,57 @@ function compute1hStochasticStatus(candles, kPeriod = 14, dPeriod = 3){
     else if(k > 80 && bearishCross){ label = "Stoch Overbought Cross Down"; status = "overbought_cross_down"; reason = "Short-term rejection timing may be forming."; }
     else if(k < 20){ label = "Stoch Oversold"; status = "oversold"; reason = "Short-term timing is in an oversold area."; }
     else if(k > 80){ label = "Stoch Overbought"; status = "overbought"; reason = "Short-term timing is in an overbought area."; }
-    else if(bullishCross){ label = "Stoch Bullish Cross"; status = "bullish_cross"; reason = "Short-term momentum crossed upward."; }
-    else if(bearishCross){ label = "Stoch Bearish Cross"; status = "bearish_cross"; reason = "Short-term momentum crossed downward."; }
+    else if(bullishCross){ label = "Stoch Cross Up"; status = "bullish_cross"; reason = "Short-term momentum crossed upward."; }
+    else if(bearishCross){ label = "Stoch Cross Down"; status = "bearish_cross"; reason = "Short-term momentum crossed downward."; }
     return { ok:true, k:Number(k.toFixed(1)), d:Number(d.toFixed(1)), prevK:Number(prevK.toFixed(1)), prevD:Number(prevD.toFixed(1)), label, reason, status };
   }catch{
     return unavailable("compute_failed");
   }
 }
+function run1hStochasticStatusFixtureTests(){
+  const makeCandles = (tailKValues, baseK = 50)=>{
+    const candles = Array.from({ length: 20 }, (_, index)=>({ time: index + 1, high: 100, low: 0, close: baseK }));
+    tailKValues.forEach((value, offset)=>{
+      candles[candles.length - tailKValues.length + offset].close = value;
+    });
+    return candles;
+  };
+  const cases = [
+    { name: "oversold cross up", candles: makeCandles([15, 10, 5, 15]), expectedLabel: "Stoch Oversold Cross Up", expectedStatus: "oversold_cross_up", expectedOk: true },
+    { name: "overbought cross down", candles: makeCandles([85, 90, 95, 85]), expectedLabel: "Stoch Overbought Cross Down", expectedStatus: "overbought_cross_down", expectedOk: true },
+    { name: "neutral no cross", candles: makeCandles([50, 50, 50, 50]), expectedLabel: "Stoch Neutral", expectedStatus: "neutral", expectedOk: true },
+    { name: "cross up outside oversold", candles: makeCandles([50, 45, 40, 60]), expectedLabel: "Stoch Cross Up", expectedStatus: "bullish_cross", expectedOk: true },
+    { name: "cross down outside overbought", candles: makeCandles([50, 55, 60, 40]), expectedLabel: "Stoch Cross Down", expectedStatus: "bearish_cross", expectedOk: true },
+    { name: "insufficient candles", candles: makeCandles([]).slice(0, 10), expectedOk: false, expectedReason: "not_enough_candles" },
+    { name: "invalid candle values", candles: makeCandles([]).map((c, i)=> i === 19 ? { ...c, close: undefined } : c), expectedOk: false, expectedReason: "invalid_candles" },
+    { name: "flat high low range", candles: Array.from({ length: 20 }, (_, index)=>({ time: index + 1, high: 100, low: 100, close: 100 })), expectedOk: false, expectedReason: "insufficient_stochastic" },
+  ];
+  const results = cases.map((testCase)=>{
+    let actual = null;
+    let error = null;
+    try { actual = compute1hStochasticStatus(testCase.candles); }
+    catch(e){ error = e?.message || String(e); }
+    const okMatches = actual?.ok === testCase.expectedOk;
+    const labelMatches = testCase.expectedLabel ? actual?.label === testCase.expectedLabel : true;
+    const statusMatches = testCase.expectedStatus ? actual?.status === testCase.expectedStatus : true;
+    const reasonMatches = testCase.expectedReason ? actual?.reason === testCase.expectedReason : true;
+    return {
+      name: testCase.name,
+      passed: okMatches && labelMatches && statusMatches && reasonMatches && !error,
+      expectedLabel: testCase.expectedLabel || null,
+      expectedStatus: testCase.expectedStatus || null,
+      expectedReason: testCase.expectedReason || null,
+      actualLabel: actual?.label || null,
+      actualStatus: actual?.status || null,
+      actualReason: actual?.reason || null,
+      actualOk: actual?.ok,
+      error,
+    };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined") window.run1hStochasticStatusFixtureTests = run1hStochasticStatusFixtureTests;
 function getNearestUpsideZoneFromMap(mapData){
   return Array.isArray(mapData?.upside) && mapData.upside.length ? mapData.upside[0] : null;
 }
@@ -7269,8 +7313,8 @@ function getDirectionFrom1hSweep(sweepStatus){
 function getDirectionFrom1hStochastic(stochastic){
   if(!stochastic?.ok) return null;
   const status = String(stochastic.status || stochastic.label || "");
-  if(/oversold_cross_up|bullish_cross|Bullish Cross|Oversold Cross Up/i.test(status)) return "bullish";
-  if(/overbought_cross_down|bearish_cross|Bearish Cross|Overbought Cross Down/i.test(status)) return "bearish";
+  if(/oversold_cross_up|bullish_cross|Cross Up|Oversold Cross Up/i.test(status)) return "bullish";
+  if(/overbought_cross_down|bearish_cross|Cross Down|Overbought Cross Down/i.test(status)) return "bearish";
   return null;
 }
 function isUsable1hTimingText(value){
