@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 02:55";
+const APP_LAST_UPDATED = "2026-06-02 10:48";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -5332,20 +5332,83 @@ function buildCurrentFvgPositionStatus(){
   if(!activePositions.has(nearest.position)) nearest.position = "Between key zones";
   return nearest;
 }
+const CURRENT_PRICE_ZONE_NEAR_THRESHOLD_PCT = 1.0;
+function normalizeCurrentPriceZoneRow(row, side){
+  if(!row || !Number.isFinite(Number(row.lower)) || !Number.isFinite(Number(row.upper))) return null;
+  const lower = Math.min(Number(row.lower), Number(row.upper));
+  const upper = Math.max(Number(row.lower), Number(row.upper));
+  return { row, side, lower, upper, distancePct: Number.isFinite(Number(row.distancePct)) ? Number(row.distancePct) : null };
+}
+function evaluateCurrentPriceZonePosition(currentPrice, zone){
+  if(!Number.isFinite(currentPrice) || !zone) return null;
+  const distancePct = Number.isFinite(zone.distancePct) ? zone.distancePct : prepDistancePct(currentPrice, zone.lower, zone.upper);
+  return {
+    ...zone,
+    distancePct,
+    inside: currentPrice >= zone.lower && currentPrice <= zone.upper,
+    near: Number.isFinite(distancePct) && distancePct > 0 && distancePct <= CURRENT_PRICE_ZONE_NEAR_THRESHOLD_PCT,
+    below: currentPrice < zone.lower,
+    above: currentPrice > zone.upper,
+  };
+}
+function buildCurrentPriceZonePositionStatus(detail, mapData, currentPrice){
+  const price = Number(currentPrice);
+  const hasPrice = currentPrice !== null && currentPrice !== "" && Number.isFinite(price);
+  const upside = normalizeCurrentPriceZoneRow(getNearestUpsideZoneFromMap(mapData), "upside");
+  const downside = normalizeCurrentPriceZoneRow(getNearestDownsideZoneFromMap(mapData), "downside");
+  const zones = [upside, downside].filter(Boolean);
+  if(!hasPrice) return { label: "Unavailable", detail: "Current price unavailable.", nearestUpside: null, nearestDownside: null };
+  if(!zones.length) return { label: "No nearby zone", detail: "No usable nearest zones available.", nearestUpside: null, nearestDownside: null };
+
+  const evaluated = zones.map((zone)=>evaluateCurrentPriceZonePosition(price, zone)).filter(Boolean);
+  const inside = evaluated.filter((zone)=>zone.inside).sort((a,b)=>(a.distancePct ?? 999) - (b.distancePct ?? 999))[0] || null;
+  if(inside) return { label: "Inside Zone", detail: inside.side === "upside" ? "Inside nearest upside zone." : "Inside nearest downside zone.", nearestUpside: upside?.row || null, nearestDownside: downside?.row || null };
+
+  const near = evaluated.filter((zone)=>zone.near).sort((a,b)=>(a.distancePct ?? 999) - (b.distancePct ?? 999))[0] || null;
+  if(near) return { label: near.side === "upside" ? "Near Upside Zone" : "Near Downside Zone", detail: `Within ${f1(CURRENT_PRICE_ZONE_NEAR_THRESHOLD_PCT)}% of nearest ${near.side} zone.`, nearestUpside: upside?.row || null, nearestDownside: downside?.row || null };
+
+  if(upside && downside && price < upside.lower && price > downside.upper){
+    return { label: "Between Key Zones", detail: "Price is between nearest upside and downside zones.", nearestUpside: upside.row, nearestDownside: downside.row };
+  }
+  if(downside && price > downside.upper){
+    return { label: "Above Nearest Downside Zone", detail: "Price is above the nearest downside zone.", nearestUpside: upside?.row || null, nearestDownside: downside.row };
+  }
+  if(upside && price < upside.lower){
+    return { label: "Below Nearest Upside Zone", detail: "Price is below the nearest upside zone.", nearestUpside: upside.row, nearestDownside: downside?.row || null };
+  }
+  return { label: "No nearby zone", detail: "No conservative zone position matched.", nearestUpside: upside?.row || null, nearestDownside: downside?.row || null };
+}
+function runCurrentPriceZonePositionFixtureTests(){
+  const row = (lower, upper, distancePct)=>({ lower, upper, distancePct, zoneText: `${lower}-${upper}`, label: "Fixture Zone" });
+  const cases = [
+    { name: "inside upside zone", price: 105, map: { upside: [row(100, 110, 0)], downside: [] }, expected: "Inside Zone" },
+    { name: "inside downside zone", price: 95, map: { upside: [], downside: [row(90, 100, 0)] }, expected: "Inside Zone" },
+    { name: "near upside zone", price: 99.2, map: { upside: [row(100, 110, 0.8)], downside: [] }, expected: "Near Upside Zone" },
+    { name: "near downside zone", price: 100.8, map: { upside: [], downside: [row(90, 100, 0.8)] }, expected: "Near Downside Zone" },
+    { name: "between key zones", price: 100, map: { upside: [row(110, 120, 10)], downside: [row(80, 90, 10)] }, expected: "Between Key Zones" },
+    { name: "above nearest downside only", price: 105, map: { upside: [], downside: [row(90, 100, 4.8)] }, expected: "Above Nearest Downside Zone" },
+    { name: "below nearest upside only", price: 95, map: { upside: [row(100, 110, 5.3)], downside: [] }, expected: "Below Nearest Upside Zone" },
+    { name: "no usable zones", price: 100, map: { upside: [], downside: [] }, expected: "No nearby zone" },
+    { name: "missing price", price: null, map: { upside: [row(100, 110, 0)], downside: [] }, expected: "Unavailable" },
+  ];
+  const results = cases.map((testCase)=>{
+    let actual = null;
+    let error = null;
+    try { actual = buildCurrentPriceZonePositionStatus(null, testCase.map, testCase.price).label; }
+    catch(e){ error = e?.message || String(e); }
+    return { name: testCase.name, passed: actual === testCase.expected && !error, expected: testCase.expected, actual, error };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined") window.runCurrentPriceZonePositionFixtureTests = runCurrentPriceZonePositionFixtureTests;
 function buildCurrentPricePositionStatus(state, mapData){
   try{
     const currentPrice = state?.currentPrice;
     const upside = getNearestUpsideZoneFromMap(mapData);
     const downside = getNearestDownsideZoneFromMap(mapData);
-    const upPosition = classifyZonePosition(currentPrice, upside);
-    const downPosition = classifyZonePosition(currentPrice, downside);
-    let currentPosition = "Current position unavailable";
-    if(Number.isFinite(currentPrice)){
-      const candidates = [upPosition, downPosition].filter((p)=>p?.label);
-      const inside = candidates.find((p)=>String(p.label).startsWith("Inside"));
-      const near = candidates.find((p)=>String(p.label).startsWith("Near"));
-      currentPosition = formatCurrentPositionLabel(inside || near || { label: (upside || downside) ? "Between key zones" : "Current position unavailable" });
-    }
+    const zonePosition = buildCurrentPriceZonePositionStatus(null, mapData, currentPrice);
+    const currentPosition = zonePosition.label || "Unavailable";
     const recentFvg = detectRecentFvgReaction(latest4hCandles, state?.h4?.fvgZones || [], 3);
     const recentSr = detectRecentSrReaction(latest4hCandles, state?.h4?.srSummary, 3);
     const latestReaction = [recentFvg, recentSr].filter(Boolean).sort((a,b)=>(b.time || 0) - (a.time || 0))[0] || null;
@@ -5354,6 +5417,7 @@ function buildCurrentPricePositionStatus(state, mapData){
     const recentReaction = latestReaction ? { ...latestReaction, confirmation: h1Context } : (memory.lastReactionLabel ? { label: memory.lastReactionLabel, confirmation: h1Context } : null);
     return {
       currentPosition,
+      zonePosition,
       nearestUpsideZone: upside ? { ...upside, text: getMapZoneText(upside, "above") } : null,
       nearestDownsideZone: downside ? { ...downside, text: getMapZoneText(downside, "below") } : null,
       recentReaction,
@@ -5363,7 +5427,7 @@ function buildCurrentPricePositionStatus(state, mapData){
       updatedAt: Date.now(),
     };
   }catch{
-    return { currentPosition: "Current position unavailable", nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, recentReactionMemory: marketPreparationState.h4?.recentReaction || null, fvg: { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: "FVG position unavailable", ceStatus: null, distancePct: null, recentReaction: null, reason: "FVG position unavailable.", updatedAt: Date.now() }, timeframe: "4H", updatedAt: Date.now() };
+    return { currentPosition: "Unavailable", zonePosition: { label: "Unavailable", detail: "Current position unavailable." }, nearestUpsideZone: null, nearestDownsideZone: null, recentReaction: null, recentReactionMemory: marketPreparationState.h4?.recentReaction || null, fvg: { ok: false, timeframe: null, zoneType: null, zoneRange: null, detailStatus: null, position: "FVG position unavailable", ceStatus: null, distancePct: null, recentReaction: null, reason: "FVG position unavailable.", updatedAt: Date.now() }, timeframe: "4H", updatedAt: Date.now() };
   }
 }
 function getKeyZonePositionContext(mapData, state){
@@ -5378,7 +5442,8 @@ function getKeyZonePositionContext(mapData, state){
     nearestDownside: status.nearestDownsideZone?.text || "Nearest downside unavailable",
     nearestUpsideDetail: formatNearestZoneDetail(status.nearestUpsideZone, "above"),
     nearestDownsideDetail: formatNearestZoneDetail(status.nearestDownsideZone, "below"),
-    position: patternContext.currentPosition || status.currentPosition || "Current position unavailable",
+    position: status.zonePosition?.label || status.currentPosition || "Unavailable",
+    positionDetail: status.zonePosition?.detail || null,
     recentReaction,
     fvg: status.fvg || buildCurrentFvgPositionStatus(),
     recentFvgReaction: formatRecentFvgReactionText(getMostRecentFvgReactionMemory()),

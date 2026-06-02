@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 02:55",
-  "version": "v0.2.38",
+  "lastUpdated": "2026-06-02 10:48",
+  "version": "v0.2.39",
   "commitLabel": "manual",
-  "note": "Add display-only Market Map confluence source explanations"
+  "note": "Add display-only current price zone position"
 }
