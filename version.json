@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 12:35",
-  "version": "v0.2.41",
+  "lastUpdated": "2026-06-02 12:52",
+  "version": "v0.2.42",
   "commitLabel": "manual",
-  "note": "Soften 1H stochastic cross labels and add fixture coverage"
+  "note": "Add display-only recent zone reaction context"
 }

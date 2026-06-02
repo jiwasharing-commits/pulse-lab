@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 12:35";
+const APP_LAST_UPDATED = "2026-06-02 12:52";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -5422,6 +5422,63 @@ function buildCurrentPriceZonePositionStatus(detail, mapData, currentPrice){
   }
   return { label: "No nearby zone", detail: "No conservative zone position matched.", nearestUpside: upside?.row || null, nearestDownside: downside?.row || null };
 }
+function normalizeRecentZoneReactionRow(row, side, currentPrice){
+  if(row?.lower === null || row?.lower === "" || row?.upper === null || row?.upper === "") return null;
+  const zone = normalizeCurrentPriceZoneRow(row, side);
+  if(!zone) return null;
+  const price = Number(currentPrice);
+  const distancePct = Number.isFinite(zone.distancePct) ? zone.distancePct : (Number.isFinite(price) ? prepDistancePct(price, zone.lower, zone.upper) : null);
+  return { ...zone, distancePct };
+}
+function selectRecentZoneReactionZone({ currentPrice, nearestUpside, nearestDownside, currentPositionStatus } = {}){
+  const upside = normalizeRecentZoneReactionRow(nearestUpside, "upside", currentPrice);
+  const downside = normalizeRecentZoneReactionRow(nearestDownside, "downside", currentPrice);
+  const zones = [upside, downside].filter(Boolean);
+  if(!zones.length) return null;
+  const positionLabel = String(currentPositionStatus?.label || currentPositionStatus || "");
+  if(/upside/i.test(positionLabel) && upside) return upside;
+  if(/downside/i.test(positionLabel) && downside) return downside;
+  return zones.sort((a,b)=>{
+    const aDistance = Number.isFinite(a.distancePct) ? a.distancePct : Math.abs(Number(currentPrice) - ((a.lower + a.upper) / 2));
+    const bDistance = Number.isFinite(b.distancePct) ? b.distancePct : Math.abs(Number(currentPrice) - ((b.lower + b.upper) / 2));
+    return aDistance - bDistance;
+  })[0] || null;
+}
+function buildRecentZoneReactionContext({ currentPrice, nearestUpside, nearestDownside, currentPositionStatus, h4Candles } = {}){
+  const empty = (detail = "No usable recent 4H zone interaction was detected.")=>({ label: "No recent zone reaction", detail, zoneSide: null, candleTime: null, timeframe: "4H" });
+  const zone = selectRecentZoneReactionZone({ currentPrice, nearestUpside, nearestDownside, currentPositionStatus });
+  if(!zone) return empty("No usable nearest zone is available for recent 4H context.");
+  const candles = Array.isArray(h4Candles) ? h4Candles.filter(Boolean).slice(-3) : [];
+  if(!candles.length) return empty("Recent 4H candle data is unavailable.");
+  const isFiniteCandle = (c)=>Number.isFinite(Number(c?.high)) && Number.isFinite(Number(c?.low)) && Number.isFinite(Number(c?.close));
+  if(candles.some((c)=>!isFiniteCandle(c))) return empty("Recent 4H candle data is incomplete.");
+  const candleTime = (c)=>c?.time ?? c?.openTime ?? c?.timestamp ?? null;
+  const closeInside = (c)=>Number(c.close) >= zone.lower && Number(c.close) <= zone.upper;
+  const closeThrough = (c)=>zone.side === "upside" ? Number(c.close) > zone.upper : Number(c.close) < zone.lower;
+  const intersects = (c)=>Number(c.high) >= zone.lower && Number(c.low) <= zone.upper;
+  const hasNearPosition = /Near|Inside/i.test(String(currentPositionStatus?.label || currentPositionStatus || ""))
+    || (Number.isFinite(zone.distancePct) && zone.distancePct <= CURRENT_PRICE_ZONE_NEAR_THRESHOLD_PCT);
+
+  for(let i=0;i<candles.length;i++){
+    const candle = candles[i];
+    const previous = i > 0 ? candles[i - 1] : null;
+    if(previous && !closeInside(previous) && closeInside(candle)){
+      return { label: "Recent close back inside zone", detail: "A recent 4H candle closed back within the nearest zone bounds.", zoneSide: zone.side, candleTime: candleTime(candle), timeframe: "4H" };
+    }
+  }
+  const throughCandle = candles.find((c)=>closeThrough(c));
+  if(throughCandle){
+    return { label: "Recent close through zone", detail: "A recent 4H candle closed beyond the nearest zone boundary.", zoneSide: zone.side, candleTime: candleTime(throughCandle), timeframe: "4H" };
+  }
+  const touchCandle = candles.find((c)=>intersects(c));
+  if(touchCandle){
+    return { label: "Recent touch near zone", detail: "A recent 4H candle range interacted with the nearest zone.", zoneSide: zone.side, candleTime: candleTime(touchCandle), timeframe: "4H" };
+  }
+  if(hasNearPosition){
+    return { label: "Watching zone reaction", detail: "Price is near a key zone; no recent 4H candle interaction yet.", zoneSide: zone.side, candleTime: null, timeframe: "4H" };
+  }
+  return empty("Recent 4H candles did not interact with the nearest zone.");
+}
 function runCurrentPriceZonePositionFixtureTests(){
   const row = (lower, upper, distancePct)=>({ lower, upper, distancePct, zoneText: `${lower}-${upper}`, label: "Fixture Zone" });
   const cases = [
@@ -5446,6 +5503,33 @@ function runCurrentPriceZonePositionFixtureTests(){
   return { passed: failed === 0, total: results.length, failed, results };
 }
 if(typeof window !== "undefined") window.runCurrentPriceZonePositionFixtureTests = runCurrentPriceZonePositionFixtureTests;
+function runRecentZoneReactionContextFixtureTests(){
+  const zone = (side = "upside", distancePct = 0.6)=>({ lower: 100, upper: 110, distancePct, label: `${side} zone` });
+  const candle = (high, low, close, time)=>({ high, low, close, time });
+  const base = { currentPrice: 99.5, currentPositionStatus: { label: "Near Upside Zone" } };
+  const cases = [
+    { name: "4H wick touches upside zone", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(99, 90, 95, 1), candle(101, 90, 95, 2), candle(98, 90, 96, 3)] }, expected: "Recent touch near zone" },
+    { name: "4H body intersects zone", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(108, 101, 105, 1), candle(108, 98, 105, 2), candle(108, 101, 106, 3)] }, expected: "Recent touch near zone" },
+    { name: "close back inside zone", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(98, 90, 95, 1), candle(109, 99, 105, 2), candle(108, 99, 104, 3)] }, expected: "Recent close back inside zone" },
+    { name: "close above upside boundary", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(98, 90, 95, 1), candle(112, 99, 111, 2), candle(113, 101, 112, 3)] }, expected: "Recent close through zone" },
+    { name: "close below downside boundary", input: { currentPrice: 110.5, currentPositionStatus: { label: "Near Downside Zone" }, nearestDownside: zone("downside"), h4Candles: [candle(112, 101, 105, 1), candle(106, 95, 99, 2), candle(105, 94, 98, 3)] }, expected: "Recent close through zone" },
+    { name: "near zone without candle interaction", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(98, 90, 95, 1), candle(99, 91, 96, 2), candle(98, 92, 97, 3)] }, expected: "Watching zone reaction" },
+    { name: "no nearby zone", input: { currentPrice: 100, h4Candles: [candle(99, 90, 95, 1)] }, expected: "No recent zone reaction" },
+    { name: "invalid zone bounds", input: { currentPrice: 100, nearestUpside: { lower: null, upper: 110 }, h4Candles: [candle(109, 101, 105, 1)] }, expected: "No recent zone reaction" },
+    { name: "missing candle data", input: { ...base, nearestUpside: zone("upside"), h4Candles: [] }, expected: "No recent zone reaction" },
+    { name: "wick only beyond boundary is not close through", input: { ...base, nearestUpside: zone("upside"), h4Candles: [candle(115, 99, 109, 1), candle(99, 90, 95, 2), candle(98, 90, 96, 3)] }, expected: "Recent touch near zone", notExpected: "Recent close through zone" },
+  ];
+  const results = cases.map((testCase)=>{
+    let actual = null;
+    let error = null;
+    try { actual = buildRecentZoneReactionContext(testCase.input).label; }
+    catch(e){ error = e?.message || String(e); }
+    return { name: testCase.name, passed: actual === testCase.expected && actual !== testCase.notExpected && !error, expected: testCase.expected, notExpected: testCase.notExpected || null, actual, error };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined") window.runRecentZoneReactionContextFixtureTests = runRecentZoneReactionContextFixtureTests;
 function buildCurrentPricePositionStatus(state, mapData){
   try{
     const currentPrice = state?.currentPrice;
@@ -5465,6 +5549,7 @@ function buildCurrentPricePositionStatus(state, mapData){
       nearestUpsideZone: upside ? { ...upside, text: getMapZoneText(upside, "above") } : null,
       nearestDownsideZone: downside ? { ...downside, text: getMapZoneText(downside, "below") } : null,
       recentReaction,
+      recentZoneReaction: buildRecentZoneReactionContext({ currentPrice, nearestUpside: upside, nearestDownside: downside, currentPositionStatus: zonePosition, h4Candles: latest4hCandles }),
       recentReactionMemory: memory,
       fvg: buildCurrentFvgPositionStatus(),
       timeframe: "4H",
@@ -5489,6 +5574,7 @@ function getKeyZonePositionContext(mapData, state){
     position: status.zonePosition?.label || status.currentPosition || "Unavailable",
     positionDetail: status.zonePosition?.detail || null,
     recentReaction,
+    recentZoneReaction: status.recentZoneReaction || buildRecentZoneReactionContext({ currentPrice: state?.currentPrice, nearestUpside: status.nearestUpsideZone, nearestDownside: status.nearestDownsideZone, currentPositionStatus: status.zonePosition, h4Candles: latest4hCandles }),
     fvg: status.fvg || buildCurrentFvgPositionStatus(),
     recentFvgReaction: formatRecentFvgReactionText(getMostRecentFvgReactionMemory()),
     conflict: marketPreparationState.fvgMtfContext?.conflict || createEmptyFvgConflictState(),
@@ -5651,6 +5737,8 @@ function renderCurrentPriceDetailCards(detail){
         ${renderKeyZoneDetailBlock("Nearest Upside Zone", detail.keyZone.nearestUpsideDetail)}
         ${renderKeyZoneDetailBlock("Nearest Downside Zone", detail.keyZone.nearestDownsideDetail)}
         <p class="prep-current-detail-kv">Current Position: ${detail.keyZone.position}</p>
+        <p class="prep-current-detail-kv">Recent Zone Reaction: ${detail.keyZone.recentZoneReaction?.label || "No recent zone reaction"}</p>
+        ${detail.keyZone.recentZoneReaction?.detail ? `<p class="prep-current-detail-meaning">${detail.keyZone.recentZoneReaction.detail}</p>` : ""}
         <p class="prep-current-detail-kv">FVG Position: ${detail.keyZone.fvg?.ok ? `${detail.keyZone.fvg.position} · ${detail.keyZone.fvg.zoneType} · ${detail.keyZone.fvg.detailStatus || "Status unavailable"}` : (detail.keyZone.fvg?.position || "No nearby active FVG")}</p>
         <p class="prep-current-detail-kv">FVG Reaction: ${detail.keyZone.recentFvgReaction || detail.keyZone.fvg?.recentReaction || detail.keyZone.fvg?.reason || "No FVG reaction"}</p>
         ${detail.keyZone.conflict?.ok ? `<p class="prep-current-detail-kv">FVG Conflict: ${detail.keyZone.conflict.label} · wait confirmation</p>` : ""}
