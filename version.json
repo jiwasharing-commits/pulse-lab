@@ -1,0 +1,6 @@
+{
+  "lastUpdated": "2026-06-02 00:18",
+  "version": "v0.2.31",
+  "commitLabel": "manual",
+  "note": "Fix Daily runtime 3M default fallback"
+}
