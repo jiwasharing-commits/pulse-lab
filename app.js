@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-01 08:22";
+const APP_LAST_UPDATED = "2026-06-02 00:18";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -7741,7 +7741,7 @@ function setupCollapsibleSections(){
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   els.exportPdfBtn?.addEventListener('click', exportMarketReportPdf);
   window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); } });
-  setDailyPresetUI('6m');
+  setDailyPresetUI('3m');
   setLtfPresetUI('3m');
   restoreToggleState();
   if(ltfVisible){ requestAnimationFrame(()=>{ renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); lowerTimeframeLoaded=true; }); }
@@ -7769,7 +7769,7 @@ function scanDailySupportResistance(candles){
   }
 }
 
-function createEmptyDailyPattern(rangeMode = activeDailyRange || "6M", reason = "Daily pattern unavailable."){
+function createEmptyDailyPattern(rangeMode = activeDailyRange || "3M", reason = "Daily pattern unavailable."){
   return { ok:false, type:null, status:"Unavailable", rangeMode, supportLine:null, resistanceLine:null, supportTouches:0, resistanceTouches:0, totalTouches:0, currentPosition:null, breakoutStatus:null, qualityScore:0, reason, updatedAt:null };
 }
 function isValidCandle(c){ return c && Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close); }
@@ -7951,7 +7951,7 @@ function detectDailyRangePattern(candles, rangeMode){
   if(!candidate || candidate.supportTouches < 2 || candidate.resistanceTouches < 2 || candidate.supportTouches + candidate.resistanceTouches < 4 || candidate.insideRatio < 0.62) return null;
   return finalizeDailyPatternCandidate(candidate, candles, rangeMode, toleranceAbs);
 }
-function detectDailyPattern(candles, rangeMode = activeDailyRange || "6M"){
+function detectDailyPattern(candles, rangeMode = activeDailyRange || "3M"){
   try{
     if(!Array.isArray(candles) || candles.length < 40) return createEmptyDailyPattern(rangeMode, "Not enough Daily candles for pattern detection.");
     const candidates = [detectDailyChannelPattern(candles, rangeMode), detectDailyRangePattern(candles, rangeMode)].filter(Boolean);
@@ -8299,9 +8299,9 @@ function formatIntradayRangeMeta({ role, mode, candles, isCustom = false }){
   return isCustom ? text : text.replace(`follows selected ${modeText} range`, `follows selected Intraday ${modeText} range`);
 }
 function setLtfMeta(el, text){ if(el) el.textContent = text; }
-async function renderDailyRangeMode(mode = activeDailyRange || "6M"){
+async function renderDailyRangeMode(mode = activeDailyRange || "3M"){
   activeDailyRange = mode;
-  const preset = ({ "3M":"3m", "6M":"6m", "1Y":"1y" }[mode] || dailyPreset || "6m");
+  const preset = ({ "3M":"3m", "6M":"6m", "1Y":"1y" }[mode] || dailyPreset || "3m");
   dailyPreset = preset;
   if(!ltfVisible) return;
   if(!els.lowerDailyChart || els.lowerDailyChart.clientWidth===0 || els.lowerDailyChart.clientHeight===0){
