@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 02:23",
-  "version": "v0.2.37",
+  "lastUpdated": "2026-06-02 02:55",
+  "version": "v0.2.38",
   "commitLabel": "manual",
-  "note": "Add display-only 4H volume status to current price detail"
+  "note": "Add display-only Market Map confluence source explanations"
 }

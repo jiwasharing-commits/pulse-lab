@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 02:23";
+const APP_LAST_UPDATED = "2026-06-02 02:55";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -3625,6 +3625,135 @@ function formatConfluenceSources(row, maxDisplay = 3){
   const more = labels.length - shown.length;
   return more > 0 ? `${shown.join(" + ")} + ${more} more` : shown.join(" + ");
 }
+function getMarketMapSourceKind(source){
+  const key = String(source?.source || source?.primarySource || "").toLowerCase();
+  const text = `${key} ${source?.label || ""} ${source?.type || ""} ${source?.quality || ""}`.toLowerCase();
+  if(text.includes("ifvg")) return "ifvg";
+  if(text.includes("fvg")) return "fvg";
+  if(text.includes("channel")) return "channel";
+  if(text.includes("range")) return "range";
+  if(text.includes("support")) return "support";
+  if(text.includes("resistance")) return "resistance";
+  return "other";
+}
+function formatMarketMapTimeframeList(timeframes){
+  const order = ["Weekly", "Daily", "4H", "1H"];
+  const unique = [...new Set((timeframes || []).filter(Boolean))];
+  return [...order.filter((tf)=>unique.includes(tf)), ...unique.filter((tf)=>!order.includes(tf))].join(" + ");
+}
+function getDominantMarketMapDirection(sources){
+  const directions = (sources || []).map(getMapSourceDirection).filter(Boolean);
+  const counts = directions.reduce((acc, direction)=>{ acc[direction] = (acc[direction] || 0) + 1; return acc; }, {});
+  if((counts.bullish || 0) > (counts.bearish || 0)) return "bullish";
+  if((counts.bearish || 0) > (counts.bullish || 0)) return "bearish";
+  return null;
+}
+function formatMarketMapConfluenceExplanation(row){
+  const sources = getConfluenceSourceList(row).filter(Boolean);
+  const confluenceCount = Number(row?.confluenceCount) || sources.length;
+  const isConfluenceRow = /confluence/i.test(String(row?.label || row?.quality || row?.type || row?.confluenceLabel || ""));
+  if(sources.length < 2 && confluenceCount < 2 && !isConfluenceRow) return null;
+  if(sources.length < 2) return null;
+
+  const kinds = new Set(sources.map(getMarketMapSourceKind));
+  const timeframes = sources.map(getMapSourceTimeframe).filter(Boolean);
+  const timeframeText = formatMarketMapTimeframeList(timeframes);
+  const uniqueTimeframeCount = new Set(timeframes).size;
+  const fvgSources = sources.filter((source)=>getMarketMapSourceKind(source) === "fvg");
+  const supportSources = sources.filter((source)=>getMarketMapSourceKind(source) === "support");
+  const resistanceSources = sources.filter((source)=>getMarketMapSourceKind(source) === "resistance");
+  const channelSources = sources.filter((source)=>getMarketMapSourceKind(source) === "channel");
+  const rangeSources = sources.filter((source)=>getMarketMapSourceKind(source) === "range");
+  const dominantDirection = getDominantMarketMapDirection(fvgSources.length ? fvgSources : sources);
+
+  if(kinds.has("ifvg")) return "IFVG context overlaps with this zone.";
+  if(fvgSources.length >= 2 && uniqueTimeframeCount >= 2 && dominantDirection){
+    return `Multi-timeframe ${dominantDirection} FVG overlap: ${timeframeText}.`;
+  }
+  if(supportSources.length === sources.length && uniqueTimeframeCount >= 2){
+    return `Multi-timeframe support confluence: ${timeframeText}.`;
+  }
+  if(resistanceSources.length === sources.length && uniqueTimeframeCount >= 2){
+    return `Multi-timeframe resistance confluence: ${timeframeText}.`;
+  }
+  if(fvgSources.length && channelSources.length){
+    const dailyFvg = fvgSources.find((source)=>getMapSourceTimeframe(source) === "Daily");
+    const dailyChannel = channelSources.find((source)=>getMapSourceTimeframe(source) === "Daily");
+    const direction = dailyFvg ? getMapSourceDirection(dailyFvg) : dominantDirection;
+    if(dailyFvg && dailyChannel && direction) return `Daily ${direction} FVG aligns with Daily channel boundary.`;
+    return "FVG context aligns with channel boundary.";
+  }
+  if(fvgSources.length && rangeSources.length) return "FVG context aligns with range boundary.";
+  if(fvgSources.length && resistanceSources.length){
+    const dailyFvg = fvgSources.find((source)=>getMapSourceTimeframe(source) === "Daily");
+    const dailyResistance = resistanceSources.find((source)=>getMapSourceTimeframe(source) === "Daily");
+    const direction = dailyFvg ? getMapSourceDirection(dailyFvg) : dominantDirection;
+    if(dailyFvg && dailyResistance && direction) return `Daily ${direction} FVG aligns with Daily resistance.`;
+    return "FVG context aligns with resistance.";
+  }
+  if(fvgSources.length && supportSources.length){
+    const dailyFvg = fvgSources.find((source)=>getMapSourceTimeframe(source) === "Daily");
+    const h4Support = supportSources.find((source)=>getMapSourceTimeframe(source) === "4H");
+    const direction = dailyFvg ? getMapSourceDirection(dailyFvg) : dominantDirection;
+    if(dailyFvg && h4Support && direction) return `Daily ${direction} FVG aligns with 4H support.`;
+    return "FVG context aligns with support.";
+  }
+  if(supportSources.length && resistanceSources.length) return "Mixed S/R overlap; review listed sources.";
+  if(channelSources.length) return "Daily channel boundary aligns with this zone.";
+  if(rangeSources.length) return "Daily range boundary aligns with this zone.";
+  return isConfluenceRow ? "Source overlap detected; review listed sources." : null;
+}
+function runMarketMapSourceExplanationFixtureTests(){
+  const row = (sources)=>({ confluenceCount: Array.isArray(sources) ? sources.length : 0, sources });
+  const cases = [
+    {
+      name: "multi-timeframe bearish fvg overlap",
+      input: row([
+        { source: "weekly_fvg", label: "W Bearish FVG" },
+        { source: "daily_fvg", label: "Daily Bearish FVG" },
+        { source: "h4_fvg", label: "4H Bearish FVG" },
+      ]),
+      expected: "Multi-timeframe bearish FVG overlap: Weekly + Daily + 4H.",
+    },
+    {
+      name: "multi-timeframe support confluence",
+      input: row([
+        { source: "weekly_sr", label: "W Support" },
+        { source: "daily_sr", label: "Daily Support" },
+        { source: "h4_sr", label: "4H Support" },
+      ]),
+      expected: "Multi-timeframe support confluence: Weekly + Daily + 4H.",
+    },
+    {
+      name: "daily fvg channel boundary",
+      input: row([
+        { source: "daily_fvg", label: "Daily Bearish FVG" },
+        { source: "daily_pattern_resistance", label: "Daily Channel Resistance" },
+      ]),
+      expected: "Daily bearish FVG aligns with Daily channel boundary.",
+    },
+    {
+      name: "daily fvg h4 support",
+      input: row([
+        { source: "daily_fvg", label: "Daily Bullish FVG" },
+        { source: "h4_sr", label: "4H Support" },
+      ]),
+      expected: "Daily bullish FVG aligns with 4H support.",
+    },
+    { name: "empty sources", input: row([]), expected: null },
+    { name: "single source", input: row([{ source: "daily_fvg", label: "Daily Bullish FVG" }]), expected: null },
+  ];
+  const results = cases.map((testCase)=>{
+    let actual = null;
+    let error = null;
+    try { actual = formatMarketMapConfluenceExplanation(testCase.input); }
+    catch(e){ error = e?.message || String(e); }
+    return { name: testCase.name, passed: actual === testCase.expected && !error, expected: testCase.expected, actual, error };
+  });
+  const failed = results.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: results.length, failed, results };
+}
+if(typeof window !== "undefined") window.runMarketMapSourceExplanationFixtureTests = runMarketMapSourceExplanationFixtureTests;
 function isFvgMapSource(source){
   const key = String(source?.source || source?.primarySource || "").toLowerCase();
   const label = String(source?.label || source?.type || source?.quality || "").toLowerCase();
@@ -4350,14 +4479,16 @@ function getConfluenceType(row){
 }
 function formatMapRowForDisplay(row){
   const fvgBadges = formatMapRowFvgBadges(row);
+  const explanation = formatMarketMapConfluenceExplanation(row);
   const fullSources = row?.confluenceLabel || row?.detail || (Array.isArray(row?.sources) ? row.sources.map(formatSourceLabel).filter(Boolean).join(" + ") : "") || row?.quality || "";
   return {
     zone: row?.zoneText || (Number.isFinite(row?.lower) && Number.isFinite(row?.upper) ? `${usd(row.lower)}–${usd(row.upper)}` : "—"),
     type: getConfluenceType(row),
     sources: formatConfluenceSources(row, 3),
+    sourceExplanation: explanation,
     fvgBadges,
     distance: row?.distanceText || "—",
-    fullSources: [fullSources, fvgBadges].filter(Boolean).join(" | "),
+    fullSources: [fullSources, explanation, fvgBadges].filter(Boolean).join(" | "),
   };
 }
 function getMapRowCenter(row){
@@ -4395,7 +4526,8 @@ function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "" } = {}
   return (rows || []).map((r)=>{
     const display = formatMapRowForDisplay(r);
     const title = escapeHtml(display.fullSources || display.sources);
-    const sourceHtml = `${escapeHtml(display.sources)}${display.fvgBadges ? `<span class="prep-map-row-badges">${escapeHtml(display.fvgBadges)}</span>` : ""}`;
+    const explanationHtml = display.sourceExplanation ? `<span class="prep-map-source-explanation">Explanation: ${escapeHtml(display.sourceExplanation)}</span>` : "";
+    const sourceHtml = `${escapeHtml(display.sources)}${explanationHtml}${display.fvgBadges ? `<span class="prep-map-row-badges">${escapeHtml(display.fvgBadges)}</span>` : ""}`;
     const nearest = isSameMapRow(r, nearestRow);
     const className = `prep-map-row${nearest ? " is-nearest-zone" : ""}`;
     const nearestPill = nearest && nearestLabel ? `<span class="prep-map-nearest-label">${escapeHtml(nearestLabel)}</span>` : "";

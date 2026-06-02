@@ -139,6 +139,7 @@
 .prep-map-row-type{color:#dbe4ff;font-weight:600}
 .prep-map-row-sources,.prep-map-row-distance{color:var(--muted);overflow-wrap:anywhere;line-height:1.25}
 .prep-map-row-badges{display:block;margin-top:2px;color:#93c5fd;font-size:.69rem;line-height:1.2}
+.prep-map-source-explanation{display:block;margin-top:3px;color:#93a4c8;font-size:.69rem;line-height:1.28;font-weight:500}
 .prep-map-row-distance{text-align:right;white-space:nowrap}
 .prep-map-current-row{font-size:.8rem;font-weight:600}
 .prep-current-chip-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
