@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 01:05",
-  "version": "v0.2.33",
+  "lastUpdated": "2026-06-02 01:28",
+  "version": "v0.2.34",
   "commitLabel": "manual",
-  "note": "Clarify chart interaction toggle wording"
+  "note": "Refine lower timeframe labels and header tooltips"
 }
