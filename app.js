@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 02:09";
+const APP_LAST_UPDATED = "2026-06-02 02:23";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -5343,6 +5343,19 @@ function renderCurrentPriceChips(detail){
   ];
   return `<div class="prep-current-chip-row" aria-label="Current price market context">${chips.map(([label, value])=>`<span class="prep-current-chip"><strong>${escapeHtml(label)}</strong> ${escapeHtml(value)}</span>`).join("")}</div>`;
 }
+function formatH4VolumeStatusLabel(label){
+  if(label === "Weak") return "Low";
+  if(label === "Above Avg") return "Above Average";
+  return label || null;
+}
+function formatH4VolumeStatusText(volumeStatus){
+  const label = formatH4VolumeStatusLabel(volumeStatus?.label);
+  if(label){
+    return Number.isFinite(volumeStatus?.ratio) ? `${label} (${f1(volumeStatus.ratio)}x avg)` : label;
+  }
+  if(Array.isArray(latest4hCandles) && latest4hCandles.length > 0 && latest4hCandles.length < 20) return "Insufficient data";
+  return "Unavailable";
+}
 function renderCurrentPriceDetailCards(detail){
   if(!els.prepCurrentDetailContent) return;
   const nPct = (v)=>Number.isFinite(v) ? `${v>=0?"+":""}${f1(v)}%` : "—";
@@ -5380,7 +5393,7 @@ function renderCurrentPriceDetailCards(detail){
         <h4 class="prep-current-detail-card-title">4H Context</h4>
         <p class="prep-current-detail-kv">Structure: ${detail.h4Structure.status}</p>
         <p class="prep-current-detail-kv">RSI: ${detail.h4Rsi.ok ? `${nNum(detail.h4Rsi.value)} · ${detail.h4Rsi.regime||"—"} · ${detail.h4Rsi.slope||"—"}` : "—"}</p>
-        <p class="prep-current-detail-kv">Volume: ${detail.h4Volume.label ? `${detail.h4Volume.label} (${nNum(detail.h4Volume.ratio)}x)` : "—"}</p>
+        <p class="prep-current-detail-kv">4H Volume: ${formatH4VolumeStatusText(detail.h4Volume)}</p>
         <p class="prep-current-detail-meaning">${detail.h4ContextMeaning}</p>
       </article>
       <article class="prep-current-detail-card">

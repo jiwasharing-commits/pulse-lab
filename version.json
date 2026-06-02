@@ -1,6 +1,6 @@
 {
-  "lastUpdated": "2026-06-02 02:09",
-  "version": "v0.2.36",
+  "lastUpdated": "2026-06-02 02:23",
+  "version": "v0.2.37",
   "commitLabel": "manual",
-  "note": "Clean up residual weekly candle context wording"
+  "note": "Add display-only 4H volume status to current price detail"
 }
