@@ -6731,7 +6731,7 @@ function renderWeeklySrOverlay(summary, dataset){
     const lastClosed = closed[closed.length-1];
     const right = lastClosed ? priceChart.timeScale().timeToCoordinate(lastClosed.time) : null;
     if(right==null) return;
-    const draw=(zone, cls)=>{
+    const draw=(zone, cls, side)=>{
       if(!zone) return;
       const xStart = priceChart.timeScale().timeToCoordinate(zone.firstTime || dataset[0]?.time);
       const yTop = candleSeries.priceToCoordinate(zone.upper);
@@ -6746,10 +6746,16 @@ function renderWeeklySrOverlay(summary, dataset){
       const cy=(yTop+yBottom)/2;
       el.style.top=`${h===Math.abs(yBottom-yTop)?top:(cy-h/2)}px`;
       el.style.height=`${h}px`;
+      const labelText = formatChartMarkLabel({ timeframe:"W", category:"SNR", side });
+      el.title = `${labelText} · ${zone.strength || "Zone"} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const label=document.createElement('span');
+      label.className='weekly-sr-label chart-snr-label';
+      label.textContent=labelText;
+      el.appendChild(label);
       layer.appendChild(el);
     };
-    draw(summary.support, 'bullish');
-    draw(summary.resistance, 'bearish');
+    draw(summary.support, 'bullish', 'Support');
+    draw(summary.resistance, 'bearish', 'Resistance');
   } catch (e) {
     console.error('Weekly SR overlay failed:', e);
   }
@@ -9007,6 +9013,13 @@ function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
       div.style.top=`${top}px`;
       div.style.width=`${width}px`;
       div.style.height=`${height}px`;
+      const side = zone.type==='support' ? 'Support' : 'Resistance';
+      const labelText = formatChartMarkLabel({ timeframe:"4H", category:"SNR", side });
+      div.title = `${labelText} · ${zone.strength || "Zone"} · Touch ${zone.touchCount ?? "—"}x · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const label=document.createElement('span');
+      label.className='h4-sr-label chart-snr-label';
+      label.textContent=labelText;
+      div.appendChild(label);
       overlayLayer.appendChild(div);
     } catch(_){ }
   });
