@@ -3842,6 +3842,90 @@ function formatFvgOverlayLabel(zone, timeframe, detailCandidates = null){
   const prefix = [tf, directionLabel, "FVG"].filter(Boolean).join(" ");
   return `${prefix} · ${status}`;
 }
+
+// Render-only chart mark label helpers for future Weekly/Daily/4H/1H label consistency.
+// These helpers normalize display text only; they do not read DOM, touch charts, or mutate app state.
+function normalizeChartMarkLabel(mark = {}){
+  const normalizeText = (value)=>String(value || "").trim();
+  const timeframe = normalizeText(mark.timeframe || mark.tf).toUpperCase();
+  const rawCategory = normalizeText(mark.category || mark.type);
+  const categoryLookup = {
+    snr: "SNR",
+    "s/r": "SNR",
+    sr: "SNR",
+    fvg: "FVG",
+    structure: "Structure",
+    liquidity: "Liquidity",
+    trendline: "Trendline",
+    price: "Price",
+    rsi: "RSI",
+  };
+  const category = categoryLookup[rawCategory.toLowerCase()] || rawCategory;
+  const rawSide = normalizeText(mark.side || mark.direction);
+  const sideLookup = {
+    bullish: "Bull",
+    bull: "Bull",
+    bearish: "Bear",
+    bear: "Bear",
+    support: "Support",
+    resistance: "Resistance",
+    neutral: "Neutral",
+  };
+  const side = sideLookup[rawSide.toLowerCase()] || rawSide;
+  const rawStatus = normalizeText(mark.status);
+  const statusLookup = {
+    active: "Active",
+    broken: "Broken",
+    fresh: "Fresh",
+    touched: "Touched",
+    mitigated: "Mitigated",
+    filled: "Filled",
+    invalid: "Invalid",
+    neutral: "Neutral",
+  };
+  const status = statusLookup[rawStatus.toLowerCase()] || rawStatus;
+  const price = Number.isFinite(Number(mark.price)) ? Number(mark.price) : null;
+  const range = mark.priceRange || mark.range || null;
+  const lower = Number(range?.lower);
+  const upper = Number(range?.upper);
+  const priceRange = Number.isFinite(lower) && Number.isFinite(upper)
+    ? { lower: Math.min(lower, upper), upper: Math.max(lower, upper) }
+    : null;
+  const priority = Number.isFinite(Number(mark.priority)) ? Number(mark.priority) : 0;
+  const detailText = normalizeText(mark.detailText);
+  const explicitLabelText = normalizeText(mark.labelText);
+  return { timeframe, category, side, status, price, priceRange, labelText: explicitLabelText, detailText, priority };
+}
+
+// Builds compact labels such as "W Support", "4H Bull FVG - Fresh", or "1H BOS".
+function buildChartMarkLabel(mark = {}){
+  const normalized = normalizeChartMarkLabel(mark);
+  if(normalized.labelText) return normalized.labelText;
+
+  const parts = [];
+  if(normalized.timeframe) parts.push(normalized.timeframe);
+  if(normalized.category === "FVG"){
+    if(normalized.side && normalized.side !== "Neutral") parts.push(normalized.side);
+    parts.push("FVG");
+  } else if(normalized.category === "SNR"){
+    if(normalized.side && normalized.side !== "Neutral") parts.push(normalized.side);
+    else parts.push("SNR");
+  } else if(normalized.category === "Liquidity"){
+    parts.push(normalized.side && normalized.side !== "Neutral" ? normalized.side : "Sweep");
+  } else if(normalized.category === "Structure"){
+    parts.push(normalized.side && normalized.side !== "Neutral" ? normalized.side : "Structure");
+  } else if(normalized.category){
+    parts.push(normalized.category);
+  }
+
+  const baseLabel = parts.filter(Boolean).join(" ") || "Chart Mark";
+  const shouldShowStatus = normalized.status && !["Active", "Neutral"].includes(normalized.status);
+  return shouldShowStatus ? `${baseLabel} - ${normalized.status}` : baseLabel;
+}
+
+function formatChartMarkLabel(mark = {}){
+  return buildChartMarkLabel(mark);
+}
 function findFvgDetailForMapSource(source){
   if(!isFvgMapSource(source)) return null;
   const sourceZone = getFvgDetailZone(source);
