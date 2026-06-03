@@ -2951,6 +2951,206 @@ function buildScenarioInputSnapshot(mapData = {}, state = marketPreparationState
     disclaimer: createScenarioDisclaimer(),
   };
 }
+function buildScenarioInvalidationReference(zoneRef, direction){
+  if(!zoneRef || !Number.isFinite(Number(zoneRef.lower)) || !Number.isFinite(Number(zoneRef.upper))) return null;
+  const lower = Math.min(Number(zoneRef.lower), Number(zoneRef.upper));
+  const upper = Math.max(Number(zoneRef.lower), Number(zoneRef.upper));
+  if(direction === "bullish"){
+    return { label: "Below scenario zone", price: lower, boundary: "lower", direction, role: "invalidationReference", source: "Scenario zone boundary", detail: "Invalidation reference only." };
+  }
+  if(direction === "bearish"){
+    return { label: "Above scenario zone", price: upper, boundary: "upper", direction, role: "invalidationReference", source: "Scenario zone boundary", detail: "Invalidation reference only." };
+  }
+  return { label: "Invalidation reference unavailable", price: null, boundary: null, direction: direction || "neutral", role: "invalidationReference", source: "Scenario zone boundary", detail: "Scenario zone unavailable." };
+}
+function buildScenarioTargetLadder(oppositeRows = [], direction = "neutral"){
+  const rows = Array.isArray(oppositeRows) ? oppositeRows : [];
+  const targets = [0, 1, 2].map((index)=>normalizeScenarioTargetReference(rows[index], `tp${index + 1}`));
+  return {
+    tp1: targets[0] || null,
+    tp2: targets[1] || null,
+    tp3: targets[2] || null,
+    direction,
+  };
+}
+function getScenarioIfvgContextForDirection(snapshot, direction){
+  const side = direction === "bullish" ? "bullish" : (direction === "bearish" ? "bearish" : null);
+  if(!side || !Array.isArray(snapshot?.ifvgContext)) return [];
+  return snapshot.ifvgContext.map((frame)=>({ timeframe: frame.timeframe, ...(frame[side] || {}) })).filter((item)=>item.state || item.label);
+}
+function buildScenarioConfirmationRequirements(snapshot, direction = "neutral", scenarioType = "wait_no_trade"){
+  const liquidity = snapshot?.h4LiquidityContext;
+  const ifvgItems = getScenarioIfvgContextForDirection(snapshot, direction);
+  const existing = snapshot?.existingTradePlanScenario;
+  const nearestZone = direction === "bullish" ? snapshot?.nearestDownside : (direction === "bearish" ? snapshot?.nearestUpside : null);
+  return [
+    {
+      type: "h4_liquidity",
+      label: liquidity?.displayStatus ? `H4 liquidity context: ${liquidity.displayStatus}` : "H4 liquidity confirmation preferred",
+      status: liquidity?.status ? "informational" : "waiting",
+      required: false,
+      scenarioType,
+    },
+    {
+      type: "ifvg_context",
+      label: ifvgItems.length ? "IFVG context available for review" : "IFVG context requires confirmation",
+      status: ifvgItems.length ? "informational" : "waiting",
+      required: false,
+      scenarioType,
+    },
+    {
+      type: "existing_trade_plan_context",
+      label: existing?.primaryStatus ? `Existing Preparation Scenario: ${existing.primaryStatus}` : "Existing Preparation Scenario unavailable",
+      status: existing?.primaryStatus ? "informational" : "waiting",
+      required: false,
+      scenarioType,
+    },
+    {
+      type: "nearest_zone_context",
+      label: nearestZone?.label ? `Nearest scenario zone: ${nearestZone.label}` : "Nearest scenario zone unavailable",
+      status: nearestZone ? "informational" : "waiting",
+      required: false,
+      scenarioType,
+    },
+  ];
+}
+function buildScenarioConfluenceSources(zoneRef){
+  if(!zoneRef) return [];
+  const timeframes = Array.isArray(zoneRef.sourceTimeframes) ? zoneRef.sourceTimeframes : [];
+  const types = Array.isArray(zoneRef.sourceTypes) ? zoneRef.sourceTypes : [];
+  const label = [timeframes.join("/"), types.join(" + ")].filter(Boolean).join(" · ") || zoneRef.label || "Market Map zone";
+  return [{ type: "market_map", label, source: zoneRef.source || "Market Preparation Map", required: false }];
+}
+function createScenarioPlanFromParts(parts = {}){
+  return { ...createEmptyScenarioPlan(), ...parts, disclaimer: createScenarioDisclaimer() };
+}
+function hasScenarioZone(zoneRef){
+  return !!zoneRef && Number.isFinite(Number(zoneRef.lower)) && Number.isFinite(Number(zoneRef.upper));
+}
+function isTargetLadderIncomplete(ladder){
+  return !ladder?.tp1 || !ladder?.tp2 || !ladder?.tp3;
+}
+function buildBullishScenarioFromSnapshot(snapshot){
+  const scenarioZone = snapshot?.nearestDownside || null;
+  const targetLadder = buildScenarioTargetLadder(snapshot?.upsideRows, "bullish");
+  const hasZone = hasScenarioZone(scenarioZone);
+  return createScenarioPlanFromParts({
+    scenarioId: "potential_bullish_scenario",
+    scenarioType: "bullish_reversal",
+    direction: "bullish",
+    status: hasZone ? "waiting" : "informational",
+    scenarioZone,
+    invalidationReference: buildScenarioInvalidationReference(scenarioZone, "bullish"),
+    tp1: targetLadder.tp1,
+    tp2: targetLadder.tp2,
+    tp3: targetLadder.tp3,
+    confirmationRequirements: buildScenarioConfirmationRequirements(snapshot, "bullish", "bullish_reversal"),
+    confluenceSources: buildScenarioConfluenceSources(scenarioZone),
+    riskNotes: [hasZone ? "Scenario zone is a planning reference only." : "No downside planning zone is available.", isTargetLadderIncomplete(targetLadder) ? "Target references are incomplete." : "Target references come from existing upside Market Map rows."],
+    displayTitle: "Potential Bullish Scenario",
+  });
+}
+function buildBearishScenarioFromSnapshot(snapshot){
+  const scenarioZone = snapshot?.nearestUpside || null;
+  const targetLadder = buildScenarioTargetLadder(snapshot?.downsideRows, "bearish");
+  const hasZone = hasScenarioZone(scenarioZone);
+  return createScenarioPlanFromParts({
+    scenarioId: "potential_bearish_scenario",
+    scenarioType: "bearish_continuation",
+    direction: "bearish",
+    status: hasZone ? "waiting" : "informational",
+    scenarioZone,
+    invalidationReference: buildScenarioInvalidationReference(scenarioZone, "bearish"),
+    tp1: targetLadder.tp1,
+    tp2: targetLadder.tp2,
+    tp3: targetLadder.tp3,
+    confirmationRequirements: buildScenarioConfirmationRequirements(snapshot, "bearish", "bearish_continuation"),
+    confluenceSources: buildScenarioConfluenceSources(scenarioZone),
+    riskNotes: [hasZone ? "Scenario zone is a planning reference only." : "No upside planning zone is available.", isTargetLadderIncomplete(targetLadder) ? "Target references are incomplete." : "Target references come from existing downside Market Map rows."],
+    displayTitle: "Potential Bearish Scenario",
+  });
+}
+function hasStructuredIfvgContext(snapshot, direction){
+  return getScenarioIfvgContextForDirection(snapshot, direction).length > 0;
+}
+function buildBreakoutRetestScenarioFromSnapshot(snapshot){
+  const hasIfvg = hasStructuredIfvgContext(snapshot, "bullish");
+  return createScenarioPlanFromParts({
+    scenarioId: "breakout_retest_scenario",
+    scenarioType: "breakout_retest",
+    direction: "bullish",
+    status: hasIfvg ? "waiting" : "informational",
+    scenarioZone: null,
+    invalidationReference: null,
+    confirmationRequirements: buildScenarioConfirmationRequirements(snapshot, "bullish", "breakout_retest"),
+    confluenceSources: [],
+    riskNotes: [hasIfvg ? "IFVG context is available for review; retest confirmation remains required." : "IFVG context requires confirmation before breakout-retest planning."],
+    displayTitle: "Breakout Retest Scenario",
+  });
+}
+function buildBreakdownRetestScenarioFromSnapshot(snapshot){
+  const hasIfvg = hasStructuredIfvgContext(snapshot, "bearish");
+  return createScenarioPlanFromParts({
+    scenarioId: "breakdown_retest_scenario",
+    scenarioType: "breakdown_retest",
+    direction: "bearish",
+    status: hasIfvg ? "waiting" : "informational",
+    scenarioZone: null,
+    invalidationReference: null,
+    confirmationRequirements: buildScenarioConfirmationRequirements(snapshot, "bearish", "breakdown_retest"),
+    confluenceSources: [],
+    riskNotes: [hasIfvg ? "IFVG or failed-reclaim context is available for review; confirmation remains required." : "Breakdown context requires confirmation."],
+    displayTitle: "Breakdown Retest Scenario",
+  });
+}
+function buildWaitNoTradeScenarioFromSnapshot(snapshot, reason = "No clear planning context yet."){
+  return createScenarioPlanFromParts({
+    scenarioId: "wait_no_trade_scenario",
+    scenarioType: "wait_no_trade",
+    direction: "neutral",
+    status: "informational",
+    scenarioZone: null,
+    invalidationReference: null,
+    confirmationRequirements: buildScenarioConfirmationRequirements(snapshot, "neutral", "wait_no_trade"),
+    confluenceSources: [],
+    riskNotes: [reason, "Wait for price to reach a scenario zone or confirmation context to improve."],
+    displayTitle: "Wait / No-Trade Scenario",
+  });
+}
+function buildMultiScenarioPlansFromSnapshot(snapshot){
+  const bullish = buildBullishScenarioFromSnapshot(snapshot);
+  const bearish = buildBearishScenarioFromSnapshot(snapshot);
+  const breakout = buildBreakoutRetestScenarioFromSnapshot(snapshot);
+  const breakdown = buildBreakdownRetestScenarioFromSnapshot(snapshot);
+  const needsWait = !hasScenarioZone(bullish.scenarioZone) || !hasScenarioZone(bearish.scenarioZone) || isTargetLadderIncomplete(bullish) || isTargetLadderIncomplete(bearish);
+  const scenarios = [bullish, bearish, breakout, breakdown];
+  if(needsWait) scenarios.push(buildWaitNoTradeScenarioFromSnapshot(snapshot));
+  return scenarios;
+}
+function runMultiScenarioPlanFixtureTests(){
+  const row = (label, side, lower, upper, source = "h4_sr")=>({ label, side, lower, upper, center: (lower + upper) / 2, source, distancePct: 1, zoneText: `${lower}–${upper}`, sources: [{ label, source }] });
+  const snapshot = buildScenarioInputSnapshot({
+    upside: [row("4H Resistance", "upside", 110, 112), row("Daily Resistance", "upside", 120, 122), row("W Resistance", "upside", 130, 132)],
+    downside: [row("4H Support", "downside", 90, 92), row("Daily Support", "downside", 80, 82), row("W Support", "downside", 70, 72)],
+  }, { currentPrice: 100, h4: { liquidityOrderflowState: null }, weekly: {}, daily: {}, tradePlanScenario: createEmptyTradePlanScenario() });
+  const snapshotBefore = JSON.stringify(snapshot);
+  const plans = buildMultiScenarioPlansFromSnapshot(snapshot);
+  const missingTargets = buildScenarioTargetLadder([row("Only Resistance", "upside", 105, 106)], "bullish");
+  const emptyPlans = buildMultiScenarioPlansFromSnapshot(buildScenarioInputSnapshot({ upside: [], downside: [] }, { currentPrice: 100, h4: {}, weekly: {}, daily: {}, tradePlanScenario: null }));
+  const signalPattern = /buy now|sell now|guaranteed|entry confirmed/i;
+  const textBlob = JSON.stringify(plans);
+  const cases = [
+    { name: "bullish uses downside zone and upside targets", passed: plans[0]?.scenarioZone?.sourceSide === "downside" && plans[0]?.tp1?.sourceSide === "upside" },
+    { name: "bearish uses upside zone and downside targets", passed: plans[1]?.scenarioZone?.sourceSide === "upside" && plans[1]?.tp1?.sourceSide === "downside" },
+    { name: "missing target ladder returns null targets safely", passed: !!missingTargets.tp1 && missingTargets.tp2 === null && missingTargets.tp3 === null },
+    { name: "missing map rows returns informational wait scenario", passed: emptyPlans.some((plan)=>plan.scenarioType === "wait_no_trade" && plan.status === "informational") },
+    { name: "generator does not mutate input snapshot", passed: JSON.stringify(snapshot) === snapshotBefore },
+    { name: "scenario wording avoids direct signal language", passed: !signalPattern.test(textBlob) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runMultiScenarioPlanFixtureTests = runMultiScenarioPlanFixtureTests;
 function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
   return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: createEmptyFvgTimingZone(), overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
 }
