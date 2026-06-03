@@ -2832,6 +2832,125 @@ function createEmptyFvgTimingZone(reason = "1H timing data is unavailable."){
 function createEmptyTradePlanScenario(reason = "No trade scenario is available yet."){
   return { ok: false, primaryStatus: TRADE_SCENARIO_STATUS.NO_TRADE, primarySide: "neutral", reason, caution: [], buyScenario: null, sellScenario: null, selectedScenario: null, updatedAt: Date.now(), disclaimer: TRADE_SCENARIO_DISCLAIMER };
 }
+function createScenarioDisclaimer(){
+  return TRADE_SCENARIO_DISCLAIMER;
+}
+function createEmptyScenarioPlan(){
+  return {
+    scenarioId: null,
+    scenarioType: "wait_no_trade",
+    direction: "neutral",
+    status: "informational",
+    scenarioZone: null,
+    invalidationReference: null,
+    tp1: null,
+    tp2: null,
+    tp3: null,
+    confirmationRequirements: [],
+    confluenceSources: [],
+    riskNotes: [],
+    displayTitle: "Wait / No-Trade Scenario",
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
+function getScenarioReferenceSources(row){
+  return getConfluenceSourceList(row).map((source)=>source || {}).filter(Boolean);
+}
+function inferScenarioSourceTimeframe(source){
+  const text = `${source?.source || ""} ${source?.primarySource || ""} ${source?.label || ""} ${source?.timeframe || ""}`.toLowerCase();
+  if(text.includes("weekly") || text.includes("weekly_") || text.includes("w support") || text.includes("w resistance") || text.includes("w bullish") || text.includes("w bearish")) return "W";
+  if(text.includes("daily") || text.includes("daily_")) return "D";
+  if(text.includes("h4") || text.includes("4h")) return "4H";
+  if(text.includes("h1") || text.includes("1h")) return "1H";
+  return null;
+}
+function inferScenarioSourceType(source){
+  const kind = getMarketMapSourceKind(source);
+  if(kind === "fvg") return "FVG";
+  if(kind === "ifvg") return "IFVG";
+  if(kind === "support") return "Support";
+  if(kind === "resistance") return "Resistance";
+  if(kind === "channel") return "Channel";
+  if(kind === "range") return "Range";
+  return source?.type || source?.source || "Zone";
+}
+function getScenarioReferenceBase(row, role){
+  if(!row || !Number.isFinite(Number(row.lower)) || !Number.isFinite(Number(row.upper))) return null;
+  const lower = Math.min(Number(row.lower), Number(row.upper));
+  const upper = Math.max(Number(row.lower), Number(row.upper));
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+  const midpoint = Number.isFinite(Number(row.center)) ? Number(row.center) : (lower + upper) / 2;
+  const sources = getScenarioReferenceSources(row);
+  const sourceTimeframes = [...new Set(sources.map(inferScenarioSourceTimeframe).filter(Boolean))];
+  const sourceTypes = [...new Set(sources.map(inferScenarioSourceType).filter(Boolean))];
+  return {
+    label: row.label || row.confluenceLabel || row.primarySource || "Market Map Zone",
+    lower,
+    upper,
+    midpoint,
+    sourceSide: row.side || null,
+    sourceTimeframes,
+    sourceTypes,
+    sourceRowKey: row.key || row.id || null,
+    distancePct: Number.isFinite(Number(row.distancePct)) ? Number(row.distancePct) : null,
+    zoneText: row.zoneText || `${usd(lower)}–${usd(upper)}`,
+    role: role || null,
+    source: "Market Preparation Map",
+  };
+}
+function normalizeScenarioZoneReference(row, role = "scenarioZone"){
+  return getScenarioReferenceBase(row, role);
+}
+function normalizeScenarioTargetReference(row, role = "target"){
+  const base = getScenarioReferenceBase(row, role);
+  if(!base) return null;
+  return { ...base, price: base.midpoint };
+}
+function buildScenarioLiquidityContext(state){
+  const liquidity = state?.h4?.liquidityOrderflowState;
+  const episode = liquidity?.activeEpisode;
+  if(!episode) return null;
+  return {
+    timeframe: liquidity.timeframe || "4H",
+    role: liquidity.role || "context",
+    status: episode.status || null,
+    displayStatus: episode.displayStatus || null,
+    sweepType: episode.sweep?.type || null,
+    reclaimStatus: episode.reclaim?.status || null,
+    score: Number.isFinite(Number(episode.score)) ? Number(episode.score) : null,
+    band: episode.band || null,
+    confirmationBlockers: Array.isArray(liquidity.diagnostics?.confirmationBlockers) ? [...liquidity.diagnostics.confirmationBlockers] : [],
+    confirmationCorroborators: Array.isArray(liquidity.diagnostics?.confirmationCorroborators) ? [...liquidity.diagnostics.confirmationCorroborators] : [],
+  };
+}
+function buildScenarioIfvgContext(state){
+  const frames = [
+    { timeframe: "W", memory: state?.weekly?.recentBrokenFvgDetails },
+    { timeframe: "D", memory: state?.daily?.recentBrokenFvgDetails },
+    { timeframe: "4H", memory: state?.h4?.recentBrokenFvgDetails },
+  ];
+  return frames.map((frame)=>({
+    timeframe: frame.timeframe,
+    bullish: frame.memory?.bullish?.ifvg ? { state: frame.memory.bullish.ifvg.state || null, label: frame.memory.bullish.ifvg.ui?.label || null } : null,
+    bearish: frame.memory?.bearish?.ifvg ? { state: frame.memory.bearish.ifvg.state || null, label: frame.memory.bearish.ifvg.ui?.label || null } : null,
+    count: Array.isArray(frame.memory?.all) ? frame.memory.all.length : 0,
+  }));
+}
+function buildScenarioInputSnapshot(mapData = {}, state = marketPreparationState){
+  const upsideRows = Array.isArray(mapData?.upside) ? [...mapData.upside] : [];
+  const downsideRows = Array.isArray(mapData?.downside) ? [...mapData.downside] : [];
+  return {
+    currentPrice: Number.isFinite(Number(state?.currentPrice)) ? Number(state.currentPrice) : null,
+    upsideRows,
+    downsideRows,
+    nearestUpside: normalizeScenarioZoneReference(upsideRows[0], "nearestUpside"),
+    nearestDownside: normalizeScenarioZoneReference(downsideRows[0], "nearestDownside"),
+    h4LiquidityContext: buildScenarioLiquidityContext(state),
+    ifvgContext: buildScenarioIfvgContext(state),
+    existingTradePlanScenario: state?.tradePlanScenario || null,
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
 function createEmptyFvgMtfContext(reason = "No active overlapping Weekly/Daily/4H FVG cluster."){
   return { ok: false, direction: null, relation: "No clear MTF FVG overlap", parentZone: null, activeZone: null, reactionZone: null, timingZone: createEmptyFvgTimingZone(), overlapZone: null, coreZone: null, precisionZone: null, sources: [], conflictReason: null, conflict: createEmptyFvgConflictState(), qualityHint: null, reason, updatedAt: Date.now() };
 }
