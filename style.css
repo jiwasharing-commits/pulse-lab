@@ -308,6 +308,12 @@
 #weeklySrOverlay{z-index:3}
 #weeklySrOverlay .fvg-zone.bullish{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.85)}
 #weeklySrOverlay .fvg-zone.bearish{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.85)}
+.daily-sr-zone,#lower4hSrOverlay .ltf-sr-zone{border-left:0;border-right:0;border-radius:2px;box-shadow:0 1px 6px rgba(2,6,23,.12)}
+.daily-sr-zone.support,#lower4hSrOverlay .ltf-sr-zone.support{background:linear-gradient(to bottom,rgba(56,189,248,.03),rgba(56,189,248,.03) 38%,rgba(56,189,248,.22) 38%,rgba(56,189,248,.22) 62%,rgba(56,189,248,.03) 62%,rgba(56,189,248,.03));border-top-color:rgba(56,189,248,.78);border-bottom-color:rgba(56,189,248,.78)}
+.daily-sr-zone.resistance,#lower4hSrOverlay .ltf-sr-zone.resistance{background:linear-gradient(to bottom,rgba(251,191,36,.03),rgba(251,191,36,.03) 38%,rgba(251,191,36,.22) 38%,rgba(251,191,36,.22) 62%,rgba(251,191,36,.03) 62%,rgba(251,191,36,.03));border-top-color:rgba(251,191,36,.78);border-bottom-color:rgba(251,191,36,.78)}
+#weeklySrOverlay .fvg-zone{border-left:0;border-right:0;border-radius:2px;box-shadow:0 1px 6px rgba(2,6,23,.14)}
+#weeklySrOverlay .fvg-zone.bullish{background:linear-gradient(to bottom,rgba(56,189,248,.03),rgba(56,189,248,.03) 38%,rgba(56,189,248,.24) 38%,rgba(56,189,248,.24) 62%,rgba(56,189,248,.03) 62%,rgba(56,189,248,.03));border-top-color:rgba(56,189,248,.85);border-bottom-color:rgba(56,189,248,.85)}
+#weeklySrOverlay .fvg-zone.bearish{background:linear-gradient(to bottom,rgba(251,191,36,.03),rgba(251,191,36,.03) 38%,rgba(251,191,36,.24) 38%,rgba(251,191,36,.24) 62%,rgba(251,191,36,.03) 62%,rgba(251,191,36,.03));border-top-color:rgba(251,191,36,.85);border-bottom-color:rgba(251,191,36,.85)}
 
 .ltf-analysis-card-compact{display:grid;gap:6px}
 .ltf-analysis-row{margin:.05rem 0;color:var(--muted);font-size:.7rem}
