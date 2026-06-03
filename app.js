@@ -3836,18 +3836,49 @@ function getFvgOverlayDirectionLabel(zone, detail = null){
 }
 function formatFvgOverlayLabel(zone, timeframe, detailCandidates = null){
   const detail = findFvgDetailForZone(zone, timeframe, detailCandidates);
-  const directionLabel = getFvgOverlayDirectionLabel(zone, detail);
-  const status = detail?.detailStatus || zone?.status || "Active";
-  const tf = timeframe || detail?.timeframe || zone?.timeframe || "FVG";
-  const prefix = [tf, directionLabel, "FVG"].filter(Boolean).join(" ");
-  return `${prefix} · ${status}`;
+  return formatChartMarkLabel({
+    timeframe: timeframe || detail?.timeframe || zone?.timeframe || "FVG",
+    category: "FVG",
+    side: getFvgOverlayDirectionLabel(zone, detail),
+    status: detail?.detailStatus || zone?.status || "Active",
+  });
+}
+function formatFvgOverlayTooltip(zone, timeframe, detailCandidates = null){
+  const detail = findFvgDetailForZone(zone, timeframe, detailCandidates);
+  const extras = [
+    Number.isFinite(Number(detail?.failedReclaimCount)) ? `Failed reclaim ${detail.failedReclaimCount}x` : "",
+    detail?.retestStatus ? `Retest: ${detail.retestStatus}` : "",
+    detail?.waitingContext ? `Waiting: ${detail.waitingContext}` : "",
+  ].filter(Boolean).join(" · ");
+  return buildChartMarkTooltip({
+    timeframe: timeframe || detail?.timeframe || zone?.timeframe || "FVG",
+    category: "FVG",
+    side: getFvgOverlayDirectionLabel(zone, detail),
+    status: detail?.detailStatus || zone?.status || "Active",
+    priceRange: { lower: zone?.lower, upper: zone?.upper },
+    detailText: extras,
+  });
 }
 
 // Render-only chart mark label helpers for future Weekly/Daily/4H/1H label consistency.
 // These helpers normalize display text only; they do not read DOM, touch charts, or mutate app state.
 function normalizeChartMarkLabel(mark = {}){
   const normalizeText = (value)=>String(value || "").trim();
-  const timeframe = normalizeText(mark.timeframe || mark.tf).toUpperCase();
+  const rawTimeframe = normalizeText(mark.timeframe || mark.tf);
+  const timeframeLookup = {
+    weekly: "W",
+    week: "W",
+    w: "W",
+    daily: "D",
+    day: "D",
+    d: "D",
+    "1d": "D",
+    h4: "4H",
+    "4h": "4H",
+    h1: "1H",
+    "1h": "1H",
+  };
+  const timeframe = timeframeLookup[rawTimeframe.toLowerCase()] || rawTimeframe.toUpperCase();
   const rawCategory = normalizeText(mark.category || mark.type);
   const categoryLookup = {
     snr: "SNR",
@@ -3873,17 +3904,26 @@ function normalizeChartMarkLabel(mark = {}){
   };
   const side = sideLookup[rawSide.toLowerCase()] || rawSide;
   const rawStatus = normalizeText(mark.status);
+  const normalizedStatusKey = rawStatus.toLowerCase().replace(/[\s_-]+/g, " ");
   const statusLookup = {
     active: "Active",
-    broken: "Broken",
+    valid: "Active",
+    unfilled: "Fresh",
     fresh: "Fresh",
     touched: "Touched",
+    touch: "Touched",
+    "partially filled": "Touched",
+    partial: "Touched",
     mitigated: "Mitigated",
-    filled: "Filled",
+    "partially mitigated": "Mitigated",
+    filled: "Mitigated",
+    broken: "Broken",
     invalid: "Invalid",
+    invalidated: "Invalid",
     neutral: "Neutral",
   };
-  const status = statusLookup[rawStatus.toLowerCase()] || rawStatus;
+  const normalizedStatus = statusLookup[normalizedStatusKey] || rawStatus;
+  const status = category === "FVG" && normalizedStatus === "Broken" ? "Invalid" : normalizedStatus;
   const price = Number.isFinite(Number(mark.price)) ? Number(mark.price) : null;
   const range = mark.priceRange || mark.range || null;
   const lower = Number(range?.lower);
@@ -3894,10 +3934,11 @@ function normalizeChartMarkLabel(mark = {}){
   const priority = Number.isFinite(Number(mark.priority)) ? Number(mark.priority) : 0;
   const detailText = normalizeText(mark.detailText);
   const explicitLabelText = normalizeText(mark.labelText);
-  return { timeframe, category, side, status, price, priceRange, labelText: explicitLabelText, detailText, priority };
+  const subtype = normalizeText(mark.subtype || mark.eventType);
+  return { timeframe, category, side, status, price, priceRange, labelText: explicitLabelText, detailText, priority, subtype };
 }
 
-// Builds compact labels such as "W Support", "4H Bull FVG - Fresh", or "1H BOS".
+// Builds compact labels such as "W Support · Active", "4H Bull FVG · Fresh", or "1H BOS".
 function buildChartMarkLabel(mark = {}){
   const normalized = normalizeChartMarkLabel(mark);
   if(normalized.labelText) return normalized.labelText;
@@ -3911,7 +3952,8 @@ function buildChartMarkLabel(mark = {}){
     if(normalized.side && normalized.side !== "Neutral") parts.push(normalized.side);
     else parts.push("SNR");
   } else if(normalized.category === "Liquidity"){
-    parts.push(normalized.side && normalized.side !== "Neutral" ? normalized.side : "Sweep");
+    if(normalized.side && normalized.side !== "Neutral") parts.push(normalized.side);
+    parts.push(normalized.subtype || "Sweep");
   } else if(normalized.category === "Structure"){
     parts.push(normalized.side && normalized.side !== "Neutral" ? normalized.side : "Structure");
   } else if(normalized.category){
@@ -3919,12 +3961,24 @@ function buildChartMarkLabel(mark = {}){
   }
 
   const baseLabel = parts.filter(Boolean).join(" ") || "Chart Mark";
-  const shouldShowStatus = normalized.status && !["Active", "Neutral"].includes(normalized.status);
-  return shouldShowStatus ? `${baseLabel} - ${normalized.status}` : baseLabel;
+  const shouldShowStatus = normalized.status && !["Neutral"].includes(normalized.status);
+  return shouldShowStatus ? `${baseLabel} · ${normalized.status}` : baseLabel;
 }
 
 function formatChartMarkLabel(mark = {}){
   return buildChartMarkLabel(mark);
+}
+
+function buildChartMarkTooltip(mark = {}){
+  const normalized = normalizeChartMarkLabel(mark);
+  const timeframeName = ({ W:"Weekly", D:"Daily", "4H":"4H", "1H":"1H" })[normalized.timeframe] || normalized.timeframe;
+  const label = formatChartMarkLabel(mark);
+  const detailParts = [timeframeName, normalized.side, normalized.category, normalized.status]
+    .filter((part)=>part && part !== "Neutral");
+  const range = normalized.priceRange ? `${usd(normalized.priceRange.lower)} - ${usd(normalized.priceRange.upper)}` : null;
+  const details = [label, [...new Set(detailParts)].join(" "), range, normalized.detailText]
+    .filter(Boolean);
+  return [...new Set(details)].join(" · ");
 }
 function findFvgDetailForMapSource(source){
   if(!isFvgMapSource(source)) return null;
@@ -6746,8 +6800,8 @@ function renderWeeklySrOverlay(summary, dataset){
       const cy=(yTop+yBottom)/2;
       el.style.top=`${h===Math.abs(yBottom-yTop)?top:(cy-h/2)}px`;
       el.style.height=`${h}px`;
-      const labelText = formatChartMarkLabel({ timeframe:"W", category:"SNR", side });
-      el.title = `${labelText} · ${zone.strength || "Zone"} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const labelText = formatChartMarkLabel({ timeframe:"W", category:"SNR", side, status:zone.status });
+      el.title = buildChartMarkTooltip({ timeframe:"W", category:"SNR", side, status:zone.status, priceRange:{ lower:zone.lower, upper:zone.upper }, detailText:zone.strength || "Zone" });
       const label=document.createElement('span');
       label.className='weekly-sr-label chart-snr-label';
       label.textContent=labelText;
@@ -8066,7 +8120,8 @@ function renderFvgFilledOverlay(){
       rect.style.top = `${Math.min(yTop, yBottom)}px`;
       rect.style.width = `${width}px`;
       rect.style.height = `${Math.max(1, Math.abs(yBottom - yTop))}px`;
-      rect.title = `${formatFvgOverlayLabel(f, "Weekly")} | ${f.startLabel} → ${f.endLabel}`;
+      const overlayTooltip = formatFvgOverlayTooltip(f, "Weekly");
+      rect.title = [overlayTooltip, `${f.startLabel} → ${f.endLabel}`].filter(Boolean).join(" · ");
       layer.appendChild(rect);
     });
   } catch (e) {
@@ -8575,7 +8630,7 @@ function renderDailyFvgOverlay(){
       el.style.width = `${width}px`;
       el.style.height = `${height}px`;
       const overlayLabel = formatFvgOverlayLabel(zone, "Daily");
-      el.title = `${overlayLabel} · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      el.title = formatFvgOverlayTooltip(zone, "Daily");
       const label = document.createElement("span");
       label.className = "daily-fvg-label fvg-overlay-label";
       label.textContent = overlayLabel;
@@ -8650,10 +8705,12 @@ function renderDailySrOverlay(){
       el.style.top = `${top}px`;
       el.style.width = `${width}px`;
       el.style.height = `${height}px`;
-      el.title = `${isSupport ? "Daily Support" : "Daily Resistance"} · ${zone.strength || "Zone"} · Touch ${zone.touchCount ?? "—"}x · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const side = isSupport ? "Support" : "Resistance";
+      const labelText = formatChartMarkLabel({ timeframe:"D", category:"SNR", side, status:zone.status });
+      el.title = buildChartMarkTooltip({ timeframe:"D", category:"SNR", side, status:zone.status, priceRange:{ lower:zone.lower, upper:zone.upper }, detailText:`${zone.strength || "Zone"} · Touch ${zone.touchCount ?? "—"}x` });
       const label = document.createElement("span");
       label.className = "daily-sr-label";
-      label.textContent = isSupport ? "Daily Support" : "Daily Resistance";
+      label.textContent = labelText;
       el.appendChild(label);
       layer.appendChild(el);
     });
@@ -9014,8 +9071,8 @@ function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
       div.style.width=`${width}px`;
       div.style.height=`${height}px`;
       const side = zone.type==='support' ? 'Support' : 'Resistance';
-      const labelText = formatChartMarkLabel({ timeframe:"4H", category:"SNR", side });
-      div.title = `${labelText} · ${zone.strength || "Zone"} · Touch ${zone.touchCount ?? "—"}x · ${usd(zone.lower)} - ${usd(zone.upper)}`;
+      const labelText = formatChartMarkLabel({ timeframe:"4H", category:"SNR", side, status:zone.status });
+      div.title = buildChartMarkTooltip({ timeframe:"4H", category:"SNR", side, status:zone.status, priceRange:{ lower:zone.lower, upper:zone.upper }, detailText:`${zone.strength || "Zone"} · Touch ${zone.touchCount ?? "—"}x` });
       const label=document.createElement('span');
       label.className='h4-sr-label chart-snr-label';
       label.textContent=labelText;
@@ -9120,7 +9177,7 @@ function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candl
     r.style.background=bull?'rgba(34, 197, 94, 0.22)':'rgba(239, 68, 68, 0.22)';
     r.style.borderColor=bull?'rgba(34, 197, 94, 0.80)':'rgba(239, 68, 68, 0.80)';
     const overlayLabel = formatFvgOverlayLabel(f, "4H", fvgDetails);
-    r.title = `${overlayLabel} · ${usd(f.lower)} - ${usd(f.upper)}`;
+    r.title = formatFvgOverlayTooltip(f, "4H", fvgDetails);
     const label=document.createElement('span');
     label.className='fvg-overlay-label';
     label.textContent=overlayLabel;
@@ -9360,12 +9417,13 @@ function render1hEventMarkers(candles){
         console.warn('1H sweep marker skipped: missing time');
       } else {
         const bullish=sweep.status.includes('Bullish');
+        const sweepLabel = formatChartMarkLabel({ timeframe:"1H", category:"Liquidity", side:bullish ? "Bull" : "Bear", subtype:"Sweep" });
         markers.push({
           time: sweep.time,
           position: bullish ? 'belowBar' : 'aboveBar',
           color: bullish ? '#22c55e' : '#ef4444',
           shape: bullish ? 'arrowUp' : 'arrowDown',
-          text: sweep.status,
+          text: sweepLabel,
         });
       }
     }
@@ -9376,12 +9434,13 @@ function render1hEventMarkers(candles){
     if(st && st.status && st.status!=='No clear 1H structure shift'){
       const latestCandle=candles[candles.length-1];
       const bullish=st.status.includes('Bullish');
+      const structureLabel = formatChartMarkLabel({ timeframe:"1H", category:"Structure", side:/CHoCH/i.test(st.status) ? "CHOCH" : "BOS" });
       markers.push({
         time: latestCandle.time,
         position: bullish ? 'belowBar' : 'aboveBar',
         color: bullish ? '#22c55e' : '#ef4444',
         shape: bullish ? 'arrowUp' : 'arrowDown',
-        text: st.status,
+        text: structureLabel,
       });
     }
   }
