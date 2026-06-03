@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -4816,6 +4816,106 @@ function renderTradePlanScenario(){
   if(!els.tradePlanScenarioPanel) return;
   els.tradePlanScenarioPanel.innerHTML = formatTradePlanScenarioPanel(marketPreparationState.tradePlanScenario);
 }
+function formatScenarioPlanningStatusLabel(status){
+  const key = String(status || "informational").toLowerCase();
+  if(key === "ready") return "Ready for Review";
+  if(key === "waiting") return "Waiting";
+  if(key === "invalid") return "Invalid";
+  return "Informational";
+}
+function getScenarioPlanningStatusClass(status){
+  const key = String(status || "informational").toLowerCase();
+  if(key === "ready") return "status-ready";
+  if(key === "waiting") return "status-waiting";
+  if(key === "invalid") return "status-invalid";
+  return "status-informational";
+}
+function formatScenarioZoneDisplay(zone){
+  if(!zone) return "—";
+  const range = zone.zoneText || (Number.isFinite(Number(zone.lower)) && Number.isFinite(Number(zone.upper)) ? `${formatScenarioPrice(zone.lower)}–${formatScenarioPrice(zone.upper)}` : "—");
+  return [zone.label, range, zone.source].filter(Boolean).join(" · ");
+}
+function formatScenarioReferenceLevel(ref){
+  if(!ref) return "—";
+  const price = Number.isFinite(Number(ref.price)) ? formatScenarioPrice(ref.price) : null;
+  const range = ref.zoneText || (Number.isFinite(Number(ref.lower)) && Number.isFinite(Number(ref.upper)) ? `${formatScenarioPrice(ref.lower)}–${formatScenarioPrice(ref.upper)}` : null);
+  return [ref.label, price || range, ref.source].filter(Boolean).join(" · ") || "—";
+}
+function formatScenarioConfirmationList(items){
+  const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 4) : [];
+  if(!list.length) return '<p class="scenario-planning-muted">—</p>';
+  return `<div class="scenario-planning-chip-list">${list.map((item)=>`<span class="scenario-planning-chip">${escapeHtml(item.label)}</span>`).join("")}</div>`;
+}
+function formatScenarioConfluenceList(items){
+  const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 3) : [];
+  if(!list.length) return "—";
+  return list.map((item)=>item.label).join(" · ");
+}
+function formatScenarioRiskNotes(items){
+  const list = Array.isArray(items) ? items.filter(Boolean).slice(0, 3) : [];
+  if(!list.length) return '<p class="scenario-planning-muted">—</p>';
+  return `<ul class="scenario-planning-notes">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+function formatScenarioPlanningCard(plan){
+  const statusLabel = formatScenarioPlanningStatusLabel(plan?.status);
+  const invalidationText = plan?.invalidationReference ? formatScenarioReferenceLevel(plan.invalidationReference) : "—";
+  return `
+    <article class="scenario-planning-item">
+      <div class="scenario-planning-item-header">
+        <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
+        <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <div class="scenario-planning-grid">
+        <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
+        <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
+        <div class="scenario-planning-row"><span>TP1 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp1))}</strong></div>
+        <div class="scenario-planning-row"><span>TP2 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp2))}</strong></div>
+        <div class="scenario-planning-row"><span>TP3 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp3))}</strong></div>
+        <div class="scenario-planning-row"><span>Confluence Reason</span><strong>${escapeHtml(formatScenarioConfluenceList(plan?.confluenceSources))}</strong></div>
+      </div>
+      <div class="scenario-planning-block"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
+      <div class="scenario-planning-block"><span>Risk Notes</span>${formatScenarioRiskNotes(plan?.riskNotes)}</div>
+    </article>
+  `;
+}
+function formatMultiScenarioPlanningSection(plans = []){
+  const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
+  const cardsHtml = scenarios.length ? `<div class="scenario-planning-grid-cards">${scenarios.map(formatScenarioPlanningCard).join("")}</div>` : '<p class="scenario-planning-empty">No multi-scenario planning context available yet.</p>';
+  return `
+    <div class="scenario-planning-header">
+      <div>
+        <h3>Multi-Scenario Planning</h3>
+        <p>Read-only planning context · not financial advice or a direct trading signal.</p>
+      </div>
+    </div>
+    ${cardsHtml}
+    <p class="scenario-planning-footer">${escapeHtml(createScenarioDisclaimer())}</p>
+  `;
+}
+function renderMultiScenarioPlanningSection(mapData){
+  if(!els.multiScenarioPlanningPanel) return;
+  const snapshot = buildScenarioInputSnapshot(mapData || marketPreparationState.map, marketPreparationState);
+  const plans = buildMultiScenarioPlansFromSnapshot(snapshot);
+  els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
+}
+function runMultiScenarioPlanningUiFixtureTests(){
+  const statusLabelsSafe = formatScenarioPlanningStatusLabel("ready") === "Ready for Review" && formatScenarioPlanningStatusLabel("waiting") === "Waiting" && formatScenarioPlanningStatusLabel("invalid") === "Invalid" && formatScenarioPlanningStatusLabel("informational") === "Informational";
+  const missingRefsSafe = formatScenarioReferenceLevel(null) === "—" && formatScenarioZoneDisplay(null) === "—";
+  const fallbackHtml = formatMultiScenarioPlanningSection([]);
+  const sampleHtml = formatMultiScenarioPlanningSection([createScenarioPlanFromParts({ displayTitle: "Potential Bullish Scenario", status: "ready", riskNotes: ["Scenario zone is a planning reference only."] })]);
+  const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|must enter|must exit/i;
+  const planFixtures = runMultiScenarioPlanFixtureTests();
+  const cases = [
+    { name: "status labels are safe", passed: statusLabelsSafe },
+    { name: "reference levels render missing values safely", passed: missingRefsSafe },
+    { name: "direct signal wording is not present", passed: !forbidden.test(sampleHtml) },
+    { name: "empty scenario list renders fallback text", passed: fallbackHtml.includes("No multi-scenario planning context available yet.") },
+    { name: "multi-scenario generator fixture still passes", passed: planFixtures.passed === true },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runMultiScenarioPlanningUiFixtureTests = runMultiScenarioPlanningUiFixtureTests;
 function getIfvgContextItems(){
   const sources = [
     { timeframe: "Weekly", memory: marketPreparationState.weekly?.recentBrokenFvgDetails },
@@ -6246,6 +6346,7 @@ function renderMarketPreparationMap(mapData){
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
   refreshTradePlanScenario(safeMap);
   renderTradePlanScenario();
+  renderMultiScenarioPlanningSection(safeMap);
   renderIfvgContextPanel();
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);

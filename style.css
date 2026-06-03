@@ -179,6 +179,31 @@
 .trade-plan-status.status-candidate{background:rgba(59,130,246,.16);border-color:rgba(96,165,250,.5);color:#bfdbfe}
 .trade-plan-status.status-active{background:rgba(34,197,94,.16);border-color:rgba(74,222,128,.5);color:#bbf7d0}
 .trade-plan-status.status-invalidated{background:rgba(239,68,68,.16);border-color:rgba(248,113,113,.52);color:#fecaca}
+.scenario-planning-card{margin-top:12px;padding:.78rem .85rem;border:1px solid rgba(96,165,250,.16);border-radius:.85rem;background:linear-gradient(180deg,rgba(15,23,42,.82),rgba(8,18,34,.64));box-shadow:0 10px 22px rgba(2,6,23,.15)}
+.scenario-planning-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:.65rem}
+.scenario-planning-header h3{margin:0;color:#e5edff;font-size:.95rem;line-height:1.15}
+.scenario-planning-header p{margin:.16rem 0 0;color:var(--muted);font-size:.72rem;line-height:1.25}
+.scenario-planning-grid-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.scenario-planning-item{min-width:0;border:1px solid rgba(148,163,184,.13);border-radius:.75rem;background:rgba(15,23,42,.42);padding:.58rem .62rem}
+.scenario-planning-item-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:.48rem}
+.scenario-planning-item-header h4{margin:0;color:#e5edff;font-size:.84rem;line-height:1.2}
+.scenario-planning-status{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:.13rem .42rem;font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.scenario-planning-status.status-ready{background:rgba(34,197,94,.14);border-color:rgba(74,222,128,.42);color:#bbf7d0}
+.scenario-planning-status.status-waiting{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.42);color:#fde68a}
+.scenario-planning-status.status-invalid{background:rgba(239,68,68,.14);border-color:rgba(248,113,113,.45);color:#fecaca}
+.scenario-planning-status.status-informational{background:rgba(59,130,246,.13);border-color:rgba(96,165,250,.38);color:#bfdbfe}
+.scenario-planning-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.scenario-planning-row{min-width:0;border:1px solid rgba(148,163,184,.1);border-radius:.58rem;background:rgba(15,23,42,.34);padding:.38rem .45rem}
+.scenario-planning-row span,.scenario-planning-block>span{display:block;margin-bottom:.14rem;color:#8fa0c4;font-size:.61rem;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
+.scenario-planning-row strong{display:block;color:#e5edff;font-size:.7rem;line-height:1.28;overflow-wrap:anywhere}
+.scenario-planning-block{margin-top:.45rem;min-width:0}
+.scenario-planning-chip-list{display:flex;flex-wrap:wrap;gap:5px}
+.scenario-planning-chip{border:1px solid rgba(148,163,184,.16);border-radius:999px;background:rgba(15,23,42,.44);color:#dbeafe;padding:.12rem .38rem;font-size:.64rem;line-height:1.25}
+.scenario-planning-notes{margin:.12rem 0 0 1rem;padding:0;color:#cbd5e1;font-size:.68rem;line-height:1.32}
+.scenario-planning-notes li{margin:.08rem 0}
+.scenario-planning-muted,.scenario-planning-empty,.scenario-planning-footer{color:#8fa0c4;font-size:.69rem;line-height:1.3}
+.scenario-planning-empty{margin:.35rem 0 0}
+.scenario-planning-footer{margin:.58rem 0 0}
 .ifvg-context-card{margin-top:12px;padding:.78rem .85rem;border:1px solid rgba(56,189,248,.16);border-radius:.85rem;background:linear-gradient(180deg,rgba(8,18,34,.9),rgba(15,23,42,.62));box-shadow:0 10px 22px rgba(2,6,23,.14)}
 .ifvg-context-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:.58rem}
 .ifvg-context-header h3{margin:0;color:#e5edff;font-size:.95rem;line-height:1.15}
@@ -198,7 +223,8 @@
 .ifvg-state-failed{background:rgba(239,68,68,.14);border-color:rgba(248,113,113,.45);color:#fecaca}
 .ifvg-state-stale{background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.35);color:#d8e0f0}
 @media (max-width:760px){.ifvg-context-grid{grid-template-columns:1fr}}
-@media (max-width:560px){.trade-plan-header{display:grid;gap:8px}.trade-plan-status{width:max-content}.trade-plan-grid{grid-template-columns:1fr}.trade-plan-row{padding:.48rem .52rem}.ifvg-context-card{padding:.7rem}.ifvg-context-timeframe{padding:.48rem .52rem}}
+@media (max-width:760px){.scenario-planning-grid-cards{grid-template-columns:1fr}}
+@media (max-width:560px){.trade-plan-header,.scenario-planning-header{display:grid;gap:8px}.trade-plan-status,.scenario-planning-status{width:max-content}.trade-plan-grid,.scenario-planning-grid{grid-template-columns:1fr}.trade-plan-row{padding:.48rem .52rem}.scenario-planning-card{padding:.7rem}.scenario-planning-item{padding:.52rem}.ifvg-context-card{padding:.7rem}.ifvg-context-timeframe{padding:.48rem .52rem}}
 
 .conclusion-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
 .conclusion-grid .panel,.conclusion-grid .card{margin-bottom:0}
