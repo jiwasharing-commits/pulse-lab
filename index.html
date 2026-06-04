@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pulse Lab</title>
-    <link rel="stylesheet" href="style.css?v=patch-6a-1" />
+    <link rel="stylesheet" href="style.css?v=patch-6b-1" />
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
@@ -85,7 +85,9 @@
             <div class="context-summary-header"><div><h3>Key Market Zones Summary</h3><p>Market Map reference zones · for review only.</p></div></div>
             <p class="context-summary-empty">Key market zone context unavailable.</p>
           </section>
-          <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
+          <details id="marketPreparationMapDetails" class="market-map-details">
+            <summary>Market Preparation Map Details <small>Show Full Market Map · zone database and planning references</small></summary>
+            <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
             <div class="panel-header compact-header">
               <div>
                 <h3>Market Preparation Map</h3>
@@ -113,7 +115,8 @@
                 <p class="prep-map-empty">No downside watch levels available.</p>
               </div>
             </div>
-          </section>
+            </section>
+          </details>
           <section id="multiScenarioPlanningPanel" class="scenario-planning-card" aria-live="polite">
             <div class="scenario-planning-header">
               <div>
@@ -323,6 +326,6 @@
       </div>
     </div>
     <div id="pdfReportRoot" class="pdf-report-root" hidden></div>
-    <script src="app.js?v=patch-6a-1"></script>
+    <script src="app.js?v=patch-6b-1"></script>
   </body>
 </html>

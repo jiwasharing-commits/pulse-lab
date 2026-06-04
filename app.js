@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -5372,10 +5372,61 @@ function formatNearestZoneDetail(row, directionText){
 function renderKeyZoneDetailBlock(title, detail){
   return `<div class="key-zone-nearest-card"><p class="key-zone-zone-title">${escapeHtml(title)}</p><p class="key-zone-zone-range">${escapeHtml(detail?.range || "—")}</p><p class="key-zone-zone-detail">Type: ${escapeHtml(detail?.type || "—")}</p><p class="key-zone-zone-detail">Sources: ${escapeHtml(detail?.sources || "—")}</p></div>`;
 }
+function getScenarioMapReferenceKey(reference){
+  if(!reference || !Number.isFinite(Number(reference.lower)) || !Number.isFinite(Number(reference.upper))) return "";
+  const lower = Math.min(Number(reference.lower), Number(reference.upper)).toFixed(2);
+  const upper = Math.max(Number(reference.lower), Number(reference.upper)).toFixed(2);
+  return `${reference.sourceSide || reference.side || "zone"}|${lower}|${upper}`;
+}
+function buildScenarioMarketMapUsageIndex(plans){
+  const usage = new Map();
+  const add = (reference, badge)=>{
+    const key = getScenarioMapReferenceKey(reference);
+    if(!key || !badge) return;
+    if(!usage.has(key)) usage.set(key, []);
+    if(!usage.get(key).includes(badge)) usage.get(key).push(badge);
+  };
+  (Array.isArray(plans) ? plans : []).forEach((plan)=>{
+    const title = plan?.displayTitle || "Scenario";
+    add(plan?.scenarioZone, `Used as Scenario Zone · ${title}`);
+    add(plan?.tp1, `Used as TP1 Reference · ${title}`);
+    add(plan?.tp2, `Used as TP2 Reference · ${title}`);
+    add(plan?.tp3, `Used as TP3 Reference · ${title}`);
+  });
+  return usage;
+}
+function getMarketMapRowScenarioBadges(row, usageIndex){
+  if(!(usageIndex instanceof Map)) return [];
+  return [...(usageIndex.get(getScenarioMapReferenceKey(row)) || [])];
+}
+function formatMarketMapScenarioBadges(row, usageIndex){
+  const badges = getMarketMapRowScenarioBadges(row, usageIndex).slice(0, 3);
+  return badges.length ? `<span class="prep-map-scenario-badges">${badges.map((badge)=>`<span>${escapeHtml(badge)}</span>`).join("")}</span>` : "";
+}
+function buildCurrentScenarioMarketMapUsageIndex(mapData){
+  const snapshot = buildScenarioInputSnapshot(mapData || marketPreparationState.map, marketPreparationState);
+  return buildScenarioMarketMapUsageIndex(buildMultiScenarioPlansFromSnapshot(snapshot));
+}
+function getMarketMapCompactUiConfig(){
+  return { collapsedByDefault: true, label: "Market Preparation Map Details", action: "Show Full Market Map", description: "zone database and planning references" };
+}
+function runMarketMapCompactUiFixtureTests(){
+  const config = getMarketMapCompactUiConfig();
+  const row = { lower: 90, upper: 92, side: "downside", zoneText: "$90–$92", label: "Support", sources: [] };
+  const html = renderMarketMapHeader() + renderMarketMapGrid([row], {});
+  const forbidden = /buy area|sell area|entry signal|stoploss|guaranteed target|high probability trade/i;
+  const cases = [{name:"compact map is collapsed by default",passed:config.collapsedByDefault===true},{name:"compact label uses safe wording",passed:config.label==="Market Preparation Map Details"&&config.action==="Show Full Market Map"},{name:"map rows remain renderable",passed:html.includes("prep-map-row")&&html.includes("$90–$92")},{name:"compact wording is signal-safe",passed:!forbidden.test(JSON.stringify(config)+html)}];
+  const failed=cases.filter((item)=>!item.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+function runScenarioMarketMapUsageBadgeFixtureTests(){
+  const row={side:"downside",lower:90,upper:92}; const plan={displayTitle:"Potential Bullish Scenario",scenarioZone:{sourceSide:"downside",lower:90,upper:92},tp1:{sourceSide:"upside",lower:110,upper:112}}; const before=JSON.stringify({row,plan}); const empty=buildScenarioMarketMapUsageIndex([]); const usage=buildScenarioMarketMapUsageIndex([plan]); const badges=getMarketMapRowScenarioBadges(row,usage); const html=formatMarketMapScenarioBadges(row,usage); const forbidden=/buy|sell|entry|signal|stoploss|guaranteed|high probability/i;
+  const cases=[{name:"empty plans are safe",passed:empty.size===0},{name:"unreferenced rows have no badge",passed:getMarketMapRowScenarioBadges({side:"downside",lower:80,upper:82},usage).length===0},{name:"referenced rows show safe badge",passed:badges.length===1&&html.includes("Used as Scenario Zone")},{name:"usage matching does not mutate inputs",passed:before===JSON.stringify({row,plan})},{name:"badge wording is signal-safe",passed:!forbidden.test(html)}]; const failed=cases.filter((item)=>!item.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+if(typeof window!=="undefined"){window.runMarketMapCompactUiFixtureTests=runMarketMapCompactUiFixtureTests;window.runScenarioMarketMapUsageBadgeFixtureTests=runScenarioMarketMapUsageBadgeFixtureTests;}
 function renderMarketMapHeader(){
   return `<div class="prep-map-header-row" aria-hidden="true"><span>Zone</span><span>Type</span><span>Sources</span><span>Distance</span></div>`;
 }
-function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "" } = {}){
+function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "", usageIndex = null } = {}){
   return (rows || []).map((r)=>{
     const display = formatMapRowForDisplay(r);
     const title = escapeHtml(display.fullSources || display.sources);
@@ -5384,7 +5435,7 @@ function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "" } = {}
     const nearest = isSameMapRow(r, nearestRow);
     const className = `prep-map-row${nearest ? " is-nearest-zone" : ""}`;
     const nearestPill = nearest && nearestLabel ? `<span class="prep-map-nearest-label">${escapeHtml(nearestLabel)}</span>` : "";
-    return `<div class="${className}" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${nearestPill}${escapeHtml(display.zone)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
+    return `<div class="${className}" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${nearestPill}${escapeHtml(display.zone)}${formatMarketMapScenarioBadges(r, usageIndex)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
   }).join("");
 }
 function mergeConfluenceRows(rows, currentPrice){
@@ -6651,8 +6702,9 @@ function renderMarketPreparationMap(mapData){
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
   const nearestUpside = safeMap.upside?.[0] || null;
   const nearestDownside = safeMap.downside?.[0] || null;
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = displayUpside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayUpside, { nearestRow: nearestUpside, nearestLabel: "Nearest Upside" }) : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = displayDownside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayDownside, { nearestRow: nearestDownside, nearestLabel: "Nearest Downside" }) : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  const scenarioUsageIndex = buildCurrentScenarioMarketMapUsageIndex(safeMap);
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = displayUpside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayUpside, { nearestRow: nearestUpside, nearestLabel: "Nearest Upside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = displayDownside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayDownside, { nearestRow: nearestDownside, nearestLabel: "Nearest Downside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No downside watch levels available.</p>';
   const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.innerHTML = renderCurrentPriceChips(detail) || escapeHtml(detail.compactRowText || "● Price unavailable");
   renderCurrentPriceDetailCards(detail);
