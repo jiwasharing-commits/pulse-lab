@@ -9199,6 +9199,54 @@ function scanDailySupportResistance(candles){
   }
 }
 
+function getDailyStructureMode(rangeKey = activeDailyRange || "3M"){
+  const key = String(rangeKey || "3M").toUpperCase();
+  if(key === "1Y") return "macro";
+  if(key === "6M") return "intermediate";
+  return "active";
+}
+function getStructureRangeConfig(rangeKey = activeDailyRange || "3M"){
+  const mode = getDailyStructureMode(rangeKey);
+  if(mode === "macro") return { rangeKey:"1Y", mode, swingLeft:7, swingRight:7, maxSwings:14, minTouchesPerSide:3, minTotalTouches:7, minInsideRatio:.76, minWidthPct:5, maxWidthPct:55, maxSlopePctPerCandle:.0018, maxBodyCrossRatio:.14, minLineQuality:.65, recencyBars:80, maxDistancePct:22, allowDiagonal:false, staleBars:65 };
+  if(mode === "intermediate") return { rangeKey:"6M", mode, swingLeft:5, swingRight:5, maxSwings:12, minTouchesPerSide:3, minTotalTouches:6, minInsideRatio:.70, minWidthPct:3, maxWidthPct:42, maxSlopePctPerCandle:.0035, maxBodyCrossRatio:.20, minLineQuality:.50, recencyBars:55, maxDistancePct:16, allowDiagonal:true, staleBars:45 };
+  return { rangeKey:"3M", mode, swingLeft:3, swingRight:3, maxSwings:9, minTouchesPerSide:2, minTotalTouches:4, minInsideRatio:.62, minWidthPct:2, maxWidthPct:38, maxSlopePctPerCandle:.006, maxBodyCrossRatio:.28, minLineQuality:.35, recencyBars:30, maxDistancePct:12, allowDiagonal:true, staleBars:28 };
+}
+function isChannelSlopeSane(channel, config){
+  const slopes=[channel?.supportLine?.slopePctPerCandle,channel?.resistanceLine?.slopePctPerCandle];
+  return slopes.every(Number.isFinite) && slopes.every((value)=>Math.abs(value)<=config.maxSlopePctPerCandle);
+}
+function getChannelBodyCrossRatio(channel, candles){
+  let valid=0,crosses=0;
+  (candles||[]).forEach((c,index)=>{ if(!isValidCandle(c)) return; const lower=getLineValueAtIndex(channel?.supportLine,index),upper=getLineValueAtIndex(channel?.resistanceLine,index); if(!Number.isFinite(lower)||!Number.isFinite(upper)||upper<=lower)return; valid++; const bodyLow=Math.min(c.open??c.close,c.close),bodyHigh=Math.max(c.open??c.close,c.close); if(bodyLow<lower&&bodyHigh>lower)crosses++; if(bodyLow<upper&&bodyHigh>upper)crosses++; });
+  return valid ? crosses/(valid*2) : 1;
+}
+function isChannelTooNoisy(channel, candles, config){ return getChannelBodyCrossRatio(channel,candles)>config.maxBodyCrossRatio || Number(channel?.insideRatio||0)<config.minInsideRatio; }
+function isChannelTooFarFromCurrentPrice(channel, currentPrice, config){
+  if(!Number.isFinite(Number(currentPrice))) return false; const index=Number(channel?.candleCount||1)-1; const lower=getLineValueAtIndex(channel?.supportLine,index),upper=getLineValueAtIndex(channel?.resistanceLine,index); if(!Number.isFinite(lower)||!Number.isFinite(upper))return true; const distance=Math.min(Math.abs(Number(currentPrice)-lower),Math.abs(Number(currentPrice)-upper))/Math.max(Number(currentPrice),1)*100; return distance>config.maxDistancePct;
+}
+function shouldSuppressDiagonalChannelForRange(rangeKey, channel, candles, config=getStructureRangeConfig(rangeKey)){ return !config.allowDiagonal || !isChannelSlopeSane(channel,config) || isChannelTooNoisy(channel,candles,config); }
+function validateStructureChannel(channel, candles, config){
+  const latestTouch=Math.max(channel?.supportLastTouchIndex??-1,channel?.resistanceLastTouchIndex??-1); const recent=latestTouch>=0&&((candles?.length||0)-1-latestTouch)<=config.recencyBars; const touches=(channel?.supportTouches||0)>=config.minTouchesPerSide&&(channel?.resistanceTouches||0)>=config.minTouchesPerSide&&(channel?.supportTouches||0)+(channel?.resistanceTouches||0)>=config.minTotalTouches; const width=Number(channel?.widthPct)>=config.minWidthPct&&Number(channel?.widthPct)<=config.maxWidthPct; const anchorQuality=Number(channel?.lineQuality||0)>=config.minLineQuality; const currentPrice=candles?.[candles.length-1]?.close; const valid=touches&&width&&anchorQuality&&recent&&!isChannelTooFarFromCurrentPrice(channel,currentPrice,config)&&!shouldSuppressDiagonalChannelForRange(config.rangeKey,channel,candles,config); return {valid,reason:valid?"Channel passes range-aware validation.":"Channel suppressed by range-aware validation.",recent,touches,width,anchorQuality};
+}
+function isBrokenChannelStale(channel, candles, config){ const breakIndex=channel?.breakIndex??((candles?.length||1)-1); return ((candles?.length||0)-1-breakIndex)>config.staleBars; }
+function isBrokenChannelReclaimed(channel, candles, currentPrice, config){ const index=(candles?.length||1)-1; const boundary=channel?.breakoutStatus==="Breakdown"?getLineValueAtIndex(channel?.supportLine,index):getLineValueAtIndex(channel?.resistanceLine,index); if(!Number.isFinite(boundary)||!Number.isFinite(Number(currentPrice)))return false; return channel?.breakoutStatus==="Breakdown"?Number(currentPrice)>boundary:Number(currentPrice)<boundary; }
+function deriveBrokenChannelStatus(channel, candles, currentPrice, config=getStructureRangeConfig(channel?.rangeMode)){
+  if(!channel?.breakoutStatus) return "Active"; if(isBrokenChannelStale(channel,candles,config))return "Stale"; const reclaimed=isBrokenChannelReclaimed(channel,candles,currentPrice,config); if(reclaimed)return channel.breakoutStatus==="Breakout"?"Failed Breakout":"Reclaimed"; const latest=candles?.[candles.length-1]; const index=(candles?.length||1)-1; const boundary=channel.breakoutStatus==="Breakdown"?getLineValueAtIndex(channel.supportLine,index):getLineValueAtIndex(channel.resistanceLine,index); if(isValidCandle(latest)&&Number.isFinite(boundary)&&Math.abs(latest.close-boundary)/Math.max(latest.close,1)<=.015)return "Retesting"; return "Broken";
+}
+function formatBrokenChannelStatus(status){ return ["Active","Broken","Retesting","Reclaimed","Failed Breakout","Failed Breakdown","Stale"].includes(status)?status:"Active"; }
+function getDailyPatternDisplayType(pattern){
+  if(pattern?.status === "Broken" && pattern?.breakoutStatus === "Breakdown") return "Broken Channel Support";
+  if(pattern?.status === "Broken" && pattern?.breakoutStatus === "Breakout") return "Broken Channel Resistance";
+  return pattern?.displayType || pattern?.type || "Structure Context";
+}
+function runDailyStructureRangeAwareFixtureTests(){
+  const noisy={supportLine:{slopePctPerCandle:.01},resistanceLine:{slopePctPerCandle:.01},insideRatio:.4,widthPct:10,supportTouches:3,resistanceTouches:3,supportLastTouchIndex:9,resistanceLastTouchIndex:9,candleCount:10}; const candles=Array.from({length:10},(_,i)=>({open:100,close:101,high:103,low:98,time:i})); const macroConfig=getStructureRangeConfig("1Y"); const macroFallback=createEmptyDailyPattern("1Y","1Y macro support/resistance context unavailable; active diagonal channel suppressed."); const forbidden=/buy signal|sell signal|entry confirmed|guaranteed breakout|high probability trade|must enter|must exit/i;
+  const cases=[{name:"3M uses active mode",passed:getDailyStructureMode("3M")==="active"},{name:"6M uses intermediate mode",passed:getDailyStructureMode("6M")==="intermediate"},{name:"1Y uses macro mode",passed:getDailyStructureMode("1Y")==="macro"},{name:"1Y suppresses diagonal channel",passed:shouldSuppressDiagonalChannelForRange("1Y",noisy,candles,macroConfig)},{name:"3M and 6M configs differ",passed:JSON.stringify(getStructureRangeConfig("3M"))!==JSON.stringify(getStructureRangeConfig("6M"))},{name:"noisy channel is suppressed",passed:!validateStructureChannel(noisy,candles,getStructureRangeConfig("3M")).valid},{name:"macro fallback is safe",passed:macroFallback.rangeMode==="1Y"&&/macro support\/resistance/.test(macroFallback.reason)},{name:"wording is signal-safe",passed:!forbidden.test(JSON.stringify(macroFallback))}]; const failed=cases.filter(x=>!x.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+function runBrokenChannelStatusFixtureTests(){
+  const candles=Array.from({length:20},(_,i)=>({open:100,close:90,high:101,low:89,time:i})); const supportLine={startIndex:0,startPrice:100,slope:0,slopePctPerCandle:0}; const resistanceLine={startIndex:0,startPrice:120,slope:0,slopePctPerCandle:0}; const channel={supportLine,resistanceLine,breakoutStatus:"Breakdown",breakIndex:18,rangeMode:"3M"}; const before=JSON.stringify({channel,candles}); const config=getStructureRangeConfig("3M"); const recent=deriveBrokenChannelStatus(channel,candles,90,config); const reclaimed=deriveBrokenChannelStatus(channel,candles,105,config); const stale=deriveBrokenChannelStatus({...channel,breakIndex:0},candles,90,{...config,staleBars:5}); const failedBreakout=deriveBrokenChannelStatus({...channel,breakoutStatus:"Breakout"},candles,100,config); const forbidden=/buy signal|sell signal|entry confirmed|guaranteed/i; const cases=[{name:"recent broken support is broken or retesting",passed:["Broken","Retesting"].includes(recent)},{name:"reclaimed support is reclaimed",passed:reclaimed==="Reclaimed"},{name:"stale broken support is stale",passed:stale==="Stale"},{name:"failed breakout is labeled",passed:failedBreakout==="Failed Breakout"},{name:"old broken channel does not dominate",passed:stale!=="Broken"},{name:"status formatting is safe",passed:!forbidden.test(formatBrokenChannelStatus(failedBreakout))},{name:"inputs are not mutated",passed:before===JSON.stringify({channel,candles})}]; const failed=cases.filter(x=>!x.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+if(typeof window!=="undefined"){window.runDailyStructureRangeAwareFixtureTests=runDailyStructureRangeAwareFixtureTests;window.runBrokenChannelStatusFixtureTests=runBrokenChannelStatusFixtureTests;}
 function createEmptyDailyPattern(rangeMode = activeDailyRange || "3M", reason = "Daily pattern unavailable."){
   return { ok:false, type:null, status:"Unavailable", rangeMode, supportLine:null, resistanceLine:null, supportTouches:0, resistanceTouches:0, totalTouches:0, currentPosition:null, breakoutStatus:null, qualityScore:0, reason, updatedAt:null };
 }
@@ -9294,13 +9342,16 @@ function finalizeDailyPatternCandidate(candidate, candles, rangeMode, toleranceA
   const qualityScore = scoreDailyPatternCandidate(candidate);
   let status = qualityScore >= 75 ? "Strong" : qualityScore >= 55 ? "Valid" : qualityScore >= 35 ? "Weak" : "Detected";
   if(position.breakoutStatus) status = "Broken";
+  const config = getStructureRangeConfig(rangeMode);
+  const brokenStatus = deriveBrokenChannelStatus({ ...candidate, ...position, rangeMode, breakIndex:candles.length-1 }, candles, candles[candles.length-1]?.close, config);
+  const contextStatus = position.breakoutStatus ? brokenStatus : "Active";
   const supportTouches = candidate.supportTouches;
   const resistanceTouches = candidate.resistanceTouches;
   const totalTouches = supportTouches + resistanceTouches;
   const reason = status === "Broken"
     ? `Daily ${candidate.type.toLowerCase()} ${position.breakoutStatus.toLowerCase()} confirmed by close outside boundary.`
     : `Price remains ${candidate.type === "Horizontal Range" ? "in horizontal range" : "inside channel"} with ${totalTouches} total touches.`;
-  return { ok:true, type:candidate.type, status, rangeMode, supportLine:candidate.supportLine, resistanceLine:candidate.resistanceLine, supportTouches, resistanceTouches, totalTouches, currentPosition:position.currentPosition, breakoutStatus:position.breakoutStatus, qualityScore, reason, updatedAt:Date.now() };
+  return { ok:true, type:candidate.type, displayType:rangeMode === "1Y" && candidate.type === "Horizontal Range" ? "Macro Range" : (rangeMode === "6M" && candidate.type !== "Horizontal Range" ? `Major ${candidate.type}` : candidate.type), status, contextStatus, rangeMode, structureMode:config.mode, supportLine:candidate.supportLine, resistanceLine:candidate.resistanceLine, supportTouches, resistanceTouches, totalTouches, currentPosition:position.currentPosition, breakoutStatus:position.breakoutStatus, qualityScore, reason, updatedAt:Date.now() };
 }
 function evaluateDailyPatternCandidate(type, supportLine, resistanceLine, candles, rangeMode, toleranceAbs, lineQuality){
   if(!supportLine || !resistanceLine) return null;
@@ -9326,9 +9377,11 @@ function detectDailyChannelPattern(candles, rangeMode){
   const currentPrice = candles[candles.length-1]?.close;
   const avgRangeAbs = getAverageDailyRange(candles);
   const toleranceAbs = Math.max((currentPrice || 1) * 0.0075, avgRangeAbs * 0.35);
-  const swings = detectSwingPoints(candles, 3, 3);
-  const highs = swings.highs.slice(-10);
-  const lows = swings.lows.slice(-10);
+  const config = getStructureRangeConfig(rangeMode);
+  if(!config.allowDiagonal) return null;
+  const swings = detectSwingPoints(candles, config.swingLeft, config.swingRight);
+  const highs = swings.highs.slice(-config.maxSwings);
+  const lows = swings.lows.slice(-config.maxSwings);
   let best = null;
   for(let li=0; li<lows.length-1; li++){
     for(let lj=li+1; lj<lows.length; lj++){
@@ -9347,7 +9400,7 @@ function detectDailyChannelPattern(candles, rangeMode){
           const parallelQuality = Math.max(0, 1 - (Math.abs(supportSlope - resistanceSlope) / slopeDenom));
           if(parallelQuality < 0.25) continue;
           const candidate = evaluateDailyPatternCandidate(rising ? "Rising Channel" : "Falling Channel", supportLine, resistanceLine, candles, rangeMode, toleranceAbs, parallelQuality);
-          if(!candidate || candidate.supportTouches < 2 || candidate.resistanceTouches < 2 || candidate.supportTouches + candidate.resistanceTouches < 4 || candidate.insideRatio < 0.60 || candidate.widthPct < 2 || candidate.widthPct > 45) continue;
+          if(!candidate || !validateStructureChannel(candidate, candles, config).valid) continue;
           candidate.qualityScore = scoreDailyPatternCandidate(candidate);
           if(!best || candidate.qualityScore > best.qualityScore) best = candidate;
         }
@@ -9361,9 +9414,10 @@ function detectDailyRangePattern(candles, rangeMode){
   const currentPrice = candles[candles.length-1]?.close;
   const avgRangeAbs = getAverageDailyRange(candles);
   const toleranceAbs = Math.max((currentPrice || 1) * 0.0075, avgRangeAbs * 0.35);
-  const swings = detectSwingPoints(candles, 3, 3);
-  const highs = swings.highs.slice(-8);
-  const lows = swings.lows.slice(-8);
+  const config = getStructureRangeConfig(rangeMode);
+  const swings = detectSwingPoints(candles, config.swingLeft, config.swingRight);
+  const highs = swings.highs.slice(-config.maxSwings);
+  const lows = swings.lows.slice(-config.maxSwings);
   if(highs.length < 2 || lows.length < 2) return null;
   const avgHigh = highs.reduce((sum,p)=>sum+p.price,0)/highs.length;
   const avgLow = lows.reduce((sum,p)=>sum+p.price,0)/lows.length;
@@ -9376,16 +9430,17 @@ function detectDailyRangePattern(candles, rangeMode){
   const highDrift = Math.abs(highs[highs.length-1].price - highs[0].price) / Math.max(avgHigh, 1);
   const lowDrift = Math.abs(lows[lows.length-1].price - lows[0].price) / Math.max(avgLow, 1);
   const flatQuality = Math.max(0, 1 - ((highDrift + lowDrift) / 0.18));
-  if(widthPct < 3 || widthPct > 35 || flatQuality < 0.25) return null;
+  if(widthPct < config.minWidthPct || widthPct > config.maxWidthPct || flatQuality < (config.mode === "macro" ? .4 : .25)) return null;
   const candidate = evaluateDailyPatternCandidate("Horizontal Range", supportLine, resistanceLine, candles, rangeMode, toleranceAbs, flatQuality);
-  if(!candidate || candidate.supportTouches < 2 || candidate.resistanceTouches < 2 || candidate.supportTouches + candidate.resistanceTouches < 4 || candidate.insideRatio < 0.62) return null;
+  if(!candidate || candidate.supportTouches < config.minTouchesPerSide || candidate.resistanceTouches < config.minTouchesPerSide || candidate.supportTouches + candidate.resistanceTouches < config.minTotalTouches || candidate.insideRatio < config.minInsideRatio) return null;
   return finalizeDailyPatternCandidate(candidate, candles, rangeMode, toleranceAbs);
 }
 function detectDailyPattern(candles, rangeMode = activeDailyRange || "3M"){
   try{
     if(!Array.isArray(candles) || candles.length < 40) return createEmptyDailyPattern(rangeMode, "Not enough Daily candles for pattern detection.");
-    const candidates = [detectDailyChannelPattern(candles, rangeMode), detectDailyRangePattern(candles, rangeMode)].filter(Boolean);
-    if(!candidates.length) return createEmptyDailyPattern(rangeMode, "No clear Daily channel/range detected.");
+    const config = getStructureRangeConfig(rangeMode);
+    const candidates = [config.allowDiagonal ? detectDailyChannelPattern(candles, rangeMode) : null, detectDailyRangePattern(candles, rangeMode)].filter(Boolean);
+    if(!candidates.length) return createEmptyDailyPattern(rangeMode, config.mode === "macro" ? "1Y macro support/resistance context unavailable; active diagonal channel suppressed." : "No clear Daily channel/range detected.");
     return candidates.sort((a,b)=>b.qualityScore-a.qualityScore)[0];
   }catch(e){
     console.error("Daily pattern detection failed:", e);
@@ -9394,7 +9449,7 @@ function detectDailyPattern(candles, rangeMode = activeDailyRange || "3M"){
 }
 function formatDailyPatternSummary(pattern){
   if(!pattern?.ok) return "Daily Pattern · No clear channel/range detected";
-  return `Daily Pattern · ${pattern.type} · ${pattern.status} · ${pattern.currentPosition || "Position unavailable"} · Touches ${pattern.supportTouches}/${pattern.resistanceTouches}`;
+  return `Daily Pattern · ${getDailyPatternDisplayType(pattern)} · ${formatBrokenChannelStatus(pattern.contextStatus || "Active")} · ${pattern.currentPosition || "Position unavailable"} · Touches ${pattern.supportTouches}/${pattern.resistanceTouches}`;
 }
 function setDailyPatternSummary(pattern){ if(els.lowerDailyPatternSummary){ els.lowerDailyPatternSummary.textContent = formatDailyPatternSummary(pattern); els.lowerDailyPatternSummary.hidden = !getChartLayer("daily", "patternSummary"); } }
 
@@ -9702,17 +9757,19 @@ function renderDailyPatternOverlay(){
     const pattern = marketPreparationState.daily?.pattern;
     if(!layer || !ltfDailyChart || !ltfDailySeries || !pattern?.ok){ clearDailyPatternOverlay(); return; }
     const drawableStatuses = ["Valid", "Strong", "Broken"];
-    if(!drawableStatuses.includes(pattern.status)){ clearDailyPatternOverlay(); return; }
+    if(!drawableStatuses.includes(pattern.status) || pattern.contextStatus === "Stale"){ clearDailyPatternOverlay(); return; }
     const points = getDailyPatternOverlayPoints(pattern);
     if(!points?.support || !points?.resistance){ clearDailyPatternOverlay(); return; }
     const rect = layer.getBoundingClientRect();
     const width = Math.max(layer.clientWidth || rect.width || 0, 1);
     const height = Math.max(layer.clientHeight || rect.height || 0, 1);
     const isRange = pattern.type === "Horizontal Range";
-    const brokenClass = pattern.status === "Broken" ? " broken" : "";
-    const supportLabel = pattern.status === "Broken" && !isRange ? "Broken Channel Support" : (isRange ? "Daily Range Support" : "Daily Channel Support");
-    const resistanceLabel = pattern.status === "Broken" && !isRange ? "Broken Channel Resistance" : (isRange ? "Daily Range Resistance" : "Daily Channel Resistance");
-    layer.innerHTML = `<svg viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="none" aria-hidden="true">${renderPatternLineSvg({ coords:points.support, label:supportLabel, className:`daily-pattern-line support${brokenClass}` })}${renderPatternLineSvg({ coords:points.resistance, label:resistanceLabel, className:`daily-pattern-line resistance${brokenClass}` })}</svg>`;
+    const supportBroken = pattern.status === "Broken" && pattern.breakoutStatus === "Breakdown";
+    const resistanceBroken = pattern.status === "Broken" && pattern.breakoutStatus === "Breakout";
+    const statusSuffix = pattern.contextStatus && pattern.contextStatus !== "Active" ? ` · ${formatBrokenChannelStatus(pattern.contextStatus)}` : "";
+    const supportLabel = supportBroken && !isRange ? `Broken Channel Support${statusSuffix}` : (isRange ? `${pattern.rangeMode === "1Y" ? "Macro" : "Daily"} Range Support${statusSuffix}` : "Daily Channel Support");
+    const resistanceLabel = resistanceBroken && !isRange ? `Broken Channel Resistance${statusSuffix}` : (isRange ? `${pattern.rangeMode === "1Y" ? "Macro" : "Daily"} Range Resistance${statusSuffix}` : "Daily Channel Resistance");
+    layer.innerHTML = `<svg viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="none" aria-hidden="true">${renderPatternLineSvg({ coords:points.support, label:supportLabel, className:`daily-pattern-line support${supportBroken ? " broken" : ""}` })}${renderPatternLineSvg({ coords:points.resistance, label:resistanceLabel, className:`daily-pattern-line resistance${resistanceBroken ? " broken" : ""}` })}</svg>`;
   }catch(e){
     console.error("Daily pattern overlay render failed:", e);
     clearDailyPatternOverlay();
