@@ -445,3 +445,7 @@
 .prep-map-scenario-badges{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}.prep-map-scenario-badges span{display:inline-flex;border:1px solid rgba(56,189,248,.28);border-radius:999px;background:rgba(14,116,144,.1);color:#bae6fd;padding:.08rem .3rem;font-size:.57rem;font-weight:800;line-height:1.2}
 .scenario-planning-item>.scenario-planning-block+.scenario-planning-block{margin-top:.52rem}.scenario-planning-grid{margin-top:.52rem}.scenario-planning-notes{color:#aebbd5}.scenario-planning-item{box-shadow:inset 0 1px 0 rgba(255,255,255,.018)}
 @media (max-width:560px){.market-map-details>summary{display:grid}.market-map-details>summary small{text-align:left}.prep-map-scenario-badges{margin-top:5px}}
+
+/* Patch 8: labels may be hidden for density while their source zones/lines remain visible. */
+.chart-density-hidden{display:none!important}
+.fvg-overlay-label,.chart-snr-label,.daily-sr-label,.daily-pattern-line text{font-size:10px;letter-spacing:.01em}

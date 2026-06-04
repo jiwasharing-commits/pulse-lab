@@ -3636,7 +3636,7 @@ function applyH4LayerVisibility(){
   else clearTrendlineOverlay("h4");
 }
 function set1hMarkers(markers){
-  const safeMarkers = Array.isArray(markers) ? markers : [];
+  const safeMarkers = limitChartLabels((Array.isArray(markers) ? markers : []).map((marker,index)=>({ ...marker, text:formatCompactChartLabel(marker.text), x:index*80, y:marker.position === "aboveBar" ? 0 : 40, width:Math.max(44,String(marker.text||"").length*6), height:14, priority:getChartLabelPriority({ text:marker.text, category:"timing" }) })), getChartLabelDensityConfig("1H")).map(({x,y,width,height,priority,...marker})=>marker);
   if(typeof ltf1hSeries?.setMarkers === 'function') ltf1hSeries.setMarkers(safeMarkers);
   else if(typeof ltf1hSeries?.createSeriesMarkers === 'function') ltf1hSeries.createSeriesMarkers(safeMarkers);
 }
@@ -4582,6 +4582,82 @@ function buildChartMarkTooltip(mark = {}){
     .filter(Boolean);
   return [...new Set(details)].join(" · ");
 }
+
+// Display-only label density rules. These helpers never alter the source overlays or detector output.
+function getChartLabelDensityConfig(timeframe = "D"){
+  const key = String(timeframe || "D").toUpperCase();
+  const maxLabels = ({ W:8, D:10, "4H":8, "1H":6 })[key] || 8;
+  return { timeframe:key, maxLabels, nearbyY:18, collisionGap:4 };
+}
+function formatCompactChartLabel(label){
+  return String(label?.text ?? label ?? "")
+    .replace(/\bWeekly\b/g,"W").replace(/\bDaily\b/g,"D")
+    .replace(/\bBullish\b/g,"Bull").replace(/\bBearish\b/g,"Bear")
+    .replace(/^D Channel /,"Channel ").replace(/^D Range /,"Range ")
+    .replace(/\s*·\s*(Active|Fresh|Touched|Mitigated)$/i,"")
+    .replace(/\s+/g," ").trim();
+}
+function getChartLabelPriority(label = {}, context = {}){
+  const text = String(label.text || label.label || "");
+  const status = String(label.status || "");
+  const category = String(label.category || context.category || "").toLowerCase();
+  const explicitPriority = Number(label.priority);
+  if(Number.isFinite(explicitPriority)) return explicitPriority;
+  if(/stale/i.test(text+status)) return 5;
+  if(/current price|scenario zone|invalidation|tp1|tp2/i.test(text)) return 100;
+  if(/broken support|broken resistance/i.test(text)) return 84;
+  if(category === "snr" || /support|resistance/i.test(text)) return /active|strong|major/i.test(text+status) ? 90 : 76;
+  if(/channel|macro range/i.test(text)) return 80;
+  if(category === "fvg" || /fvg|ifvg/i.test(text)) return /invalid|filled|mitigated|old/i.test(text+status) ? 35 : 65;
+  if(/sweep|bos|choch/i.test(text)) return 60;
+  return Number.isFinite(Number(label.priority)) ? Number(label.priority) : 45;
+}
+function shouldDisplayChartLabel(label, context = {}){ return getChartLabelPriority(label,context) > 10 && !/stale hidden/i.test(String(label?.text || "")); }
+function dedupeNearbyChartLabels(labels, config = getChartLabelDensityConfig()){
+  const kept=[];
+  (Array.isArray(labels)?labels:[]).forEach((label,index)=>{
+    const item={...label,__order:index,priority:getChartLabelPriority(label,config),compactText:formatCompactChartLabel(label)};
+    const duplicate=kept.find((other)=>other.compactText===item.compactText && Math.abs(Number(other.y||0)-Number(item.y||0))<=config.nearbyY);
+    if(!duplicate) kept.push(item);
+    else if(item.priority>duplicate.priority) kept[kept.indexOf(duplicate)]=item;
+  });
+  return kept.map(({__order,...item})=>item);
+}
+function getLabelBoundsEstimate(label = {}){ const text=formatCompactChartLabel(label); return { x:Number(label.x||0), y:Number(label.y||0), width:Number(label.width||Math.max(36,text.length*6)), height:Number(label.height||14) }; }
+function isLabelCollision(a,b,config=getChartLabelDensityConfig()){
+  const xGap=config.collisionGap||0,yGap=config.collisionGap||0;
+  return a.x < b.x+b.width+xGap && a.x+a.width+xGap > b.x && a.y < b.y+b.height+yGap && a.y+a.height+yGap > b.y;
+}
+function resolveChartLabelCollisions(labels, config = getChartLabelDensityConfig()){
+  const selected=[];
+  [...(Array.isArray(labels)?labels:[])].map((label,index)=>({...label,__order:index,priority:getChartLabelPriority(label,config)})).sort((a,b)=>b.priority-a.priority||a.__order-b.__order).forEach((label)=>{
+    const bounds=getLabelBoundsEstimate(label);
+    if(!selected.some((other)=>isLabelCollision(bounds,getLabelBoundsEstimate(other),config))) selected.push(label);
+  });
+  return selected.sort((a,b)=>a.__order-b.__order).map(({__order,...label})=>label);
+}
+function limitChartLabels(labels, config = getChartLabelDensityConfig()){
+  const eligible=dedupeNearbyChartLabels(labels,config).filter((label)=>shouldDisplayChartLabel(label,config));
+  const collisionSafe=resolveChartLabelCollisions(eligible,config);
+  const selected=new Set([...collisionSafe].sort((a,b)=>getChartLabelPriority(b,config)-getChartLabelPriority(a,config)).slice(0,config.maxLabels));
+  return collisionSafe.filter((label)=>selected.has(label));
+}
+function applyChartLabelDensity(root, timeframe){
+  if(!root?.querySelectorAll) return;
+  const config=getChartLabelDensityConfig(timeframe);
+  const elements=[...root.querySelectorAll('.fvg-overlay-label,.chart-snr-label,.daily-sr-label,.daily-pattern-line text')];
+  const labels=elements.map((el,index)=>{ const full=el.dataset?.fullLabel || el.textContent || ""; if(el.dataset)el.dataset.fullLabel=full; el.textContent=formatCompactChartLabel(full); el.classList?.remove('chart-density-hidden'); const rect=el.getBoundingClientRect?.()||{}; return { element:el,text:full,category:/fvg/i.test(full)?"fvg":(/support|resistance/i.test(full)?"snr":"structure"),status:full,x:rect.left??0,y:rect.top??index*16,width:rect.width,height:rect.height,priority:Number(el.dataset?.labelPriority)||undefined }; });
+  const visible=new Set(limitChartLabels(labels,config).map((label)=>label.element));
+  labels.forEach((label)=>label.element.classList?.toggle('chart-density-hidden',!visible.has(label.element)));
+}
+function scheduleChartLabelDensity(root, timeframe){ requestAnimationFrame(()=>applyChartLabelDensity(root?.closest?.('.chart-wrap') || root,timeframe)); }
+function runChartLabelDensityFixtureTests(){
+  const input=[{text:"Current price reference",priority:100,y:10},{text:"Old mitigated FVG",category:"fvg",status:"Mitigated",y:50},{text:"D Support · Active",category:"snr",status:"Active",y:80},{text:"D Support · Active",category:"snr",status:"Active",y:82}]; const before=JSON.stringify(input); const limited=limitChartLabels(input,{...getChartLabelDensityConfig("D"),maxLabels:2}); const forbidden=/buy|sell|entry|signal|guaranteed|high probability/i; const cases=[{name:"high priority kept",passed:limited.some(x=>/Current price/.test(x.text))},{name:"low priority dropped at limit",passed:!limited.some(x=>/Old mitigated/.test(x.text))},{name:"near duplicates deduped",passed:limited.filter(x=>/D Support/.test(x.text)).length===1},{name:"timeframe limits differ",passed:getChartLabelDensityConfig("D").maxLabels!==getChartLabelDensityConfig("1H").maxLabels},{name:"labels compact safely",passed:formatCompactChartLabel("Daily Bearish FVG · Fresh")==="D Bear FVG"},{name:"wording safe",passed:!forbidden.test(formatCompactChartLabel("Daily Bearish FVG · Fresh"))},{name:"inputs not mutated",passed:before===JSON.stringify(input)}]; const failed=cases.filter(x=>!x.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+function runChartLabelCollisionFixtureTests(){
+  const input=[{text:"D Support",priority:90,x:0,y:0,width:70,height:14},{text:"D Bear FVG",priority:65,x:5,y:2,width:70,height:14},{text:"1H BOS",priority:60,x:100,y:80,width:50,height:14},{text:"1H CHOCH",priority:60,x:102,y:82,width:60,height:14}]; const before=JSON.stringify(input); const output=resolveChartLabelCollisions(input,getChartLabelDensityConfig("D")); const cases=[{name:"higher priority wins collision",passed:output.some(x=>x.text==="D Support")&&!output.some(x=>x.text==="D Bear FVG")},{name:"non-overlap remains",passed:output.some(x=>x.text==="1H BOS")},{name:"same priority keeps existing order",passed:output.some(x=>x.text==="1H BOS")&&!output.some(x=>x.text==="1H CHOCH")},{name:"inputs not mutated",passed:before===JSON.stringify(input)},{name:"fallback hides lower priority safely",passed:output.length===2}]; const failed=cases.filter(x=>!x.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+if(typeof window!=="undefined"){window.runChartLabelDensityFixtureTests=runChartLabelDensityFixtureTests;window.runChartLabelCollisionFixtureTests=runChartLabelCollisionFixtureTests;}
 function findFvgDetailForMapSource(source){
   if(!isFvgMapSource(source)) return null;
   const sourceZone = getFvgDetailZone(source);
@@ -7746,6 +7822,7 @@ function renderWeeklySrOverlay(summary, dataset){
     };
     draw(summary.support, 'bullish', 'Support');
     draw(summary.resistance, 'bearish', 'Resistance');
+    scheduleChartLabelDensity(els.priceChart, "W");
   } catch (e) {
     console.error('Weekly SR overlay failed:', e);
   }
@@ -9628,6 +9705,7 @@ function renderDailyFvgOverlay(){
       el.appendChild(label);
       layer.appendChild(el);
     });
+    scheduleChartLabelDensity(els.lowerDailyChart, "D");
   }catch(_){
     clearDailyFvgOverlay();
   }
@@ -9705,6 +9783,7 @@ function renderDailySrOverlay(){
       el.appendChild(label);
       layer.appendChild(el);
     });
+    scheduleChartLabelDensity(els.lowerDailyChart, "D");
   }catch(_){
     clearDailySrOverlay();
   }
@@ -9770,6 +9849,7 @@ function renderDailyPatternOverlay(){
     const supportLabel = supportBroken && !isRange ? `Broken Channel Support${statusSuffix}` : (isRange ? `${pattern.rangeMode === "1Y" ? "Macro" : "Daily"} Range Support${statusSuffix}` : "Daily Channel Support");
     const resistanceLabel = resistanceBroken && !isRange ? `Broken Channel Resistance${statusSuffix}` : (isRange ? `${pattern.rangeMode === "1Y" ? "Macro" : "Daily"} Range Resistance${statusSuffix}` : "Daily Channel Resistance");
     layer.innerHTML = `<svg viewBox="0 0 ${width.toFixed(1)} ${height.toFixed(1)}" preserveAspectRatio="none" aria-hidden="true">${renderPatternLineSvg({ coords:points.support, label:supportLabel, className:`daily-pattern-line support${supportBroken ? " broken" : ""}` })}${renderPatternLineSvg({ coords:points.resistance, label:resistanceLabel, className:`daily-pattern-line resistance${resistanceBroken ? " broken" : ""}` })}</svg>`;
+    scheduleChartLabelDensity(els.lowerDailyChart, "D");
   }catch(e){
     console.error("Daily pattern overlay render failed:", e);
     clearDailyPatternOverlay();
@@ -10073,6 +10153,7 @@ function render4hSrOverlay({ chart, series, overlayLayer, candles, srSummary }){
       overlayLayer.appendChild(div);
     } catch(_){ }
   });
+  scheduleChartLabelDensity(els.lower4hChart, "4H");
 }
 
 function schedule4hSrOverlayRedraw(candles){
@@ -10179,6 +10260,7 @@ function renderClean4hFvgOverlay({ chart, series, container, overlayLayer, candl
     current4hFvgOverlays.push(r);
     filledCount += 1;
   });
+  scheduleChartLabelDensity(els.lower4hChart, "4H");
 
   const visualMode = filledCount>0 ? 'Filled Zones' : (fallbackCount>0 ? 'Boundary Lines' : 'Failed');
   return { selected: selected4hFvgs, selectedBullish: picked.selectedBullish, selectedBearish: picked.selectedBearish, visualMode };
