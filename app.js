@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -6347,6 +6347,7 @@ function renderMarketPreparationMap(mapData){
   refreshTradePlanScenario(safeMap);
   renderTradePlanScenario();
   renderMultiScenarioPlanningSection(safeMap);
+  renderPulseLabEngineMap();
   renderIfvgContextPanel();
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
@@ -6387,6 +6388,77 @@ function renderDiagnosticList(items){
 function renderDiagnosticSection(title, content){
   return `<section class="h4-liquidity-diagnostics-section"><h4>${escapeHtml(title)}</h4>${content}</section>`;
 }
+function hasEngineMapRows(rows){
+  return Array.isArray(rows) && rows.length > 0;
+}
+function hasEngineMapFiniteValue(value){
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+function hasEngineMapFvgContext(state){
+  return [state?.weekly, state?.daily, state?.h4].some((frame)=>hasEngineMapRows(frame?.fvgZones) || hasEngineMapRows(frame?.fvgDetails) || hasEngineMapRows(frame?.recentBrokenFvgDetails?.all));
+}
+function hasEngineMapSrContext(state){
+  return [state?.weekly, state?.daily, state?.h4].some((frame)=>frame?.srSummary?.support || frame?.srSummary?.resistance || frame?.srSummary?.ok === true);
+}
+function buildPulseLabEngineMapSnapshot(state = marketPreparationState){
+  const sourceReady = state?.meta?.sourcesReady || {};
+  const mapAvailable = hasEngineMapRows(state?.map?.upside) || hasEngineMapRows(state?.map?.downside);
+  const structureAvailable = state?.daily?.pattern?.ok === true || !!state?.h4?.structureStatus || !!state?.h1?.structureStatus;
+  const fvgAvailable = hasEngineMapFvgContext(state);
+  const srAvailable = hasEngineMapSrContext(state);
+  const h4Available = sourceReady.h4 === true || !!state?.h4?.liquidityOrderflowState?.lastUpdated;
+  const pricePositionAvailable = hasEngineMapFiniteValue(state?.currentPrice) || !!state?.currentPricePosition?.currentPosition;
+  const h1Available = sourceReady.h1 === true || !!state?.h1?.sweepStatus || !!state?.h1?.structureStatus || state?.h1?.stochastic?.ok === true;
+  const sentimentAvailable = hasEngineMapFiniteValue(state?.sentiment?.value) || !!state?.sentiment?.label;
+  const volumeAvailable = !!state?.daily?.volumeStatus || !!state?.h4?.volumeStatus;
+  const scenarioAvailable = mapAvailable || state?.tradePlanScenario?.ok === true || !!state?.tradePlanScenario?.selectedScenario;
+  return [
+    { name: "Structure / Pattern Engine", status: structureAvailable ? "Active" : "Unavailable", usedFor: "Daily structure · channel/range context · broken channel S/R · BOS/CHOCH context" },
+    { name: "FVG / IFVG Engine", status: fvgAvailable ? "Active" : "Unavailable", usedFor: "Weekly/Daily/4H FVG · bullish/bearish context · IFVG reclaim and failed-reclaim context" },
+    { name: "Support / Resistance Engine", status: srAvailable ? "Active" : "Unavailable", usedFor: "Weekly/Daily/4H S/R · nearest support and resistance" },
+    { name: "Market Preparation Map Engine", status: mapAvailable ? "Active" : "Unavailable", usedFor: "Upside/Downside Watch · scenario zones · invalidation and TP references" },
+    { name: "H4 Liquidity Engine", status: h4Available ? "Diagnostic" : "Unavailable", usedFor: "Liquidity sweep · reclaim/rejection context · confirmation diagnostics" },
+    { name: "Current Price Position Engine", status: pricePositionAvailable ? "Active" : "Unavailable", usedFor: "Price vs key zones · nearest zones · between-zone and recent-reaction context" },
+    { name: "1H Timing Engine", status: h1Available ? "Context" : "Unavailable", usedFor: "1H sweep · BOS/CHOCH · short-term and stochastic timing context" },
+    { name: "Sentiment Engine", status: sentimentAvailable ? "Display-only" : "Unavailable", usedFor: "Fear & Greed · risk sentiment context" },
+    { name: "Volume Context Engine", status: volumeAvailable ? "Context" : "Unavailable", usedFor: "Volume status · reaction-strength context" },
+    { name: "Scenario Engine", status: scenarioAvailable ? "Active" : "Unavailable", usedFor: "Multi-Scenario Planning · bullish/bearish · breakout/breakdown retest · wait/no-trade" },
+  ];
+}
+function formatEngineMapStatus(status){
+  const allowed = new Set(["Active", "Diagnostic", "Display-only", "Context", "Unavailable"]);
+  return allowed.has(status) ? status : "Unavailable";
+}
+function getEngineMapStatusClass(status){
+  return `status-${formatEngineMapStatus(status).toLowerCase().replace(/[^a-z]+/g, "-")}`;
+}
+function formatEngineMapCard(engine){
+  const status = formatEngineMapStatus(engine?.status);
+  return `<article class="engine-map-item"><div class="engine-map-item-header"><h4>${escapeHtml(engine?.name || "Engine")}</h4><span class="engine-map-status ${getEngineMapStatusClass(status)}">${escapeHtml(status)}</span></div><p><strong>Used for:</strong> ${escapeHtml(engine?.usedFor || "Context unavailable")}</p></article>`;
+}
+function renderPulseLabEngineMap(state = marketPreparationState){
+  if(!els.pulseLabEngineMapPanel) return;
+  const engines = buildPulseLabEngineMapSnapshot(state);
+  els.pulseLabEngineMapPanel.innerHTML = `<div class="engine-map-header"><div><h3>Pulse Lab Engine Map</h3><p>Read-only overview of the analysis engines powering the dashboard.</p></div></div><div class="engine-map-grid">${engines.map(formatEngineMapCard).join("")}</div>`;
+}
+function runPulseLabEngineMapFixtureTests(){
+  const input = { currentPrice:null, weekly:{}, daily:{}, h4:{}, h1:{ stochastic:{} }, map:{ upside:[], downside:[] }, sentiment:{ value:null }, currentPricePosition:{}, tradePlanScenario:{}, meta:{ sourcesReady:{} } };
+  const before = JSON.stringify(input);
+  const engines = buildPulseLabEngineMapSnapshot(input);
+  const html = engines.map(formatEngineMapCard).join("");
+  const expectedNames = ["Structure / Pattern Engine", "FVG / IFVG Engine", "Support / Resistance Engine", "Market Preparation Map Engine", "H4 Liquidity Engine", "Current Price Position Engine", "1H Timing Engine", "Sentiment Engine", "Volume Context Engine", "Scenario Engine"];
+  const forbidden = /buy signal|sell signal|entry confirmed|guaranteed|high probability trade|must enter|must exit/i;
+  const cases = [
+    { name: "all ten engine names are present", passed: engines.length === 10 && expectedNames.every((name)=>engines.some((engine)=>engine.name === name)) },
+    { name: "missing context uses neutral fallback", passed: engines.every((engine)=>engine.status === "Unavailable") },
+    { name: "engine copy avoids direct signal wording", passed: !forbidden.test(html) },
+    { name: "builder does not mutate input state", passed: JSON.stringify(input) === before },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runPulseLabEngineMapFixtureTests = runPulseLabEngineMapFixtureTests;
+
 function renderH4LiquidityDiagnosticsPanel(){
   if(!els.h4LiquidityDiagnosticsBody) return;
   const state = marketPreparationState?.h4?.liquidityOrderflowState;
@@ -10161,6 +10233,7 @@ async function loadDashboard(){
 
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
+renderPulseLabEngineMap();
 renderH4LiquidityDiagnosticsPanel();
 renderDailyContextSummary();
 loadDashboard();

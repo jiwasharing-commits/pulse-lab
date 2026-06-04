@@ -126,6 +126,25 @@
 
 .conclusion-card .mini-panel{margin-bottom:0}
 .conclusion-card .mtf-final{font-size:.9rem}
+.engine-map-card{margin-top:12px;padding:.78rem .85rem;border:1px solid rgba(45,212,191,.18);border-radius:.85rem;background:linear-gradient(180deg,rgba(8,30,38,.72),rgba(15,23,42,.64));box-shadow:0 10px 22px rgba(2,6,23,.14)}
+.engine-map-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:.62rem}
+.engine-map-header h3{margin:0;color:#e5edff;font-size:.95rem;line-height:1.15}
+.engine-map-header p{margin:.16rem 0 0;color:var(--muted);font-size:.72rem;line-height:1.25}
+.engine-map-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.engine-map-item{min-width:0;border:1px solid rgba(148,163,184,.12);border-radius:.68rem;background:rgba(15,23,42,.38);padding:.48rem .55rem}
+.engine-map-item-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:.24rem}
+.engine-map-item h4{margin:0;color:#e5edff;font-size:.76rem;line-height:1.2}
+.engine-map-item p{margin:0;color:#9fb1d4;font-size:.68rem;line-height:1.3;overflow-wrap:anywhere}
+.engine-map-item p strong{color:#cbd5e1}
+.engine-map-status{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:.11rem .38rem;font-size:.58rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.engine-map-status.status-active{background:rgba(34,197,94,.14);border-color:rgba(74,222,128,.42);color:#bbf7d0}
+.engine-map-status.status-diagnostic{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.42);color:#fde68a}
+.engine-map-status.status-context{background:rgba(59,130,246,.14);border-color:rgba(96,165,250,.42);color:#bfdbfe}
+.engine-map-status.status-display-only{background:rgba(168,85,247,.13);border-color:rgba(192,132,252,.4);color:#e9d5ff}
+.engine-map-status.status-unavailable{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.3);color:#cbd5e1}
+.engine-map-empty{margin:0;color:var(--muted);font-size:.72rem}
+@media (max-width:760px){.engine-map-grid{grid-template-columns:1fr}}
+@media (max-width:560px){.engine-map-card{padding:.7rem}.engine-map-item-header{display:grid;gap:5px}.engine-map-status{width:max-content}}
 .prep-map-card{margin-top:12px}
 .prep-map-group{margin-top:10px}
 .prep-map-title{margin:0 0 6px;font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
