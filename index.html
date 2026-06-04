@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pulse Lab</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=patch-6a-1" />
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
@@ -68,6 +68,10 @@
             </div>
             <p class="engine-map-empty">Engine context is loading.</p>
           </section>
+          <section id="h4LiquiditySummaryPanel" class="context-summary-card" aria-live="polite">
+            <div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div></div>
+            <p class="context-summary-empty">H4 liquidity context unavailable.</p>
+          </section>
           <details id="h4LiquidityDiagnosticsPanel" class="h4-liquidity-diagnostics-panel">
             <summary id="h4LiquidityDiagnosticsSummary" class="h4-liquidity-diagnostics-summary">
               <span>H4 Liquidity Diagnostics</span>
@@ -77,6 +81,10 @@
               <p class="h4-liquidity-diagnostics-empty">H4 liquidity diagnostics unavailable.</p>
             </div>
           </details>
+          <section id="keyMarketZonesSummaryPanel" class="context-summary-card key-market-zones-summary" aria-live="polite">
+            <div class="context-summary-header"><div><h3>Key Market Zones Summary</h3><p>Market Map reference zones · for review only.</p></div></div>
+            <p class="context-summary-empty">Key market zone context unavailable.</p>
+          </section>
           <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
             <div class="panel-header compact-header">
               <div>
@@ -315,6 +323,6 @@
       </div>
     </div>
     <div id="pdfReportRoot" class="pdf-report-root" hidden></div>
-    <script src="app.js"></script>
+    <script src="app.js?v=patch-6a-1"></script>
   </body>
 </html>

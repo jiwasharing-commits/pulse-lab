@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -3261,6 +3261,96 @@ function formatPrimaryScenarioBadge(plan){
   if(!plan?.isPrimaryScenario) return "";
   return `<div class="scenario-primary-context"><span class="scenario-primary-badge">${escapeHtml(plan.primaryScenarioLabel || "Primary Scenario to Watch")}</span>${plan.primaryScenarioReason ? `<p>${escapeHtml(plan.primaryScenarioReason)}</p>` : ""}</div>`;
 }
+// Scenario Score explains planning context only; it never selects or re-ranks scenarios.
+function normalizeScenarioScore(value){
+  if(value === null || value === undefined || value === "") return null;
+  const score = Number(value);
+  return Number.isFinite(score) ? Math.max(0, Math.min(10, Math.round(score))) : null;
+}
+function getScenarioScoreLabel(score){
+  const normalized = normalizeScenarioScore(score);
+  if(normalized === null) return "Context score unavailable";
+  if(normalized <= 2) return "Very weak context";
+  if(normalized <= 4) return "Weak context";
+  if(normalized <= 6) return "Developing context";
+  if(normalized <= 8) return "Strong context";
+  return "Very strong context";
+}
+function getScenarioScoreContextSupport(plan, snapshot){
+  const direction = plan?.direction;
+  const ifvgItems = getScenarioIfvgContextForDirection(snapshot, direction);
+  const supportiveIfvg = ifvgItems.some((item)=>/reclaim|confirmed|valid|active/i.test(`${item.state || ""} ${item.label || ""}`) && !/failed|invalid/i.test(`${item.state || ""} ${item.label || ""}`));
+  const liquidity = snapshot?.h4LiquidityContext;
+  const supportiveSweep = direction === "bullish" ? liquidity?.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW : direction === "bearish" ? liquidity?.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH : false;
+  const supportiveLiquidity = supportiveSweep && /confirm|valid|reclaim/i.test(`${liquidity?.status || ""} ${liquidity?.displayStatus || ""} ${liquidity?.reclaimStatus || ""}`);
+  const legacyAligned = !!snapshot?.existingTradePlanScenario?.primarySide && snapshot.existingTradePlanScenario.primarySide === direction && snapshot.existingTradePlanScenario.primaryStatus === TRADE_SCENARIO_STATUS.ACTIVE;
+  return { supportiveIfvg, supportiveLiquidity, legacyAligned };
+}
+function deriveScenarioScore(plan, snapshot){
+  if(!plan) return { scenarioScore: null, scenarioScoreLabel: getScenarioScoreLabel(null), scenarioScoreFactors: [] };
+  let score = 0;
+  const factors = [];
+  const addFactor = (label, impact)=>{ score += impact; factors.push({ label, impact }); };
+  if(hasScenarioZone(plan.scenarioZone)) addFactor("Scenario zone available", 2); else addFactor("Scenario zone missing", -2);
+  if(plan.invalidationReference) addFactor("Invalidation reference available", 2); else addFactor("Invalidation reference missing", -1);
+  if(plan.tp1) addFactor("TP1 reference available", 2); else addFactor("TP1 reference missing", -1);
+  if(plan.tp2) addFactor("TP2 reference available", 1);
+  if(plan.tp3) addFactor("TP3 reference available", 1);
+  const confirmationStatus = normalizeScenarioConfirmationStatus(plan.confirmationStatus);
+  if(confirmationStatus === "confirmed") addFactor("Confirmed context supports scenario review", 2);
+  else if(confirmationStatus === "waiting") addFactor("Confirmation is still waiting", 1);
+  else if(confirmationStatus === "weak") addFactor("Confirmation context is weak", 0);
+  else if(confirmationStatus === "failed") addFactor("Current context has failed", -2);
+  else addFactor("Confirmation context is unavailable", -1);
+  const support = getScenarioScoreContextSupport(plan, snapshot);
+  if(support.supportiveIfvg) addFactor("IFVG context supports scenario", 1);
+  if(support.supportiveLiquidity) addFactor("H4 liquidity context supports scenario", 1);
+  if(support.legacyAligned) addFactor("Legacy planning context aligns", 1);
+  const severeRiskNotes = Array.isArray(plan.riskNotes) ? plan.riskNotes.filter((note)=>/contradict|invalidated|failed context|blocked|incomplete/i.test(String(note))).length : 0;
+  if(severeRiskNotes) addFactor("Severe or incomplete-context risk notes present", -1);
+  const scenarioScore = normalizeScenarioScore(score);
+  return { scenarioScore, scenarioScoreLabel: getScenarioScoreLabel(scenarioScore), scenarioScoreFactors: factors };
+}
+function addDerivedScenarioScore(plans, snapshot){
+  return Array.isArray(plans) ? plans.filter(Boolean).map((plan)=>({ ...plan, ...deriveScenarioScore(plan, snapshot) })) : [];
+}
+function formatScenarioScoreBlock(plan){
+  const score = normalizeScenarioScore(plan?.scenarioScore);
+  const label = plan?.scenarioScoreLabel || getScenarioScoreLabel(score);
+  const factors = Array.isArray(plan?.scenarioScoreFactors) ? plan.scenarioScoreFactors.slice().sort((a, b)=>Math.abs(Number(b?.impact) || 0) - Math.abs(Number(a?.impact) || 0)).slice(0, 5) : [];
+  const factorHtml = factors.length ? `<ul class="scenario-score-factors">${factors.map((factor)=>{ const impact = Number(factor.impact) || 0; return `<li class="${impact > 0 ? "score-support" : impact < 0 ? "score-reducer" : "score-neutral"}"><strong>${impact > 0 ? "+" : impact < 0 ? "−" : "•"}</strong>${escapeHtml(factor.label)}</li>`; }).join("")}</ul>` : '<p class="scenario-planning-muted">Score factors unavailable.</p>';
+  return `<div class="scenario-planning-block scenario-score-block"><span>Scenario Score</span><div class="scenario-score-summary"><strong>${score === null ? "—" : `${score} / 10`}</strong><small>${escapeHtml(label)}</small></div>${factorHtml}<p class="scenario-score-note">Planning context · for review only.</p></div>`;
+}
+function runScenarioScoreFixtureTests(){
+  const ref = { lower: 90, upper: 92, midpoint: 91, label: "Scenario zone" };
+  const target = { lower: 110, upper: 112, midpoint: 111, price: 111, label: "Target" };
+  const complete = { scenarioId: "complete", scenarioType: "bullish_reversal", direction: "bullish", confirmationStatus: "waiting", scenarioZone: ref, invalidationReference: { price: 90 }, tp1: target, tp2: target, tp3: target, riskNotes: [] };
+  const incomplete = { ...complete, scenarioId: "incomplete", scenarioZone: null, invalidationReference: null, tp1: null, tp2: null, tp3: null };
+  const confirmed = { ...complete, confirmationStatus: "confirmed" };
+  const failed = { ...complete, confirmationStatus: "failed" };
+  const severeRisk = { ...complete, riskNotes: ["Current context is contradicted."] };
+  const snapshot = { existingTradePlanScenario: null, h4LiquidityContext: null, ifvgContext: [] };
+  const original = JSON.stringify({ complete, incomplete, confirmed, failed, severeRisk, snapshot });
+  const primaryBefore = selectPrimaryScenarioPlan([{ ...complete, confirmationStatus: "waiting" }, { ...confirmed, scenarioId: "confirmed" }], snapshot)?.scenarioId;
+  const scoredPlans = addDerivedScenarioScore([{ ...complete, confirmationStatus: "waiting" }, { ...confirmed, scenarioId: "confirmed" }], snapshot);
+  const primaryAfter = selectPrimaryScenarioPlan(scoredPlans, snapshot)?.scenarioId;
+  const forbidden = /buy score|sell score|entry score|signal score|guaranteed|high probability trade|best trade|must enter|must exit/i;
+  const cases = [
+    { name: "score normalizes to zero through ten", passed: normalizeScenarioScore(-5) === 0 && normalizeScenarioScore(15) === 10 && normalizeScenarioScore(6.4) === 6 && normalizeScenarioScore(null) === null },
+    { name: "complete references score above incomplete references", passed: deriveScenarioScore(complete, snapshot).scenarioScore > deriveScenarioScore(incomplete, snapshot).scenarioScore },
+    { name: "confirmed context scores above waiting", passed: deriveScenarioScore(confirmed, snapshot).scenarioScore > deriveScenarioScore(complete, snapshot).scenarioScore },
+    { name: "failed context lowers score", passed: deriveScenarioScore(failed, snapshot).scenarioScore < deriveScenarioScore(complete, snapshot).scenarioScore },
+    { name: "missing scenario zone lowers score", passed: deriveScenarioScore(incomplete, snapshot).scenarioScore < deriveScenarioScore(complete, snapshot).scenarioScore },
+    { name: "severe risk notes lower score", passed: deriveScenarioScore(severeRisk, snapshot).scenarioScore < deriveScenarioScore(complete, snapshot).scenarioScore },
+    { name: "score wording is signal-safe", passed: !forbidden.test(JSON.stringify(addDerivedScenarioScore([complete], snapshot))) },
+    { name: "score derivation does not mutate inputs", passed: original === JSON.stringify({ complete, incomplete, confirmed, failed, severeRisk, snapshot }) },
+    { name: "primary selector behavior is unchanged", passed: primaryBefore === primaryAfter },
+    { name: "score-enriched cards visibly render score blocks", passed: (formatMultiScenarioPlanningSection(scoredPlans).match(/class="scenario-planning-block scenario-score-block"/g) || []).length === scoredPlans.length },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+if(typeof window !== "undefined") window.runScenarioScoreFixtureTests = runScenarioScoreFixtureTests;
 function runPrimaryScenarioSelectorFixtureTests(){
   const ref = { lower: 90, upper: 92, midpoint: 91, label: "Scenario zone" };
   const target = { lower: 110, upper: 112, midpoint: 111, price: 111, label: "Target" };
@@ -5068,6 +5158,7 @@ function formatScenarioPlanningCard(plan){
       </div>
       ${formatPrimaryScenarioBadge(plan)}
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
+      ${formatScenarioScoreBlock(plan)}
       <div class="scenario-planning-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
         <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
@@ -5099,7 +5190,8 @@ function renderMultiScenarioPlanningSection(mapData){
   if(!els.multiScenarioPlanningPanel) return;
   const snapshot = buildScenarioInputSnapshot(mapData || marketPreparationState.map, marketPreparationState);
   const plansWithConfirmation = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
-  const plans = addDerivedPrimaryScenarioFlags(plansWithConfirmation, snapshot);
+  const plansWithPrimary = addDerivedPrimaryScenarioFlags(plansWithConfirmation, snapshot);
+  const plans = addDerivedScenarioScore(plansWithPrimary, snapshot);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 function runMultiScenarioPlanningUiFixtureTests(){
@@ -6552,6 +6644,8 @@ function renderMarketPreparationMap(mapData){
   renderTradePlanScenario();
   renderMultiScenarioPlanningSection(safeMap);
   renderPulseLabEngineMap();
+  renderH4LiquiditySummary();
+  renderKeyMarketZonesSummary(safeMap);
   renderIfvgContextPanel();
   const displayUpside = getPriceLadderRows(safeMap.upside || []);
   const displayDownside = getPriceLadderRows(safeMap.downside || []);
@@ -6663,6 +6757,100 @@ function runPulseLabEngineMapFixtureTests(){
 }
 if(typeof window !== "undefined") window.runPulseLabEngineMapFixtureTests = runPulseLabEngineMapFixtureTests;
 
+function formatH4LiquiditySummaryStatus(status){
+  const key = String(status || "unavailable").toLowerCase();
+  if(key === "confirmed") return "Confirmed";
+  if(key === "waiting") return "Waiting";
+  if(key === "weak") return "Weak";
+  if(key === "failed") return "Failed";
+  return "Unavailable";
+}
+function deriveH4LiquiditySummary(state){
+  const episode = state?.activeEpisode;
+  if(!episode) return { status: "unavailable", context: "H4 liquidity context unavailable", issue: "Waiting for sufficient H4 data", use: "Diagnostic context only" };
+  const episodeStatus = String(episode.status || LIQUIDITY_OF_STATE.NONE).toLowerCase();
+  const reclaimStatus = String(episode.reclaim?.status || LIQUIDITY_RECLAIM_STATUS.NONE);
+  const blockers = Array.isArray(state?.diagnostics?.confirmationBlockers) ? state.diagnostics.confirmationBlockers : [];
+  let status = "unavailable";
+  if(episodeStatus === LIQUIDITY_OF_STATE.CONFIRMED) status = "confirmed";
+  else if(episodeStatus === LIQUIDITY_OF_STATE.FAILED) status = "failed";
+  else if(episode.stale || episode.band === LIQUIDITY_BAND.WEAK) status = "weak";
+  else if([LIQUIDITY_OF_STATE.POSSIBLE, LIQUIDITY_OF_STATE.VALID].includes(episodeStatus)) status = "waiting";
+  const context = episode.displayStatus || (episode.sweep?.detected ? "Possible H4 liquidity sweep detected" : "H4 liquidity context unavailable");
+  let issue = "No current diagnostic issue";
+  if(status === "unavailable") issue = "Waiting for sufficient H4 data";
+  else if(status === "failed") issue = episode.failure?.reason || "Current H4 liquidity context failed";
+  else if(episode.stale) issue = "Context is stale";
+  else if(reclaimStatus === LIQUIDITY_RECLAIM_STATUS.MISSED || !episode.reclaim?.detected) issue = "Reclaim not confirmed";
+  else if(blockers.length) issue = blockers[0];
+  else if(episode.band === LIQUIDITY_BAND.WEAK) issue = "Diagnostic strength remains weak";
+  const direction = episode.sweep?.type === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW ? "Bullish" : episode.sweep?.type === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH ? "Bearish" : null;
+  const use = status === "confirmed" && direction ? `${direction} scenario confirmation context only` : "Diagnostic context only";
+  return { status, context, issue, use };
+}
+function formatContextSummaryStatusClass(status){
+  return `summary-status-${String(status || "unavailable").toLowerCase()}`;
+}
+function formatSummaryValue(value, fallback = "—"){
+  return value === null || value === undefined || value === "" ? fallback : String(value);
+}
+function renderH4LiquiditySummary(){
+  if(!els.h4LiquiditySummaryPanel) return;
+  const summary = deriveH4LiquiditySummary(marketPreparationState?.h4?.liquidityOrderflowState);
+  els.h4LiquiditySummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div><span class="context-summary-status ${formatContextSummaryStatusClass(summary.status)}">${escapeHtml(formatH4LiquiditySummaryStatus(summary.status))}</span></div><div class="context-summary-grid"><div><span>Status</span><strong>${escapeHtml(formatH4LiquiditySummaryStatus(summary.status))}</strong></div><div><span>Context</span><strong>${escapeHtml(summary.context)}</strong></div><div><span>Issue</span><strong>${escapeHtml(summary.issue)}</strong></div><div><span>Use</span><strong>${escapeHtml(summary.use)}</strong></div></div>`;
+}
+function selectKeyMarketZone(rows, mode = "nearest"){
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if(mode === "nearest") return list[0] || null;
+  return list.find((row)=>/major|strong|confluence/i.test(`${row?.label || ""} ${row?.quality || ""} ${row?.status || ""} ${row?.confluenceLabel || ""}`)) || list[0] || null;
+}
+function getKeyMarketZoneSources(row){
+  if(!row) return "—";
+  const sources = Array.isArray(row.sources) && row.sources.length ? row.sources : [row];
+  return [...new Set(sources.map((source)=>source?.label || source?.source || source?.type).filter(Boolean))].slice(0, 3).join(" + ") || "Market Preparation Map";
+}
+function formatKeyMarketZoneCard(title, row){
+  if(!row) return `<article class="key-market-zone-item"><span>${escapeHtml(title)}</span><strong>Context unavailable</strong><p>Reference zone unavailable.</p></article>`;
+  const range = row.zoneText || (Number.isFinite(Number(row.lower)) && Number.isFinite(Number(row.upper)) ? `${usd(Number(row.lower))}–${usd(Number(row.upper))}` : "—");
+  const distance = row.distanceText || (Number.isFinite(Number(row.distancePct)) ? `${f1(Number(row.distancePct))}% from current price` : "Distance unavailable");
+  const type = row.confluenceLabel || row.label || "Reference zone";
+  const status = row.status || row.quality || "Context available";
+  return `<article class="key-market-zone-item"><span>${escapeHtml(title)}</span><strong>${escapeHtml(range)}</strong><p>${escapeHtml(distance)}</p><small>Type: ${escapeHtml(type)} · Status: ${escapeHtml(status)}</small><small>Sources: ${escapeHtml(getKeyMarketZoneSources(row))}</small></article>`;
+}
+function buildKeyMarketZonesSummary(mapData = marketPreparationState.map, state = marketPreparationState){
+  const upside = Array.isArray(mapData?.upside) ? mapData.upside : [];
+  const downside = Array.isArray(mapData?.downside) ? mapData.downside : [];
+  return {
+    nearestUpside: selectKeyMarketZone(upside, "nearest"),
+    nearestDownside: selectKeyMarketZone(downside, "nearest"),
+    majorUpside: selectKeyMarketZone(upside, "major"),
+    majorDownside: selectKeyMarketZone(downside, "major"),
+    currentPricePosition: state?.currentPricePosition?.currentPosition || "Position context unavailable",
+  };
+}
+function renderKeyMarketZonesSummary(mapData){
+  if(!els.keyMarketZonesSummaryPanel) return;
+  const summary = buildKeyMarketZonesSummary(mapData || marketPreparationState.map, marketPreparationState);
+  els.keyMarketZonesSummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>Key Market Zones Summary</h3><p>Market Map reference zones · for review only.</p></div></div><div class="key-market-zones-grid">${formatKeyMarketZoneCard("Nearest Upside Zone", summary.nearestUpside)}${formatKeyMarketZoneCard("Nearest Downside Zone", summary.nearestDownside)}${formatKeyMarketZoneCard("Major Upside Zone", summary.majorUpside)}${formatKeyMarketZoneCard("Major Downside Zone", summary.majorDownside)}<article class="key-market-zone-item key-market-position"><span>Current Price Position</span><strong>${escapeHtml(summary.currentPricePosition)}</strong><p>Planning context only.</p></article></div>`;
+}
+function runH4LiquiditySummaryFixtureTests(){
+  const missing = deriveH4LiquiditySummary(null);
+  const possible = deriveH4LiquiditySummary({ activeEpisode: { status: LIQUIDITY_OF_STATE.POSSIBLE, band: LIQUIDITY_BAND.USABLE, displayStatus: "Possible downside sweep detected", reclaim: { detected: false, status: LIQUIDITY_RECLAIM_STATUS.MISSED }, sweep: { detected: true, type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW } }, diagnostics: {} });
+  const confirmed = deriveH4LiquiditySummary({ activeEpisode: { status: LIQUIDITY_OF_STATE.CONFIRMED, band: LIQUIDITY_BAND.STRONG, displayStatus: "H4 liquidity sweep reaction confirmed", reclaim: { detected: true, status: LIQUIDITY_RECLAIM_STATUS.SAME_BAR }, sweep: { detected: true, type: LIQUIDITY_SWEEP_TYPE.SWEEP_LOW } }, diagnostics: {} });
+  const failedState = { activeEpisode: { status: LIQUIDITY_OF_STATE.FAILED, band: LIQUIDITY_BAND.WEAK, displayStatus: "H4 liquidity sweep reaction failed", failure: { reason: "Context failed" }, reclaim: {}, sweep: {} }, diagnostics: {} };
+  const before = JSON.stringify(failedState); const failedSummary = deriveH4LiquiditySummary(failedState);
+  const forbidden = /buy|sell|entry|signal|guaranteed|high probability/i;
+  const cases = [{name:"missing state returns unavailable",passed:missing.status==="unavailable"},{name:"possible sweep is waiting or weak",passed:["waiting","weak"].includes(possible.status)},{name:"confirmed state returns confirmed",passed:confirmed.status==="confirmed"},{name:"failed state returns failed",passed:failedSummary.status==="failed"},{name:"summary does not mutate state",passed:before===JSON.stringify(failedState)},{name:"summary wording is safe",passed:!forbidden.test(JSON.stringify([missing,possible,confirmed,failedSummary]))}];
+  const failed = cases.filter((item)=>!item.passed).length; return { passed:failed===0,total:cases.length,failed,results:cases };
+}
+function runKeyMarketZonesSummaryFixtureTests(){
+  const row=(label,side,distancePct,quality="Active")=>({label,side,lower:90,upper:92,zoneText:"$90–$92",distancePct,distanceText:`${distancePct}%`,quality,sources:[{label}]});
+  const map={upside:[row("Nearest Up","upside",1),row("Major Confluence Up","upside",2,"Strong")],downside:[row("Nearest Down","downside",1),row("Major Confluence Down","downside",2,"Strong")]};
+  const state={currentPricePosition:{currentPosition:"Between key zones"}}; const before=JSON.stringify({map,state}); const summary=buildKeyMarketZonesSummary(map,state); const missing=buildKeyMarketZonesSummary({},{}); const forbidden=/buy|sell|entry|signal|stoploss|guaranteed|high probability/i;
+  const cases=[{name:"missing map returns safe fallback",passed:!missing.nearestUpside&&!missing.nearestDownside},{name:"nearest upside preserves row order",passed:summary.nearestUpside===map.upside[0]},{name:"nearest downside preserves row order",passed:summary.nearestDownside===map.downside[0]},{name:"major upside uses existing context",passed:summary.majorUpside===map.upside[1]},{name:"major downside uses existing context",passed:summary.majorDownside===map.downside[1]},{name:"current position uses existing state",passed:summary.currentPricePosition==="Between key zones"},{name:"summary does not mutate rows",passed:before===JSON.stringify({map,state})},{name:"summary wording is safe",passed:!forbidden.test(JSON.stringify(summary))}];
+  const failed=cases.filter((item)=>!item.passed).length; return {passed:failed===0,total:cases.length,failed,results:cases};
+}
+if(typeof window !== "undefined"){ window.runH4LiquiditySummaryFixtureTests=runH4LiquiditySummaryFixtureTests; window.runKeyMarketZonesSummaryFixtureTests=runKeyMarketZonesSummaryFixtureTests; }
 function renderH4LiquidityDiagnosticsPanel(){
   if(!els.h4LiquidityDiagnosticsBody) return;
   const state = marketPreparationState?.h4?.liquidityOrderflowState;
@@ -10438,6 +10626,8 @@ async function loadDashboard(){
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
 renderPulseLabEngineMap();
+renderH4LiquiditySummary();
+renderKeyMarketZonesSummary();
 renderH4LiquidityDiagnosticsPanel();
 renderDailyContextSummary();
 loadDashboard();
