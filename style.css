@@ -428,3 +428,6 @@
 .scenario-confirmation-status.confirmation-failed{background:rgba(239,68,68,.14);border-color:rgba(248,113,113,.45);color:#fecaca}
 .scenario-confirmation-status.confirmation-unavailable{background:rgba(100,116,139,.14);border-color:rgba(148,163,184,.3);color:#cbd5e1}
 .scenario-confirmation-reasons{margin:.26rem 0 0;color:#aebbd5;font-size:.65rem;line-height:1.3}
+.scenario-primary-context{margin:0 0 .45rem;padding:.34rem .44rem;border:1px solid rgba(56,189,248,.32);border-radius:.58rem;background:rgba(14,116,144,.1)}
+.scenario-primary-badge{display:inline-flex;align-items:center;border:1px solid rgba(103,232,249,.4);border-radius:999px;background:rgba(8,145,178,.16);color:#cffafe;padding:.14rem .42rem;font-size:.61rem;font-weight:900;letter-spacing:.03em}
+.scenario-primary-context p{margin:.22rem 0 0;color:#b9d9e8;font-size:.65rem;line-height:1.3}

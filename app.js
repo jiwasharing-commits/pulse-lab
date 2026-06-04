@@ -3211,6 +3211,88 @@ function deriveScenarioConfirmationStatus(plan, snapshot){
 function addDerivedScenarioConfirmation(plan, snapshot){
   return { ...(plan || {}), ...deriveScenarioConfirmationStatus(plan, snapshot) };
 }
+// Primary selection is display-only and uses categorical context, not a scenario score.
+function hasUsablePrimaryScenarioReferences(plan){
+  return hasScenarioZone(plan?.scenarioZone) && !!plan?.invalidationReference && !!plan?.tp1;
+}
+function getScenarioPrimaryRank(plan, snapshot){
+  const confirmationStatus = normalizeScenarioConfirmationStatus(plan?.confirmationStatus);
+  const statusOrder = ["confirmed", "waiting", "weak", "unavailable", "failed"];
+  const severeRiskNotes = Array.isArray(plan?.riskNotes) ? plan.riskNotes.filter((note)=>/contradict|invalidated|failed context|blocked/i.test(String(note))).length : 0;
+  const referenceCount = [plan?.scenarioZone, plan?.invalidationReference, plan?.tp1, plan?.tp2, plan?.tp3].filter(Boolean).length;
+  return {
+    eligible: !["failed", "unavailable"].includes(confirmationStatus),
+    confirmationOrder: statusOrder.indexOf(confirmationStatus),
+    hasUsableReferences: hasUsablePrimaryScenarioReferences(plan),
+    referenceCount,
+    severeRiskNotes,
+    isWaitScenario: plan?.scenarioType === "wait_no_trade",
+    legacyDirectionAligned: !!snapshot?.existingTradePlanScenario?.primarySide && snapshot.existingTradePlanScenario.primarySide === plan?.direction,
+  };
+}
+function selectPrimaryScenarioPlan(plans, snapshot){
+  const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
+  const ranked = scenarios.map((plan, index)=>({ plan, index, rank: getScenarioPrimaryRank(plan, snapshot) }));
+  const directional = ranked.filter((item)=>!item.rank.isWaitScenario && item.rank.eligible && item.rank.hasUsableReferences);
+  if(directional.length){
+    return [...directional].sort((a, b)=>a.rank.confirmationOrder - b.rank.confirmationOrder || b.rank.referenceCount - a.rank.referenceCount || a.rank.severeRiskNotes - b.rank.severeRiskNotes || Number(b.rank.legacyDirectionAligned) - Number(a.rank.legacyDirectionAligned) || a.index - b.index)[0].plan;
+  }
+  const waitScenario = ranked.find((item)=>item.rank.isWaitScenario && normalizeScenarioConfirmationStatus(item.plan?.confirmationStatus) !== "failed");
+  return waitScenario?.plan || null;
+}
+function formatPrimaryScenarioReason(plan){
+  if(!plan?.isPrimaryScenario) return "";
+  const status = normalizeScenarioConfirmationStatus(plan.confirmationStatus);
+  if(plan.scenarioType === "wait_no_trade") return "Current focus: directional scenario context is unavailable or incomplete.";
+  if(status === "confirmed") return "Current focus: confirmed context with usable planning references.";
+  if(status === "waiting") return "Current focus: waiting confirmation with a valid zone and TP1 reference.";
+  return "Current focus: the most usable scenario context currently available.";
+}
+function addDerivedPrimaryScenarioFlags(plans, snapshot){
+  const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
+  const primary = selectPrimaryScenarioPlan(scenarios, snapshot);
+  return scenarios.map((plan)=>{
+    const isPrimaryScenario = !!primary && plan === primary;
+    const derived = { ...plan, isPrimaryScenario, primaryScenarioLabel: isPrimaryScenario ? "Primary Scenario to Watch" : null };
+    return { ...derived, primaryScenarioReason: formatPrimaryScenarioReason(derived) };
+  });
+}
+function formatPrimaryScenarioBadge(plan){
+  if(!plan?.isPrimaryScenario) return "";
+  return `<div class="scenario-primary-context"><span class="scenario-primary-badge">${escapeHtml(plan.primaryScenarioLabel || "Primary Scenario to Watch")}</span>${plan.primaryScenarioReason ? `<p>${escapeHtml(plan.primaryScenarioReason)}</p>` : ""}</div>`;
+}
+function runPrimaryScenarioSelectorFixtureTests(){
+  const ref = { lower: 90, upper: 92, midpoint: 91, label: "Scenario zone" };
+  const target = { lower: 110, upper: 112, midpoint: 111, price: 111, label: "Target" };
+  const plan = (scenarioId, scenarioType, confirmationStatus, overrides = {})=>({ scenarioId, scenarioType, confirmationStatus, scenarioZone: ref, invalidationReference: { price: 90 }, tp1: target, tp2: target, tp3: target, riskNotes: [], ...overrides });
+  const confirmed = plan("confirmed", "bullish_reversal", "confirmed");
+  const waiting = plan("waiting", "bearish_continuation", "waiting");
+  const failed = plan("failed", "bullish_reversal", "failed");
+  const unavailable = plan("unavailable", "bearish_continuation", "unavailable");
+  const wait = plan("wait", "wait_no_trade", "confirmed", { scenarioZone: null, invalidationReference: null, tp1: null, tp2: null, tp3: null });
+  const snapshot = { existingTradePlanScenario: { primaryStatus: TRADE_SCENARIO_STATUS.WAIT } };
+  const original = JSON.stringify({ plans: [confirmed, waiting, failed, unavailable, wait], snapshot });
+  const confirmedFlags = addDerivedPrimaryScenarioFlags([waiting, confirmed], snapshot);
+  const waitingFlags = addDerivedPrimaryScenarioFlags([waiting, failed, unavailable], snapshot);
+  const failedFlags = addDerivedPrimaryScenarioFlags([failed, waiting], snapshot);
+  const unavailableFlags = addDerivedPrimaryScenarioFlags([unavailable, waiting], snapshot);
+  const waitFlags = addDerivedPrimaryScenarioFlags([failed, unavailable, wait], snapshot);
+  const allFlags = addDerivedPrimaryScenarioFlags([confirmed, waiting, failed, unavailable, wait], snapshot);
+  const forbidden = /recommended entry|buy signal|sell signal|entry confirmed|best trade|guaranteed|high probability trade|must enter|must exit/i;
+  const cases = [
+    { name: "confirmed context ranks above waiting", passed: confirmedFlags.find((item)=>item.isPrimaryScenario)?.scenarioId === "confirmed" },
+    { name: "waiting scenario with usable references can be primary", passed: waitingFlags.find((item)=>item.isPrimaryScenario)?.scenarioId === "waiting" },
+    { name: "failed context is never primary", passed: failedFlags.find((item)=>item.isPrimaryScenario)?.scenarioId !== "failed" },
+    { name: "unavailable context is not primary when usable scenario exists", passed: unavailableFlags.find((item)=>item.isPrimaryScenario)?.scenarioId === "waiting" },
+    { name: "wait scenario can be primary when directional scenarios are unusable", passed: waitFlags.find((item)=>item.isPrimaryScenario)?.scenarioId === "wait" },
+    { name: "only one scenario is primary", passed: allFlags.filter((item)=>item.isPrimaryScenario).length === 1 },
+    { name: "primary wording is signal-safe", passed: !forbidden.test(JSON.stringify(allFlags)) },
+    { name: "inputs are not mutated", passed: original === JSON.stringify({ plans: [confirmed, waiting, failed, unavailable, wait], snapshot }) },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+if(typeof window !== "undefined") window.runPrimaryScenarioSelectorFixtureTests = runPrimaryScenarioSelectorFixtureTests;
 function runScenarioConfirmationStatusFixtureTests(){
   const row = (side, lower, upper)=>({ side, lower, upper, center: (lower + upper) / 2, label: `${side} zone`, zoneText: `${lower}-${upper}`, sources: [{ timeframe: "4H", type: side }] });
   const snapshot = buildScenarioInputSnapshot({ upside: [row("upside", 110, 112), row("upside", 120, 122), row("upside", 130, 132)], downside: [row("downside", 90, 92), row("downside", 80, 82), row("downside", 70, 72)] }, { currentPrice: 100, h4: {}, weekly: {}, daily: {}, tradePlanScenario: { primarySide: "bullish", primaryStatus: TRADE_SCENARIO_STATUS.ACTIVE } });
@@ -4984,6 +5066,7 @@ function formatScenarioPlanningCard(plan){
         <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
         <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
       </div>
+      ${formatPrimaryScenarioBadge(plan)}
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
       <div class="scenario-planning-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
@@ -5015,7 +5098,8 @@ function formatMultiScenarioPlanningSection(plans = []){
 function renderMultiScenarioPlanningSection(mapData){
   if(!els.multiScenarioPlanningPanel) return;
   const snapshot = buildScenarioInputSnapshot(mapData || marketPreparationState.map, marketPreparationState);
-  const plans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const plansWithConfirmation = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const plans = addDerivedPrimaryScenarioFlags(plansWithConfirmation, snapshot);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 function runMultiScenarioPlanningUiFixtureTests(){
