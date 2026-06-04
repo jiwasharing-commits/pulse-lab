@@ -3127,6 +3127,117 @@ function buildMultiScenarioPlansFromSnapshot(snapshot){
   if(needsWait) scenarios.push(buildWaitNoTradeScenarioFromSnapshot(snapshot));
   return scenarios;
 }
+// Derived confirmation context is display-only and never mutates scenario plans or dashboard state.
+const SCENARIO_CONFIRMATION_STATUSES = Object.freeze(["confirmed", "waiting", "weak", "failed", "unavailable"]);
+function normalizeScenarioConfirmationStatus(status){
+  const normalized = String(status || "unavailable").trim().toLowerCase();
+  return SCENARIO_CONFIRMATION_STATUSES.includes(normalized) ? normalized : "unavailable";
+}
+function formatScenarioConfirmationStatus(status){
+  const normalized = normalizeScenarioConfirmationStatus(status);
+  if(normalized === "confirmed") return "Confirmed Context";
+  if(normalized === "waiting") return "Waiting Confirmation";
+  if(normalized === "weak") return "Weak Confirmation";
+  if(normalized === "failed") return "Failed Context";
+  return "Context Unavailable";
+}
+function formatScenarioConfirmationReasons(reasons){
+  return Array.isArray(reasons) ? reasons.filter(Boolean).map((reason)=>String(reason)) : [];
+}
+function hasScenarioConfirmationSupport(snapshot, direction){
+  const ifvg = getScenarioIfvgContextForDirection(snapshot, direction);
+  const supportiveIfvg = ifvg.some((item)=>/reclaim|confirmed|valid|active/i.test(`${item.state || ""} ${item.label || ""}`) && !/failed|invalid/i.test(`${item.state || ""} ${item.label || ""}`));
+  const liquidity = snapshot?.h4LiquidityContext;
+  const supportiveSweep = direction === "bullish" ? liquidity?.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_LOW : liquidity?.sweepType === LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH;
+  const supportiveLiquidity = supportiveSweep && /confirm|valid|reclaim/i.test(`${liquidity?.status || ""} ${liquidity?.displayStatus || ""} ${liquidity?.reclaimStatus || ""}`);
+  const legacy = snapshot?.existingTradePlanScenario;
+  const supportiveLegacy = legacy?.primarySide === direction && legacy?.primaryStatus === TRADE_SCENARIO_STATUS.ACTIVE;
+  return supportiveIfvg || supportiveLiquidity || supportiveLegacy;
+}
+function hasScenarioContradiction(plan, snapshot, direction){
+  const hasCurrentPrice = snapshot?.currentPrice !== null && snapshot?.currentPrice !== undefined && Number.isFinite(Number(snapshot.currentPrice));
+  const hasInvalidationPrice = plan?.invalidationReference?.price !== null && plan?.invalidationReference?.price !== undefined && Number.isFinite(Number(plan.invalidationReference.price));
+  const currentPrice = hasCurrentPrice ? Number(snapshot.currentPrice) : null;
+  const invalidationPrice = hasInvalidationPrice ? Number(plan.invalidationReference.price) : null;
+  const invalidationBreached = hasCurrentPrice && hasInvalidationPrice
+    && ((direction === "bullish" && currentPrice < invalidationPrice) || (direction === "bearish" && currentPrice > invalidationPrice));
+  const notes = Array.isArray(plan?.riskNotes) ? plan.riskNotes.join(" ") : "";
+  const directionalIfvg = getScenarioIfvgContextForDirection(snapshot, direction);
+  const failedIfvgOnly = directionalIfvg.length > 0 && directionalIfvg.every((item)=>/failed|invalid/i.test(`${item.state || ""} ${item.label || ""}`));
+  return plan?.status === "invalid" || invalidationBreached || failedIfvgOnly || /contradict|invalidated|failed context|blocked/i.test(notes);
+}
+function deriveDirectionalScenarioConfirmationStatus(plan, snapshot, direction){
+  if(!hasScenarioZone(plan?.scenarioZone)) return { confirmationStatus: "unavailable", confirmationReasons: ["Scenario zone is unavailable."] };
+  if(hasScenarioContradiction(plan, snapshot, direction)) return { confirmationStatus: "failed", confirmationReasons: ["Current context contradicts or invalidates the scenario reference."] };
+  if(!plan?.invalidationReference || !plan?.tp1) return { confirmationStatus: "weak", confirmationReasons: ["Invalidation or TP1 reference is incomplete."] };
+  if(!plan?.tp2 || !plan?.tp3) return { confirmationStatus: "weak", confirmationReasons: ["Target reference ladder is incomplete."] };
+  if(hasScenarioConfirmationSupport(snapshot, direction)) return { confirmationStatus: "confirmed", confirmationReasons: ["Scenario zone, invalidation, target references, and supporting context are available for review."] };
+  return { confirmationStatus: "waiting", confirmationReasons: ["Scenario references are available; supporting confirmation context remains incomplete."] };
+}
+function deriveBullishScenarioConfirmationStatus(plan, snapshot){
+  return deriveDirectionalScenarioConfirmationStatus(plan, snapshot, "bullish");
+}
+function deriveBearishScenarioConfirmationStatus(plan, snapshot){
+  return deriveDirectionalScenarioConfirmationStatus(plan, snapshot, "bearish");
+}
+function deriveBreakoutRetestConfirmationStatus(plan, snapshot){
+  return deriveDirectionalScenarioConfirmationStatus(plan, snapshot, "bullish");
+}
+function deriveBreakdownRetestConfirmationStatus(plan, snapshot){
+  return deriveDirectionalScenarioConfirmationStatus(plan, snapshot, "bearish");
+}
+function deriveWaitScenarioConfirmationStatus(plan, snapshot){
+  const hasContext = hasScenarioZone(snapshot?.nearestUpside) || hasScenarioZone(snapshot?.nearestDownside) || !!snapshot?.h4LiquidityContext || (Array.isArray(snapshot?.ifvgContext) && snapshot.ifvgContext.some((item)=>item?.count || item?.bullish || item?.bearish));
+  if(!hasContext) return { confirmationStatus: "unavailable", confirmationReasons: ["Meaningful planning context is unavailable."] };
+  const incompleteOrMixed = !hasScenarioZone(snapshot?.nearestUpside) || !hasScenarioZone(snapshot?.nearestDownside) || plan?.status === "informational";
+  if(incompleteOrMixed) return { confirmationStatus: "confirmed", confirmationReasons: ["Waiting remains appropriate while scenario context is mixed or incomplete."] };
+  return { confirmationStatus: "waiting", confirmationReasons: ["Monitor existing scenario zones for clearer context."] };
+}
+function deriveScenarioConfirmationStatus(plan, snapshot){
+  let result;
+  if(plan?.scenarioType === "bullish_reversal") result = deriveBullishScenarioConfirmationStatus(plan, snapshot);
+  else if(plan?.scenarioType === "bearish_continuation") result = deriveBearishScenarioConfirmationStatus(plan, snapshot);
+  else if(plan?.scenarioType === "breakout_retest") result = deriveBreakoutRetestConfirmationStatus(plan, snapshot);
+  else if(plan?.scenarioType === "breakdown_retest") result = deriveBreakdownRetestConfirmationStatus(plan, snapshot);
+  else if(plan?.scenarioType === "wait_no_trade") result = deriveWaitScenarioConfirmationStatus(plan, snapshot);
+  else result = { confirmationStatus: "unavailable", confirmationReasons: ["Scenario confirmation context is unavailable."] };
+  const confirmationStatus = normalizeScenarioConfirmationStatus(result.confirmationStatus);
+  return {
+    confirmationStatus,
+    confirmationStatusLabel: formatScenarioConfirmationStatus(confirmationStatus),
+    confirmationReasons: formatScenarioConfirmationReasons(result.confirmationReasons),
+  };
+}
+function addDerivedScenarioConfirmation(plan, snapshot){
+  return { ...(plan || {}), ...deriveScenarioConfirmationStatus(plan, snapshot) };
+}
+function runScenarioConfirmationStatusFixtureTests(){
+  const row = (side, lower, upper)=>({ side, lower, upper, center: (lower + upper) / 2, label: `${side} zone`, zoneText: `${lower}-${upper}`, sources: [{ timeframe: "4H", type: side }] });
+  const snapshot = buildScenarioInputSnapshot({ upside: [row("upside", 110, 112), row("upside", 120, 122), row("upside", 130, 132)], downside: [row("downside", 90, 92), row("downside", 80, 82), row("downside", 70, 72)] }, { currentPrice: 100, h4: {}, weekly: {}, daily: {}, tradePlanScenario: { primarySide: "bullish", primaryStatus: TRADE_SCENARIO_STATUS.ACTIVE } });
+  const bullish = buildBullishScenarioFromSnapshot(snapshot);
+  const original = JSON.stringify({ bullish, snapshot });
+  const unavailable = deriveScenarioConfirmationStatus({ ...bullish, scenarioZone: null }, snapshot);
+  const waitingSnapshot = { ...snapshot, existingTradePlanScenario: null };
+  const waiting = deriveScenarioConfirmationStatus(bullish, waitingSnapshot);
+  const weak = deriveScenarioConfirmationStatus({ ...bullish, tp2: null }, snapshot);
+  const failed = deriveScenarioConfirmationStatus({ ...bullish, riskNotes: ["Current context is contradicted."] }, snapshot);
+  const confirmed = deriveScenarioConfirmationStatus(bullish, snapshot);
+  const forbidden = /buy confirmed|sell confirmed|entry confirmed|guaranteed|high probability trade|must enter|must exit/i;
+  const labels = SCENARIO_CONFIRMATION_STATUSES.map(formatScenarioConfirmationStatus).join(" ");
+  const cases = [
+    { name: "all statuses normalize correctly", passed: SCENARIO_CONFIRMATION_STATUSES.every((status)=>normalizeScenarioConfirmationStatus(status) === status) },
+    { name: "missing scenario zone is unavailable", passed: unavailable.confirmationStatus === "unavailable" },
+    { name: "valid zone with incomplete confirmation is waiting", passed: waiting.confirmationStatus === "waiting" },
+    { name: "incomplete target ladder is weak", passed: weak.confirmationStatus === "weak" },
+    { name: "contradictory context is failed", passed: failed.confirmationStatus === "failed" },
+    { name: "supportive context is confirmed", passed: confirmed.confirmationStatus === "confirmed" },
+    { name: "confirmation wording is signal-safe", passed: !forbidden.test(labels) },
+    { name: "inputs are not mutated", passed: original === JSON.stringify({ bullish, snapshot }) },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+if(typeof window !== "undefined") window.runScenarioConfirmationStatusFixtureTests = runScenarioConfirmationStatusFixtureTests;
 function runMultiScenarioPlanFixtureTests(){
   const row = (label, side, lower, upper, source = "h4_sr")=>({ label, side, lower, upper, center: (lower + upper) / 2, source, distancePct: 1, zoneText: `${lower}–${upper}`, sources: [{ label, source }] });
   const snapshot = buildScenarioInputSnapshot({
@@ -4856,6 +4967,14 @@ function formatScenarioRiskNotes(items){
   if(!list.length) return '<p class="scenario-planning-muted">—</p>';
   return `<ul class="scenario-planning-notes">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
+function getScenarioConfirmationStatusClass(status){
+  return `confirmation-${normalizeScenarioConfirmationStatus(status)}`;
+}
+function formatScenarioConfirmationReasonsList(reasons){
+  const list = formatScenarioConfirmationReasons(reasons).slice(0, 2);
+  if(!list.length) return "";
+  return `<p class="scenario-confirmation-reasons">${list.map(escapeHtml).join(" · ")}</p>`;
+}
 function formatScenarioPlanningCard(plan){
   const statusLabel = formatScenarioPlanningStatusLabel(plan?.status);
   const invalidationText = plan?.invalidationReference ? formatScenarioReferenceLevel(plan.invalidationReference) : "—";
@@ -4865,6 +4984,7 @@ function formatScenarioPlanningCard(plan){
         <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
         <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
       </div>
+      <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
       <div class="scenario-planning-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
         <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
@@ -4895,7 +5015,7 @@ function formatMultiScenarioPlanningSection(plans = []){
 function renderMultiScenarioPlanningSection(mapData){
   if(!els.multiScenarioPlanningPanel) return;
   const snapshot = buildScenarioInputSnapshot(mapData || marketPreparationState.map, marketPreparationState);
-  const plans = buildMultiScenarioPlansFromSnapshot(snapshot);
+  const plans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 function runMultiScenarioPlanningUiFixtureTests(){
