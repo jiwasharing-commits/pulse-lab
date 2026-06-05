@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -45,6 +45,7 @@ let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
 let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
+let latestWeeklyMajorStructureContext = null;
 let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
@@ -3850,12 +3851,40 @@ function deriveWeeklyMacroRangeStatus(candles, swings, config = WEEKLY_MAJOR_STR
   if(widthPct <= (config.rangeMaxWidthPct || 85)) return { status: "Potential Range", support, resistance };
   return { status: "No Clear Range", support, resistance };
 }
+function hasWeeklyStructureCharacterConflict(sequenceStatus, bosChochStatus){
+  const sequence = String(sequenceStatus || "");
+  const status = String(bosChochStatus?.status || bosChochStatus || "");
+  return (sequence === "HH/HL" && status === "CHOCH Down") || (sequence === "LH/LL" && status === "CHOCH Up");
+}
 function deriveWeeklyStructureStatus(sequence, bosChochStatus, macroRangeStatus){
-  if(["BOS Up", "CHOCH Up"].includes(bosChochStatus?.status) || sequence?.status === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
-  if(["BOS Down", "CHOCH Down"].includes(bosChochStatus?.status) || sequence?.status === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
-  if(["Active Range", "Potential Range"].includes(macroRangeStatus?.status) || sequence?.status === "Range") return { status: "Macro Range", majorBias: "range" };
-  if(sequence?.status === "Mixed") return { status: "Mixed Structure", majorBias: "mixed" };
+  const sequenceStatus = sequence?.status || "Unavailable";
+  const bosStatus = bosChochStatus?.status || "None";
+  if(hasWeeklyStructureCharacterConflict(sequenceStatus, bosStatus)) return { status: "Mixed Structure", majorBias: "mixed" };
+  if(bosStatus === "BOS Up" && sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
+  if(bosStatus === "BOS Down" && sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
+  if(["CHOCH Up", "CHOCH Down", "Unconfirmed"].includes(bosStatus) && ["Mixed", "Range", "Unavailable"].includes(sequenceStatus)) return { status: "Weak Structure", majorBias: "mixed" };
+  if(sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
+  if(sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
+  if(["Active Range", "Potential Range"].includes(macroRangeStatus?.status) || sequenceStatus === "Range") return { status: "Macro Range", majorBias: "range" };
+  if(sequenceStatus === "Mixed") return { status: "Mixed Structure", majorBias: "mixed" };
   return { status: "Weak Structure", majorBias: "mixed" };
+}
+function buildWeeklyStructureConflictRiskNotes(context){
+  const sequenceStatus = context?.swingSequence?.status;
+  const bosStatus = context?.bosChochStatus?.status;
+  if(sequenceStatus === "HH/HL" && bosStatus === "CHOCH Down") return ["Bullish swing sequence exists, but Weekly close shows downside character change."];
+  if(sequenceStatus === "LH/LL" && bosStatus === "CHOCH Up") return ["Bearish swing sequence exists, but Weekly close shows upside character change."];
+  return [];
+}
+function calibrateWeeklyStructureStatus(context){
+  if(!context || context.available !== true) return context;
+  if(!hasWeeklyStructureCharacterConflict(context.swingSequence?.status, context.bosChochStatus?.status)) return { ...context, riskNotes: [...(context.riskNotes || [])] };
+  return {
+    ...context,
+    status: "Mixed Structure",
+    majorBias: "mixed",
+    riskNotes: [...buildWeeklyStructureConflictRiskNotes(context), ...(context.riskNotes || [])],
+  };
 }
 function buildWeeklyMajorFvgContext(weeklyState = marketPreparationState.weekly){
   const details = Array.isArray(weeklyState?.fvgDetails) ? weeklyState.fvgDetails : [];
@@ -3884,7 +3913,7 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
   const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config);
   const macroRangeStatus = deriveWeeklyMacroRangeStatus(closedCandles, swings, config);
   const structureStatus = deriveWeeklyStructureStatus(swingSequence, bosChochStatus, macroRangeStatus);
-  const context = {
+  const context = calibrateWeeklyStructureStatus({
     available: true,
     role: "major_context",
     status: structureStatus.status,
@@ -3900,8 +3929,8 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
     riskNotes: [],
     use: "Major Context",
     disclaimer: createScenarioDisclaimer(),
-  };
-  context.riskNotes = buildWeeklyStructureRiskNotes(context, metrics);
+  });
+  context.riskNotes = [...new Set([...(context.riskNotes || []), ...buildWeeklyStructureRiskNotes(context, metrics)])];
   return context;
 }
 function formatWeeklyStructurePrice(value){
@@ -3923,8 +3952,10 @@ function formatWeeklyMajorStructurePanel(context){
   return `<div class="weekly-major-structure-header"><div><h3>Weekly Major Structure</h3><p>Major Context only · scenario planning reference.</p></div><span class="weekly-major-status weekly-major-status-${String(safe.status || "unavailable").toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(safe.status || "Context Unavailable")}</span></div><div class="weekly-major-structure-grid"><div><span>Major Bias</span><strong>${escapeHtml(safe.majorBias || "unavailable")}</strong></div><div><span>Swing Sequence</span><strong>${escapeHtml(safe.swingSequence?.status || "Unavailable")}</strong></div><div><span>BOS/CHOCH</span><strong>${escapeHtml(safe.bosChochStatus?.status || "None")}</strong><small>${escapeHtml(safe.bosChochStatus?.note || "No close-confirmed Weekly BOS/CHOCH context.")}</small></div><div><span>Macro Range</span><strong>${escapeHtml(formatWeeklyMacroRangeDisplay(safe.macroRangeStatus))}</strong></div><div><span>Major Swing High</span><strong>${formatWeeklySwingDisplay(safe.majorSwingHigh)}</strong></div><div><span>Major Swing Low</span><strong>${formatWeeklySwingDisplay(safe.majorSwingLow)}</strong></div></div><div class="weekly-major-risk-notes"><span>Risk Notes</span><ul>${notes.map((note)=>`<li>${escapeHtml(note)}</li>`).join("")}</ul><p>${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p></div>`;
 }
 function renderWeeklyMajorStructure(context){
-  if(!els.weeklyMajorStructurePanel) return;
-  els.weeklyMajorStructurePanel.innerHTML = formatWeeklyMajorStructurePanel(context || createEmptyWeeklyMajorStructureContext("Weekly major structure context is loading."));
+  const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context is loading.");
+  latestWeeklyMajorStructureContext = safe;
+  if(els.weeklyMajorStructurePanel) els.weeklyMajorStructurePanel.innerHTML = formatWeeklyMajorStructurePanel(safe);
+  renderDailyValidationFoundation();
 }
 function runWeeklyMajorStructureFixtureTests(){
   const candle = (i, high, low, close, extra={})=>({ time:i, open:close, high, low, close, closeTime:i, closed:true, ...extra });
@@ -3957,6 +3988,96 @@ function runWeeklyMajorStructureFixtureTests(){
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
 if(typeof window !== "undefined") window.runWeeklyMajorStructureFixtureTests = runWeeklyMajorStructureFixtureTests;
+
+function createEmptyDailyValidationContext(reason = "Daily validation foundation is waiting for context."){
+  return {
+    available: false,
+    role: "structure_validation",
+    status: "Context Unavailable",
+    selectedRange: activeDailyRange || "unavailable",
+    structureMode: "unavailable",
+    dailyPattern: "Daily pattern context unavailable",
+    weeklyReference: "Weekly structure context unavailable",
+    use: "Structure Validation only",
+    gapNote: reason,
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
+function normalizeDailyValidationFoundationStatus(status){
+  return ["Foundation Ready", "Pending Weekly Alignment", "Context Unavailable"].includes(status) ? status : "Context Unavailable";
+}
+function buildDailyValidationFoundationContext(dailySnapshot = buildDailyContextSnapshot(), weeklyContext = latestWeeklyMajorStructureContext){
+  const weeklyAvailable = weeklyContext?.available === true;
+  const dailyAvailable = dailySnapshot?.available === true;
+  const selectedRange = dailySnapshot?.rangeMode || activeDailyRange || "unavailable";
+  const structureMode = selectedRange !== "unavailable" ? getDailyStructureMode(selectedRange) : "unavailable";
+  const dailyPattern = dailySnapshot?.pattern?.name && dailySnapshot.pattern.name !== "unavailable" ? `${dailySnapshot.pattern.name} · ${dailySnapshot.pattern.status || "context"}` : "Daily pattern context unavailable";
+  if(!weeklyAvailable) return { ...createEmptyDailyValidationContext("Full Daily alignment with Weekly will be added in the next patch."), selectedRange, structureMode, dailyPattern, weeklyReference: "Weekly structure context unavailable" };
+  return {
+    available: dailyAvailable,
+    role: "structure_validation",
+    status: dailyAvailable ? "Foundation Ready" : "Pending Weekly Alignment",
+    selectedRange,
+    structureMode,
+    dailyPattern,
+    weeklyReference: `Weekly Major Structure available · ${weeklyContext.status || "context"}`,
+    use: "Structure Validation only",
+    gapNote: "Full Daily alignment with Weekly will be added in the next patch.",
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
+function formatDailyValidationFoundationPanel(context){
+  const safe = context || createEmptyDailyValidationContext("Daily validation foundation unavailable.");
+  const status = normalizeDailyValidationFoundationStatus(safe.status);
+  return `<div class="daily-validation-header"><div><h3>Daily Validation Foundation</h3><p>Display-only foundation for future Daily alignment with Weekly Major Structure.</p></div><span class="daily-validation-status daily-validation-status-${status.toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(status)}</span></div><div class="daily-validation-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Selected Range</span><strong>${escapeHtml(safe.selectedRange || "unavailable")}</strong></div><div><span>Structure Mode</span><strong>${escapeHtml(safe.structureMode || "unavailable")}</strong></div><div><span>Daily Pattern</span><strong>${escapeHtml(safe.dailyPattern || "Daily pattern context unavailable")}</strong></div><div><span>Weekly Reference</span><strong>${escapeHtml(safe.weeklyReference || "Weekly structure context unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Structure Validation only")}</strong></div></div><p class="daily-validation-gap"><strong>Gap Note:</strong> ${escapeHtml(safe.gapNote || "Full Daily alignment with Weekly will be added in the next patch.")}</p><p class="daily-validation-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+}
+function renderDailyValidationFoundation(dailySnapshot = null, weeklyContext = latestWeeklyMajorStructureContext){
+  if(!els.dailyValidationFoundationPanel) return;
+  const snapshot = dailySnapshot || buildDailyContextSnapshot(marketPreparationState.daily, marketPreparationState.currentPrice);
+  els.dailyValidationFoundationPanel.innerHTML = formatDailyValidationFoundationPanel(buildDailyValidationFoundationContext(snapshot, weeklyContext));
+}
+function runWeeklyStructureConflictCalibrationFixtureTests(){
+  const bullishConflict = calibrateWeeklyStructureStatus({ available:true, status:"Bullish Structure", majorBias:"bullish", swingSequence:{status:"HH/HL"}, bosChochStatus:{status:"CHOCH Down"}, riskNotes:[] });
+  const bearishConflict = calibrateWeeklyStructureStatus({ available:true, status:"Bearish Structure", majorBias:"bearish", swingSequence:{status:"LH/LL"}, bosChochStatus:{status:"CHOCH Up"}, riskNotes:[] });
+  const bullishAligned = deriveWeeklyStructureStatus({status:"HH/HL"}, {status:"BOS Up"}, {status:"No Clear Range"});
+  const bearishAligned = deriveWeeklyStructureStatus({status:"LH/LL"}, {status:"BOS Down"}, {status:"No Clear Range"});
+  const original = { available:true, status:"Bullish Structure", majorBias:"bullish", swingSequence:{status:"HH/HL"}, bosChochStatus:{status:"CHOCH Down"}, riskNotes:[] };
+  const before = JSON.stringify(original);
+  const calibrated = calibrateWeeklyStructureStatus(original);
+  const html = formatWeeklyMajorStructurePanel({ ...calibrated, majorSwingHigh:null, majorSwingLow:null, macroRangeStatus:{status:"Unavailable"}, disclaimer:createScenarioDisclaimer() });
+  const forbidden = /\bbuy\b|\bsell\b|confirmed entry|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"HH/HL + CHOCH Down is not pure bullish", passed: bullishConflict.status !== "Bullish Structure" && bullishConflict.majorBias === "mixed" },
+    { name:"LH/LL + CHOCH Up is not pure bearish", passed: bearishConflict.status !== "Bearish Structure" && bearishConflict.majorBias === "mixed" },
+    { name:"HH/HL + BOS Up can remain bullish", passed: bullishAligned.status === "Bullish Structure" },
+    { name:"LH/LL + BOS Down can remain bearish", passed: bearishAligned.status === "Bearish Structure" },
+    { name:"conflict adds safe risk note", passed: bullishConflict.riskNotes.some((note)=>/downside character change/i.test(note)) },
+    { name:"wording avoids unsafe language", passed: !forbidden.test(html) },
+    { name:"input context is not mutated", passed: JSON.stringify(original) === before },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runDailyValidationFoundationFixtureTests(){
+  const weekly = { available:true, status:"Macro Range" };
+  const daily = { available:true, rangeMode:"3M", pattern:{ name:"Falling Channel", status:"Active" } };
+  const ready = buildDailyValidationFoundationContext(daily, weekly);
+  const missingWeekly = buildDailyValidationFoundationContext(daily, null);
+  const before = JSON.stringify({ daily, weekly });
+  const html = formatDailyValidationFoundationPanel(ready) + formatDailyValidationFoundationPanel(missingWeekly);
+  const forbidden = /aligns with weekly|weakens weekly|conflicts with weekly|\bbuy\b|\bsell\b|confirmed entry|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"renders Foundation Ready when Daily and Weekly contexts exist", passed: ready.status === "Foundation Ready" },
+    { name:"renders Context Unavailable when Weekly context is missing", passed: missingWeekly.status === "Context Unavailable" },
+    { name:"does not output full alignment statuses yet", passed: !/Aligns With Weekly|Weakens Weekly|Conflicts With Weekly/.test(html) },
+    { name:"reads selected Daily range and mode safely", passed: ready.selectedRange === "3M" && ready.structureMode === "active" },
+    { name:"inputs are not mutated", passed: JSON.stringify({ daily, weekly }) === before },
+    { name:"wording avoids unsafe language", passed: !forbidden.test(html) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){ window.runWeeklyStructureConflictCalibrationFixtureTests = runWeeklyStructureConflictCalibrationFixtureTests; window.runDailyValidationFoundationFixtureTests = runDailyValidationFoundationFixtureTests; }
 
 function updateMarketPreparationState(partial = {}){
   const merge = (target, source) => Object.entries(source).forEach(([k,v])=>{
@@ -6050,8 +6171,9 @@ function formatDailyContextIfvgLine(ifvg){
   return `${ifvg.latestLabel} · ${ifvg.latestState} · total ${total}`;
 }
 function renderDailyContextSummary(){
-  if(!els.dailyContextSummary) return;
   const snapshot = buildDailyContextSnapshot(marketPreparationState.daily, marketPreparationState.currentPrice);
+  renderDailyValidationFoundation(snapshot, latestWeeklyMajorStructureContext);
+  if(!els.dailyContextSummary) return;
   if(!snapshot.available){
     els.dailyContextSummary.innerHTML = `<h4>Daily Context</h4><p>Daily context unavailable.</p><small>Context only · bridges Weekly bias and 4H reaction</small>`;
     return;
@@ -11124,6 +11246,7 @@ loadVersionMeta();
 renderPulseLabEngineMap();
 renderTimeframeRoleAlignment();
 renderWeeklyMajorStructure();
+renderDailyValidationFoundation();
 renderH4LiquiditySummary();
 renderKeyMarketZonesSummary();
 renderH4LiquidityDiagnosticsPanel();
