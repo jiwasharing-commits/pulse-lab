@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -6771,6 +6771,7 @@ function renderMarketPreparationMap(mapData){
   renderTradePlanScenario();
   renderMultiScenarioPlanningSection(safeMap);
   renderPulseLabEngineMap();
+  renderTimeframeRoleAlignment();
   renderH4LiquiditySummary();
   renderKeyMarketZonesSummary(safeMap);
   renderIfvgContextPanel();
@@ -6884,6 +6885,53 @@ function runPulseLabEngineMapFixtureTests(){
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
 if(typeof window !== "undefined") window.runPulseLabEngineMapFixtureTests = runPulseLabEngineMapFixtureTests;
+
+function buildTimeframeRoleAlignmentSnapshot(state = marketPreparationState){
+  const sourceReady = state?.meta?.sourcesReady || {};
+  return [
+    { timeframe: "Weekly", role: "Major Context", status: "Partial", usedFor: ["Big-picture structure", "Major S/R", "Major FVG", "RSI regime / momentum bias", "Divergence context"], gapNote: "Major BOS/CHOCH not yet formalized", available: sourceReady.weekly === true || !!state?.weekly?.srSummary || (Array.isArray(state?.weekly?.fvgZones) && state.weekly.fvgZones.length > 0) },
+    { timeframe: "Daily", role: "Structure Validation", status: "Active", usedFor: ["3M active structure", "6M intermediate structure", "1Y macro range", "Daily FVG/S/R", "Channel / range / broken channel"], gapNote: "Alignment with Weekly not yet formalized", available: sourceReady.daily === true || state?.daily?.pattern?.ok === true || !!state?.daily?.srSummary },
+    { timeframe: "4H", role: "Reaction Context", status: "Partial", usedFor: ["Reaction to Weekly/Daily/Market Map zones", "Sweep / reclaim / rejection", "H4 liquidity context", "BOS/CHOCH confirmation context"], gapNote: "Unified H4ReactionContext not yet formalized", available: sourceReady.h4 === true || !!state?.h4?.structureStatus || !!state?.h4?.liquidityOrderflowState?.lastUpdated },
+    { timeframe: "1H", role: "Timing Context", status: "Context", usedFor: ["Timing refinement", "Mini sweep", "BOS/CHOCH timing", "Stochastic timing"], gapNote: "Quick retest context not yet formalized", available: sourceReady.h1 === true || !!state?.h1?.sweepStatus || !!state?.h1?.structureStatus || state?.h1?.stochastic?.ok === true },
+  ];
+}
+function formatTimeframeRoleStatus(status){
+  const allowed = new Set(["Active", "Context", "Partial", "Unavailable"]);
+  return allowed.has(status) ? status : "Unavailable";
+}
+function getTimeframeRoleStatusClass(status){ return `status-${formatTimeframeRoleStatus(status).toLowerCase().replace(/[^a-z]+/g, "-")}`; }
+function formatTimeframeRoleCard(card){
+  const status = formatTimeframeRoleStatus(card?.available === false ? "Unavailable" : card?.status);
+  const usedFor = Array.isArray(card?.usedFor) && card.usedFor.length ? card.usedFor : ["Context unavailable"];
+  return `<article class="timeframe-role-item"><div class="engine-map-item-header"><div><h4>${escapeHtml(card?.timeframe || "Timeframe")} — ${escapeHtml(card?.role || "Context")}</h4><p class="timeframe-role-use">${usedFor.map(escapeHtml).join(" · ")}</p></div><span class="engine-map-status ${getTimeframeRoleStatusClass(status)}">${escapeHtml(status)}</span></div><p class="timeframe-role-gap"><strong>Gap note:</strong> ${escapeHtml(card?.gapNote || "No current gap note.")}</p><p class="timeframe-role-safe">Display-only context · scenario planning only · not a trade instruction.</p></article>`;
+}
+function renderTimeframeRoleAlignment(state = marketPreparationState){
+  if(!els.timeframeRoleAlignmentPanel) return;
+  const cards = buildTimeframeRoleAlignmentSnapshot(state);
+  els.timeframeRoleAlignmentPanel.innerHTML = `<div class="engine-map-header"><div><h3>Timeframe Role Alignment</h3><p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p></div></div><div class="timeframe-role-grid">${cards.map(formatTimeframeRoleCard).join("")}</div>`;
+}
+function runTimeframeRoleAlignmentFixtureTests(){
+  const input = { weekly:{}, daily:{}, h4:{}, h1:{ stochastic:{} }, meta:{ sourcesReady:{} } };
+  const before = JSON.stringify(input);
+  const cards = buildTimeframeRoleAlignmentSnapshot(input);
+  const html = cards.map(formatTimeframeRoleCard).join("");
+  const statusCases = ["Active", "Context", "Partial", "Unavailable", "unexpected"].map(formatTimeframeRoleStatus);
+  const forbidden = /buy|sell|entry confirmed|signal|guaranteed|high probability trade|must enter|must exit/i;
+  const cases = [
+    { name:"all four timeframe cards are present", passed:cards.length === 4 && ["Weekly","Daily","4H","1H"].every((name)=>cards.some((card)=>card.timeframe === name)) },
+    { name:"Weekly role is Major Context", passed:cards.find((card)=>card.timeframe === "Weekly")?.role === "Major Context" },
+    { name:"Daily role is Structure Validation", passed:cards.find((card)=>card.timeframe === "Daily")?.role === "Structure Validation" },
+    { name:"4H role is Reaction Context", passed:cards.find((card)=>card.timeframe === "4H")?.role === "Reaction Context" },
+    { name:"1H role is Timing Context", passed:cards.find((card)=>card.timeframe === "1H")?.role === "Timing Context" },
+    { name:"status labels normalize safely", passed:statusCases.includes("Unavailable") && statusCases.slice(0,4).every((status)=>["Active","Context","Partial","Unavailable"].includes(status)) },
+    { name:"missing state renders fallback safely", passed:/Unavailable/.test(html) && /Gap note/.test(html) },
+    { name:"no direct action wording appears", passed:!forbidden.test(html) },
+    { name:"builder does not mutate input state", passed:before === JSON.stringify(input) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed:failed === 0, total:cases.length, failed, results:cases };
+}
+if(typeof window !== "undefined") window.runTimeframeRoleAlignmentFixtureTests = runTimeframeRoleAlignmentFixtureTests;
 
 function formatH4LiquiditySummaryStatus(status){
   const key = String(status || "unavailable").toLowerCase();
@@ -10817,6 +10865,7 @@ async function loadDashboard(){
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
 renderPulseLabEngineMap();
+renderTimeframeRoleAlignment();
 renderH4LiquiditySummary();
 renderKeyMarketZonesSummary();
 renderH4LiquidityDiagnosticsPanel();

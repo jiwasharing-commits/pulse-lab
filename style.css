@@ -449,3 +449,10 @@
 /* Patch 8: labels may be hidden for density while their source zones/lines remain visible. */
 .chart-density-hidden{display:none!important}
 .fvg-overlay-label,.chart-snr-label,.daily-sr-label,.daily-pattern-line text{font-size:10px;letter-spacing:.01em}
+
+.timeframe-role-card{margin-top:12px;padding:.78rem .85rem;border:1px solid rgba(96,165,250,.18);border-radius:.85rem;background:linear-gradient(180deg,rgba(12,24,48,.72),rgba(15,23,42,.64));box-shadow:0 10px 22px rgba(2,6,23,.14)}
+.timeframe-role-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.timeframe-role-item{min-width:0;border:1px solid rgba(148,163,184,.12);border-radius:.68rem;background:rgba(15,23,42,.38);padding:.5rem .56rem}
+.timeframe-role-use,.timeframe-role-gap,.timeframe-role-safe{margin:.22rem 0 0;color:#9fb1d4;font-size:.66rem;line-height:1.32;overflow-wrap:anywhere}.timeframe-role-use{color:#cbd5e1}.timeframe-role-gap strong{color:#dbeafe}.timeframe-role-safe{color:#8fa0c4;font-size:.61rem}.engine-map-status.status-partial{background:rgba(251,146,60,.14);border-color:rgba(251,146,60,.42);color:#fed7aa}
+@media (max-width:760px){.timeframe-role-grid{grid-template-columns:1fr}}
+@media (max-width:560px){.timeframe-role-card{padding:.7rem}}
