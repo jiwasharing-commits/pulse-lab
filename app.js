@@ -21,7 +21,7 @@ const els = {
   leftDirection: document.getElementById("leftDirection"), leftPhase: document.getElementById("leftPhase"), leftChanges: document.getElementById("leftChanges"), leftFearGreed: document.getElementById("leftFearGreed"),
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
-  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
+  right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtfDailyValidation: document.getElementById("mtfDailyValidation"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
   prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
@@ -46,6 +46,7 @@ let weeklySrOverlayLayer = null;
 let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
+let latestDailyValidationContext = null;
 let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
@@ -3989,52 +3990,168 @@ function runWeeklyMajorStructureFixtureTests(){
 }
 if(typeof window !== "undefined") window.runWeeklyMajorStructureFixtureTests = runWeeklyMajorStructureFixtureTests;
 
-function createEmptyDailyValidationContext(reason = "Daily validation foundation is waiting for context."){
+function createEmptyDailyValidationContext(reason = "Daily context is unavailable."){
   return {
     available: false,
     role: "structure_validation",
     status: "Context Unavailable",
-    selectedRange: activeDailyRange || "unavailable",
-    structureMode: "unavailable",
-    dailyPattern: "Daily pattern context unavailable",
-    weeklyReference: "Weekly structure context unavailable",
+    selectedRange: activeDailyRange || null,
+    structureMode: null,
+    dailyPatternStatus: null,
+    channelStatus: null,
+    rangeStatus: null,
+    brokenChannelStatus: null,
+    alignmentWithWeekly: { status: "unavailable", weeklyReference: null },
+    alignmentReasons: [reason],
+    dailyFvgContext: null,
+    dailySrContext: null,
+    riskNotes: ["Daily validation waits for Weekly Major Structure and Daily context."],
     use: "Structure Validation only",
-    gapNote: reason,
     disclaimer: createScenarioDisclaimer(),
   };
 }
-function normalizeDailyValidationFoundationStatus(status){
-  return ["Foundation Ready", "Pending Weekly Alignment", "Context Unavailable"].includes(status) ? status : "Context Unavailable";
+function normalizeDailyValidationAlignmentStatus(status){
+  return ["Aligns With Weekly", "Weakens Weekly", "Conflicts With Weekly", "Transition / Mixed", "Context Unavailable"].includes(status) ? status : "Context Unavailable";
+}
+function getDailyValidationAlignmentStatusCode(status){
+  return ({ "Aligns With Weekly":"aligns", "Weakens Weekly":"weakens", "Conflicts With Weekly":"conflicts", "Transition / Mixed":"transition", "Context Unavailable":"unavailable" })[normalizeDailyValidationAlignmentStatus(status)] || "unavailable";
+}
+function normalizeDailyValidationPattern(pattern){
+  const name = pattern?.name || "unavailable";
+  const status = pattern?.status || "unavailable";
+  const position = pattern?.position || "unavailable";
+  const text = `${name} ${status} ${position}`.toLowerCase();
+  return {
+    name,
+    status,
+    position,
+    text,
+    isRising: text.includes("rising"),
+    isFalling: text.includes("falling"),
+    isRange: text.includes("range"),
+    isBrokenSupport: text.includes("broken channel support") || (text.includes("broken") && text.includes("support")) || text.includes("breakdown"),
+    isBrokenResistance: text.includes("broken channel resistance") || (text.includes("broken") && text.includes("resistance")) || text.includes("breakout"),
+    isReclaimed: text.includes("reclaimed"),
+    isStale: text.includes("stale"),
+    nearSupport: text.includes("support") || text.includes("lower"),
+    nearResistance: text.includes("resistance") || text.includes("upper"),
+    unavailable: name === "unavailable" || status === "unavailable",
+  };
+}
+function getDailyValidationStructureSignals(dailyContext){
+  const pattern = normalizeDailyValidationPattern(dailyContext?.pattern);
+  const range = String(dailyContext?.rangeMode || activeDailyRange || "").toUpperCase();
+  const fvgType = String(dailyContext?.fvg?.nearestType || "").toLowerCase();
+  const fvgRelation = String(dailyContext?.fvg?.relation || "").toLowerCase();
+  const contextBias = String(dailyContext?.contextBias || "").toLowerCase();
+  const bullish = [];
+  const bearish = [];
+  const neutral = [];
+  if(pattern.isRising) bullish.push("Daily rising structure is active.");
+  if(pattern.nearSupport && !pattern.isBrokenSupport) bullish.push("Daily structure is near or holding support context.");
+  if(pattern.isBrokenResistance || pattern.isReclaimed) bullish.push("Daily structure shows reclaim or broken-resistance context.");
+  if(pattern.isFalling) bearish.push("Daily falling structure is active.");
+  if(pattern.nearResistance) bearish.push("Daily structure is near resistance context.");
+  if(pattern.isBrokenSupport && !pattern.isReclaimed && !pattern.isStale) bearish.push("Daily structure shows recent broken-support context.");
+  if(fvgType === "bullish" && ["inside", "near", "above"].includes(fvgRelation)) bullish.push("Daily bullish FVG context is available.");
+  if(fvgType === "bearish" && ["inside", "near", "below"].includes(fvgRelation)) bearish.push("Daily bearish FVG context is available.");
+  if(dailyContext?.sr?.nearestSupport) bullish.push("Daily S/R support context is available.");
+  if(dailyContext?.sr?.nearestResistance) bearish.push("Daily S/R resistance context is available.");
+  if(contextBias.includes("bullish")) bullish.push("Daily context bias leans bullish.");
+  if(contextBias.includes("bearish")) bearish.push("Daily context bias leans bearish.");
+  if(pattern.isRange || range === "1Y") neutral.push("Daily context is range or macro-range oriented.");
+  if(pattern.unavailable || contextBias.includes("mixed") || contextBias.includes("neutral")) neutral.push("Daily is in transition or lacks clear structure.");
+  if(pattern.isStale) neutral.push("Daily broken-channel context is stale.");
+  return { bullish, bearish, neutral, pattern, range };
+}
+function getDailyValidationDirectionalBias(dailyContext){
+  const signals = getDailyValidationStructureSignals(dailyContext);
+  if(signals.bullish.length > signals.bearish.length && signals.bullish.length > 0) return "bullish";
+  if(signals.bearish.length > signals.bullish.length && signals.bearish.length > 0) return "bearish";
+  if(signals.bullish.length && signals.bearish.length) return "mixed";
+  return "transition";
+}
+function classifyDailyValidationAgainstWeekly(weeklyContext, dailyContext){
+  if(!weeklyContext || weeklyContext.available !== true || weeklyContext.majorBias === "unavailable") return { status: "Context Unavailable", code: "unavailable" };
+  if(!dailyContext || dailyContext.available !== true) return { status: "Context Unavailable", code: "unavailable" };
+  const signals = getDailyValidationStructureSignals(dailyContext);
+  const bias = weeklyContext.majorBias || "mixed";
+  const dailyBias = getDailyValidationDirectionalBias(dailyContext);
+  if(["range", "mixed"].includes(bias) || ["Macro Range", "Mixed Structure", "Weak Structure"].includes(weeklyContext.status)) return { status: "Transition / Mixed", code: "transition", dailyBias, signals };
+  if(bias === "bullish"){
+    if(signals.bearish.length >= 2 || (dailyBias === "bearish" && !signals.pattern.isStale)) return { status: "Conflicts With Weekly", code: "conflicts", dailyBias, signals };
+    if(signals.bullish.length >= 2 && !signals.bearish.length) return { status: "Aligns With Weekly", code: "aligns", dailyBias, signals };
+    if(signals.bullish.length || signals.bearish.length || signals.neutral.length) return { status: "Weakens Weekly", code: "weakens", dailyBias, signals };
+  }
+  if(bias === "bearish"){
+    if(signals.bullish.length >= 2 || (dailyBias === "bullish" && !signals.pattern.isStale)) return { status: "Conflicts With Weekly", code: "conflicts", dailyBias, signals };
+    if(signals.bearish.length >= 2 && !signals.bullish.length) return { status: "Aligns With Weekly", code: "aligns", dailyBias, signals };
+    if(signals.bullish.length || signals.bearish.length || signals.neutral.length) return { status: "Weakens Weekly", code: "weakens", dailyBias, signals };
+  }
+  return { status: "Transition / Mixed", code: "transition", dailyBias, signals };
+}
+function buildDailyValidationAlignmentReasons(weeklyContext, dailyContext, classification){
+  if(classification?.code === "unavailable") return [weeklyContext?.available === true ? "Daily context is unavailable." : "Weekly major context is unavailable."];
+  if(classification?.code === "aligns") return ["Daily structure supports Weekly major context.", ...(classification.signals?.bullish || classification.signals?.bearish || []).slice(0,2)];
+  if(classification?.code === "conflicts") return ["Daily structure conflicts with Weekly major context.", ...(classification.signals?.bearish || classification.signals?.bullish || []).slice(0,2)];
+  if(classification?.code === "weakens") return ["Daily structure is mixed while Weekly context remains directional.", ...(classification.signals?.neutral || []).slice(0,2)];
+  return ["Weekly major context is mixed; Daily validation remains cautious.", ...(classification?.signals?.neutral || ["Daily is in transition or lacks clear structure."]).slice(0,2)];
+}
+function buildDailyValidationRiskNotes(weeklyContext, dailyContext, classification){
+  const notes = [];
+  if(classification?.code === "weakens") notes.push("Daily validation is incomplete; use as structure context only.");
+  if(classification?.code === "conflicts") notes.push("Daily context differs from Weekly major context; keep scenario planning cautious.");
+  if(classification?.signals?.pattern?.isStale) notes.push("Daily broken-channel context is stale and should remain secondary.");
+  if(String(dailyContext?.rangeMode || "").toUpperCase() === "1Y") notes.push("1Y Daily view is macro context and not a timing layer.");
+  if(!notes.length) notes.push("Display-only validation; no scenario scoring or primary selection impact.");
+  return notes;
 }
 function buildDailyValidationFoundationContext(dailySnapshot = buildDailyContextSnapshot(), weeklyContext = latestWeeklyMajorStructureContext){
-  const weeklyAvailable = weeklyContext?.available === true;
-  const dailyAvailable = dailySnapshot?.available === true;
-  const selectedRange = dailySnapshot?.rangeMode || activeDailyRange || "unavailable";
-  const structureMode = selectedRange !== "unavailable" ? getDailyStructureMode(selectedRange) : "unavailable";
-  const dailyPattern = dailySnapshot?.pattern?.name && dailySnapshot.pattern.name !== "unavailable" ? `${dailySnapshot.pattern.name} · ${dailySnapshot.pattern.status || "context"}` : "Daily pattern context unavailable";
-  if(!weeklyAvailable) return { ...createEmptyDailyValidationContext("Full Daily alignment with Weekly will be added in the next patch."), selectedRange, structureMode, dailyPattern, weeklyReference: "Weekly structure context unavailable" };
+  const selectedRange = dailySnapshot?.rangeMode || activeDailyRange || null;
+  const structureMode = selectedRange ? getDailyStructureMode(selectedRange) : null;
+  const classification = classifyDailyValidationAgainstWeekly(weeklyContext, dailySnapshot);
+  const status = normalizeDailyValidationAlignmentStatus(classification.status);
+  const pattern = normalizeDailyValidationPattern(dailySnapshot?.pattern);
+  const weeklyReference = weeklyContext?.available === true ? `Weekly Major Structure · ${weeklyContext.status || "context"}` : null;
+  const reasons = buildDailyValidationAlignmentReasons(weeklyContext, dailySnapshot, classification);
+  const riskNotes = buildDailyValidationRiskNotes(weeklyContext, dailySnapshot, classification);
   return {
-    available: dailyAvailable,
+    available: status !== "Context Unavailable",
     role: "structure_validation",
-    status: dailyAvailable ? "Foundation Ready" : "Pending Weekly Alignment",
+    status,
     selectedRange,
     structureMode,
-    dailyPattern,
-    weeklyReference: `Weekly Major Structure available · ${weeklyContext.status || "context"}`,
+    dailyPatternStatus: dailySnapshot?.pattern?.status || null,
+    channelStatus: pattern.isRising ? "Rising Channel" : pattern.isFalling ? "Falling Channel" : null,
+    rangeStatus: pattern.isRange ? "Range Context" : null,
+    brokenChannelStatus: pattern.isBrokenSupport ? "Broken Channel Support" : pattern.isBrokenResistance ? "Broken Channel Resistance" : null,
+    alignmentWithWeekly: { status: getDailyValidationAlignmentStatusCode(status), weeklyReference },
+    alignmentReasons: reasons,
+    dailyFvgContext: dailySnapshot?.fvg || null,
+    dailySrContext: dailySnapshot?.sr || null,
+    dailyPattern: dailySnapshot?.pattern?.name && dailySnapshot.pattern.name !== "unavailable" ? `${dailySnapshot.pattern.name} · ${dailySnapshot.pattern.status || "context"}` : "Daily pattern context unavailable",
+    weeklyReference: weeklyReference || "Weekly structure context unavailable",
+    riskNotes,
     use: "Structure Validation only",
-    gapNote: "Full Daily alignment with Weekly will be added in the next patch.",
+    gapNote: "Display-only Daily validation; scenario integration is not enabled in this patch.",
     disclaimer: createScenarioDisclaimer(),
   };
 }
+function formatDailyValidationList(items, className){
+  const list = Array.isArray(items) && items.length ? items : ["Context unavailable."];
+  return `<ul class="${className}">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
 function formatDailyValidationFoundationPanel(context){
-  const safe = context || createEmptyDailyValidationContext("Daily validation foundation unavailable.");
-  const status = normalizeDailyValidationFoundationStatus(safe.status);
-  return `<div class="daily-validation-header"><div><h3>Daily Validation Foundation</h3><p>Display-only foundation for future Daily alignment with Weekly Major Structure.</p></div><span class="daily-validation-status daily-validation-status-${status.toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(status)}</span></div><div class="daily-validation-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Selected Range</span><strong>${escapeHtml(safe.selectedRange || "unavailable")}</strong></div><div><span>Structure Mode</span><strong>${escapeHtml(safe.structureMode || "unavailable")}</strong></div><div><span>Daily Pattern</span><strong>${escapeHtml(safe.dailyPattern || "Daily pattern context unavailable")}</strong></div><div><span>Weekly Reference</span><strong>${escapeHtml(safe.weeklyReference || "Weekly structure context unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Structure Validation only")}</strong></div></div><p class="daily-validation-gap"><strong>Gap Note:</strong> ${escapeHtml(safe.gapNote || "Full Daily alignment with Weekly will be added in the next patch.")}</p><p class="daily-validation-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+  const safe = context || createEmptyDailyValidationContext("Daily validation alignment unavailable.");
+  const status = normalizeDailyValidationAlignmentStatus(safe.status);
+  return `<div class="daily-validation-header"><div><h3>Daily Validation Alignment</h3><p>Display-only validation of Daily structure against Weekly Major Structure.</p></div><span class="daily-validation-status daily-validation-status-${status.toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(status)}</span></div><div class="daily-validation-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Selected Range</span><strong>${escapeHtml(safe.selectedRange || "unavailable")}</strong></div><div><span>Structure Mode</span><strong>${escapeHtml(safe.structureMode || "unavailable")}</strong></div><div><span>Daily Pattern</span><strong>${escapeHtml(safe.dailyPattern || "Daily pattern context unavailable")}</strong></div><div><span>Weekly Reference</span><strong>${escapeHtml(safe.weeklyReference || safe.alignmentWithWeekly?.weeklyReference || "Weekly structure context unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Structure Validation only")}</strong></div></div><div class="daily-validation-list-block"><span>Alignment Reasons</span>${formatDailyValidationList(safe.alignmentReasons, "daily-validation-reasons")}</div><div class="daily-validation-list-block daily-validation-risk"><span>Risk Notes</span>${formatDailyValidationList(safe.riskNotes, "daily-validation-risks")}</div><p class="daily-validation-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
 }
 function renderDailyValidationFoundation(dailySnapshot = null, weeklyContext = latestWeeklyMajorStructureContext){
   if(!els.dailyValidationFoundationPanel) return;
   const snapshot = dailySnapshot || buildDailyContextSnapshot(marketPreparationState.daily, marketPreparationState.currentPrice);
-  els.dailyValidationFoundationPanel.innerHTML = formatDailyValidationFoundationPanel(buildDailyValidationFoundationContext(snapshot, weeklyContext));
+  latestDailyValidationContext = buildDailyValidationFoundationContext(snapshot, weeklyContext);
+  els.dailyValidationFoundationPanel.innerHTML = formatDailyValidationFoundationPanel(latestDailyValidationContext);
+  renderMtfSummary();
 }
 function runWeeklyStructureConflictCalibrationFixtureTests(){
   const bullishConflict = calibrateWeeklyStructureStatus({ available:true, status:"Bullish Structure", majorBias:"bullish", swingSequence:{status:"HH/HL"}, bosChochStatus:{status:"CHOCH Down"}, riskNotes:[] });
@@ -4058,18 +4175,27 @@ function runWeeklyStructureConflictCalibrationFixtureTests(){
   const failed = cases.filter((item)=>!item.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function createDailyValidationFixtureSnapshot(patternName, patternStatus = "Active", patternPosition = "Near support", extras = {}){
+  return {
+    available: true,
+    rangeMode: extras.rangeMode || "3M",
+    pattern: { name: patternName, status: patternStatus, position: patternPosition },
+    fvg: extras.fvg || { nearestType: "unavailable", relation: "unavailable" },
+    sr: extras.sr || {},
+    contextBias: extras.contextBias || "neutral context",
+  };
+}
 function runDailyValidationFoundationFixtureTests(){
-  const weekly = { available:true, status:"Macro Range" };
-  const daily = { available:true, rangeMode:"3M", pattern:{ name:"Falling Channel", status:"Active" } };
+  const weekly = { available:true, status:"Bullish Structure", majorBias:"bullish" };
+  const daily = createDailyValidationFixtureSnapshot("Rising Channel", "Active", "Near support", { sr:{ nearestSupport:{ price:100 } }, contextBias:"bullish context" });
   const ready = buildDailyValidationFoundationContext(daily, weekly);
   const missingWeekly = buildDailyValidationFoundationContext(daily, null);
   const before = JSON.stringify({ daily, weekly });
   const html = formatDailyValidationFoundationPanel(ready) + formatDailyValidationFoundationPanel(missingWeekly);
-  const forbidden = /aligns with weekly|weakens weekly|conflicts with weekly|\bbuy\b|\bsell\b|confirmed entry|guaranteed|high probability|must enter|must exit/i;
+  const forbidden = /\bbuy\b|\bsell\b|confirmed entry|guaranteed|high probability|must enter|must exit/i;
   const cases = [
-    { name:"renders Foundation Ready when Daily and Weekly contexts exist", passed: ready.status === "Foundation Ready" },
+    { name:"renders alignment status when Daily and Weekly contexts exist", passed: ready.status === "Aligns With Weekly" },
     { name:"renders Context Unavailable when Weekly context is missing", passed: missingWeekly.status === "Context Unavailable" },
-    { name:"does not output full alignment statuses yet", passed: !/Aligns With Weekly|Weakens Weekly|Conflicts With Weekly/.test(html) },
     { name:"reads selected Daily range and mode safely", passed: ready.selectedRange === "3M" && ready.structureMode === "active" },
     { name:"inputs are not mutated", passed: JSON.stringify({ daily, weekly }) === before },
     { name:"wording avoids unsafe language", passed: !forbidden.test(html) },
@@ -4077,7 +4203,38 @@ function runDailyValidationFoundationFixtureTests(){
   const failed = cases.filter((item)=>!item.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
-if(typeof window !== "undefined"){ window.runWeeklyStructureConflictCalibrationFixtureTests = runWeeklyStructureConflictCalibrationFixtureTests; window.runDailyValidationFoundationFixtureTests = runDailyValidationFoundationFixtureTests; }
+function runDailyValidationAlignmentFixtureTests(){
+  const bullishWeekly = { available:true, status:"Bullish Structure", majorBias:"bullish" };
+  const bearishWeekly = { available:true, status:"Bearish Structure", majorBias:"bearish" };
+  const rangeWeekly = { available:true, status:"Macro Range", majorBias:"range" };
+  const bullishDaily = createDailyValidationFixtureSnapshot("Rising Channel", "Active", "Near support", { sr:{ nearestSupport:{ price:100 } }, contextBias:"bullish context" });
+  const bearishDaily = createDailyValidationFixtureSnapshot("Falling Channel", "Active", "Near resistance", { sr:{ nearestResistance:{ price:100 } }, contextBias:"bearish context" });
+  const mixedDaily = createDailyValidationFixtureSnapshot("Horizontal Range", "Active", "Inside range", { contextBias:"mixed context" });
+  const before = JSON.stringify({ bullishWeekly, bearishWeekly, rangeWeekly, bullishDaily, bearishDaily, mixedDaily });
+  const missing = buildDailyValidationFoundationContext(bullishDaily, null);
+  const bullAlign = buildDailyValidationFoundationContext(bullishDaily, bullishWeekly);
+  const bullConflict = buildDailyValidationFoundationContext(bearishDaily, bullishWeekly);
+  const bullWeak = buildDailyValidationFoundationContext(mixedDaily, bullishWeekly);
+  const bearAlign = buildDailyValidationFoundationContext(bearishDaily, bearishWeekly);
+  const bearConflict = buildDailyValidationFoundationContext(bullishDaily, bearishWeekly);
+  const rangeStatus = buildDailyValidationFoundationContext(bullishDaily, rangeWeekly);
+  const html = [missing,bullAlign,bullConflict,bullWeak,bearAlign,bearConflict,rangeStatus].map(formatDailyValidationFoundationPanel).join("");
+  const forbidden = /\bbuy\b|\bsell\b|confirmed entry|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"missing Weekly context returns unavailable", passed: missing.status === "Context Unavailable" },
+    { name:"bullish Weekly plus rising/supportive Daily aligns", passed: bullAlign.status === "Aligns With Weekly" },
+    { name:"bullish Weekly plus falling/resistance Daily conflicts", passed: bullConflict.status === "Conflicts With Weekly" },
+    { name:"bullish Weekly plus mixed Daily weakens or transitions", passed: ["Weakens Weekly", "Transition / Mixed"].includes(bullWeak.status) },
+    { name:"bearish Weekly plus falling/resistance Daily aligns", passed: bearAlign.status === "Aligns With Weekly" },
+    { name:"bearish Weekly plus rising/supportive Daily conflicts", passed: bearConflict.status === "Conflicts With Weekly" },
+    { name:"macro range Weekly returns transition", passed: rangeStatus.status === "Transition / Mixed" },
+    { name:"inputs are not mutated", passed: JSON.stringify({ bullishWeekly, bearishWeekly, rangeWeekly, bullishDaily, bearishDaily, mixedDaily }) === before },
+    { name:"wording avoids unsafe language", passed: !forbidden.test(html) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){ window.runWeeklyStructureConflictCalibrationFixtureTests = runWeeklyStructureConflictCalibrationFixtureTests; window.runDailyValidationFoundationFixtureTests = runDailyValidationFoundationFixtureTests; window.runDailyValidationAlignmentFixtureTests = runDailyValidationAlignmentFixtureTests; }
 
 function updateMarketPreparationState(partial = {}){
   const merge = (target, source) => Object.entries(source).forEach(([k,v])=>{
@@ -11034,6 +11191,7 @@ function renderMtfSummary(){
     const wb = mtfState.weeklyDirection || 'Waiting for complete data';
     const h4 = mtfState.h4Structure ? `${mtfState.h4Structure}${mtfState.h4FvgNearest ? ` · ${mtfState.h4FvgNearest}` : ''}` : 'Waiting for complete data';
     const h1 = mtfState.h1Structure ? `${mtfState.h1Structure}${mtfState.h1Sweep ? ` · ${mtfState.h1Sweep}` : ''}` : 'Waiting for complete data';
+    const daily = latestDailyValidationContext?.status || 'Waiting for complete data';
 
     const weeklyBull = /Rising|Improving|Strength|Aligned|Bullish/.test(`${mtfState.weeklyDirection||''} ${mtfState.weeklyPhase||''} ${mtfState.weeklyDivergence||''}`);
     const weeklyBear = /Weakening|Cooling|Bearish/.test(`${mtfState.weeklyDirection||''} ${mtfState.weeklyPhase||''} ${mtfState.weeklyDivergence||''}`);
@@ -11050,6 +11208,7 @@ function renderMtfSummary(){
     if(wb==='Waiting for complete data' || h4==='Waiting for complete data' || h1==='Waiting for complete data') finalStatus='Waiting for complete data';
 
     els.mtfWeeklyBias.textContent = `Weekly Bias: ${wb}`;
+    if(els.mtfDailyValidation) els.mtfDailyValidation.textContent = `Daily: ${daily}`;
     els.mtf4hReaction.textContent = `4H Reaction: ${h4}`;
     els.mtf1hTiming.textContent = `1H Timing: ${h1}`;
     els.mtfFinalStatus.innerHTML = `Final Status: <span class="status-badge ${getStatusBadgeClass(finalStatus)}">${finalStatus}</span>`;
@@ -11123,6 +11282,7 @@ function setLoading(){
   if(els.rightDivergence) els.rightDivergence.textContent="loading";
   if(els.rightDivergenceMeta) els.rightDivergenceMeta.textContent="loading";
   if(els.mtfWeeklyBias) els.mtfWeeklyBias.textContent="Weekly Bias: waiting";
+  if(els.mtfDailyValidation) els.mtfDailyValidation.textContent="Daily: waiting";
   if(els.mtf4hReaction) els.mtf4hReaction.textContent="4H Reaction: waiting";
   if(els.mtf1hTiming) els.mtf1hTiming.textContent="1H Timing: waiting";
   if(els.mtfFinalStatus) els.mtfFinalStatus.innerHTML='Final Status: <span class="status-badge status-waiting">Waiting</span>';
