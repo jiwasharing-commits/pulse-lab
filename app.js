@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtfDailyValidation: document.getElementById("mtfDailyValidation"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4ReactionContextPanel: document.getElementById("h4ReactionContextPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4ReactionContextPanel: document.getElementById("h4ReactionContextPanel"), h1TimingContextPanel: document.getElementById("h1TimingContextPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -48,6 +48,7 @@ let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
 let latestDailyValidationContext = null;
 let latestH4ReactionContext = null;
+let latestH1TimingContext = null;
 let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
@@ -4464,6 +4465,7 @@ function renderH4ReactionContext(mapData = marketPreparationState.map){
   if(!els.h4ReactionContextPanel) return;
   latestH4ReactionContext = buildH4ReactionContext(marketPreparationState, latest4hCandles, mapData, latestDailyValidationContext);
   els.h4ReactionContextPanel.innerHTML = formatH4ReactionPanel(latestH4ReactionContext);
+  renderH1TimingContext();
 }
 function runH4ReactionContextFixtureTests(){
   const baseCandles = [
@@ -4514,6 +4516,231 @@ function runH4ReactionContextFixtureTests(){
 }
 if(typeof window !== "undefined") {
   window.runH4ReactionContextFixtureTests = runH4ReactionContextFixtureTests;
+}
+
+const H1_TIMING_STATUS_LABELS = ["Timing Supportive", "Timing Developing", "Timing Waiting", "Timing Weak", "Timing Failed", "Context Unavailable"];
+const H1_TIMING_DISCLAIMER = "Scenario planning only · not financial advice or a direct timing instruction.";
+const H1_TIMING_QUALITY_LABELS = ["supportive", "developing", "weak", "mixed", "unavailable"];
+function createEmptyH1TimingContext(reason = "Required 1H timing context is unavailable."){
+  return {
+    available: false,
+    role: "timing_context",
+    status: "Context Unavailable",
+    sweepStatus: null,
+    miniBosChochStatus: null,
+    retestStatus: null,
+    stochasticStatus: null,
+    relatedH4Reaction: latestH4ReactionContext?.status || null,
+    timingQuality: "unavailable",
+    timingReasons: [reason],
+    riskNotes: ["Timing Context only; waiting for sufficient 1H data."],
+    use: "Timing Context only",
+    disclaimer: H1_TIMING_DISCLAIMER,
+  };
+}
+function normalizeH1TimingStatus(status){
+  const text = String(status || "").trim().toLowerCase();
+  const exact = H1_TIMING_STATUS_LABELS.find((item)=>item.toLowerCase() === text);
+  if(exact) return exact;
+  if(text.includes("support")) return "Timing Supportive";
+  if(text.includes("develop")) return "Timing Developing";
+  if(text.includes("wait")) return "Timing Waiting";
+  if(text.includes("fail")) return "Timing Failed";
+  if(text.includes("weak")) return "Timing Weak";
+  return "Context Unavailable";
+}
+function normalizeH1TimingQuality(quality){
+  const text = String(quality || "").trim().toLowerCase();
+  return H1_TIMING_QUALITY_LABELS.includes(text) ? text : "unavailable";
+}
+function inferH1DirectionFromText(text){
+  const value = String(text || "").toLowerCase();
+  if(value.includes("bullish") || value.includes("cross up") || value.includes("oversold")) return "bullish";
+  if(value.includes("bearish") || value.includes("cross down") || value.includes("overbought")) return "bearish";
+  return null;
+}
+function inferH4ReactionDirection(h4Reaction){
+  const zone = `${h4Reaction?.relatedZone?.label || ""} ${h4Reaction?.relatedZoneSource || ""}`;
+  const text = `${h4Reaction?.status || ""} ${h4Reaction?.reactionType || ""} ${h4Reaction?.sweepStatus || ""} ${h4Reaction?.bosChochContext || ""} ${zone}`.toLowerCase();
+  if(text.includes("sweep_low") || text.includes("bullish") || text.includes("support") || text.includes("downside")) return "bullish";
+  if(text.includes("sweep_high") || text.includes("bearish") || text.includes("resistance") || text.includes("upside")) return "bearish";
+  return null;
+}
+function isH1SweepStale(sweepStatus, candles){
+  if(!Array.isArray(candles) || candles.length < 12) return false;
+  const status = String(sweepStatus || "").toLowerCase();
+  if(!status.includes("sweep")) return false;
+  const recentSweep = detect1hLiquiditySweep(candles.slice(-8));
+  return recentSweep?.status === "No recent sweep";
+}
+function deriveH1SweepTimingContext(state = marketPreparationState, candles = latest1hCandles){
+  const status = state?.h1?.sweepStatus || latest1hSweepStatus || null;
+  if(!status || /unavailable/i.test(status)) return { status: null, direction: null, stale: false, reasons: [], risks: ["1H sweep context is unavailable."] };
+  if(/no recent/i.test(status)) return { status, direction: null, stale: false, reasons: [], risks: ["No recent 1H sweep context is available."] };
+  const direction = inferH1DirectionFromText(status);
+  const stale = isH1SweepStale(status, candles);
+  return { status, direction, stale, reasons: [`1H sweep context is ${status}.`], risks: stale ? ["1H sweep context appears stale in the recent candle window."] : [] };
+}
+function deriveH1MiniBosChochContext(state = marketPreparationState){
+  const status = state?.h1?.structureStatus || latest1hStructureStatus || null;
+  if(!status || /unavailable/i.test(status)) return { status: null, direction: null, reasons: [], risks: ["1H mini structure context is unavailable."] };
+  if(/no clear/i.test(status)) return { status, direction: null, reasons: [], risks: ["No clear 1H mini BOS/CHOCH context is available."] };
+  return { status, direction: inferH1DirectionFromText(status), reasons: [`1H mini structure context is ${status}.`], risks: [] };
+}
+function deriveH1QuickRetestContext(candles = latest1hCandles, structureContext = null, sweepContext = null){
+  if(!Array.isArray(candles) || candles.length < 6) return { status: "Retest Unclear", quality: "mixed", failed: false, supportive: false, reasons: [], risks: ["Not enough 1H candles for quick retest context."] };
+  const recent = candles.slice(-4);
+  const latest = recent[recent.length - 1];
+  const levels = [];
+  const structureBroken = Number(structureContext?.brokenLevel ?? structureContext?.broken);
+  const sweepLevel = Number(sweepContext?.level ?? sweepContext?.sweptLevel);
+  if(Number.isFinite(structureBroken)) levels.push({ level: structureBroken, source: "mini BOS/CHOCH level" });
+  if(Number.isFinite(sweepLevel)) levels.push({ level: sweepLevel, source: "swept level" });
+  if(!levels.length) return { status: "No Clear Retest", quality: "mixed", failed: false, supportive: false, reasons: [], risks: ["Quick retest level is unavailable."] };
+  const direction = structureContext?.direction || sweepContext?.direction || null;
+  const bufferPct = 0.0025;
+  for(const item of levels){
+    const buffer = Math.max(item.level * bufferPct, 1e-8);
+    const touched = recent.some((candle)=>Number(candle.low) <= item.level + buffer && Number(candle.high) >= item.level - buffer);
+    if(!touched) continue;
+    const close = Number(latest?.close);
+    if(direction === "bullish"){
+      if(close >= item.level) return { status: "Retest Holding", quality: "supportive", failed: false, supportive: true, reasons: [`1H retest is holding near ${item.source}.`], risks: [] };
+      return { status: "Retest Failed", quality: "weak", failed: true, supportive: false, reasons: [], risks: [`1H retest failed near ${item.source}.`] };
+    }
+    if(direction === "bearish"){
+      if(close <= item.level) return { status: "Retest Holding", quality: "supportive", failed: false, supportive: true, reasons: [`1H retest is holding near ${item.source}.`], risks: [] };
+      return { status: "Retest Failed", quality: "weak", failed: true, supportive: false, reasons: [], risks: [`1H retest failed near ${item.source}.`] };
+    }
+    return { status: "Retest Unclear", quality: "mixed", failed: false, supportive: false, reasons: [`1H touched ${item.source}, but direction context is unclear.`], risks: ["Quick retest context remains unclear."] };
+  }
+  return { status: "No Clear Retest", quality: "mixed", failed: false, supportive: false, reasons: [], risks: ["No recent quick retest is visible in the 1H candle window."] };
+}
+function deriveH1StochasticTimingContext(stochastic){
+  const label = stochastic?.ok ? stochastic.label : (stochastic?.label || "Stoch unavailable");
+  const status = String(stochastic?.status || "idle");
+  const direction = inferH1DirectionFromText(`${label} ${status}`);
+  if(!stochastic?.ok) return { label, direction: null, supportive: false, contradictory: false, reasons: [], risks: ["1H stochastic context is unavailable."] };
+  if(status === "neutral") return { label, direction: null, supportive: false, contradictory: false, reasons: ["1H stochastic is neutral timing context."], risks: ["Stochastic is display-only and does not override structure."] };
+  return { label, direction, supportive: !!direction, contradictory: false, reasons: [`1H stochastic context is ${label}.`], risks: ["Stochastic is timing context only and does not override sweep or structure."] };
+}
+function classifyH1TimingAgainstH4Reaction({ sweep, structure, retest, stochastic, h4Reaction }){
+  const h4Status = normalizeH4ReactionStatus(h4Reaction?.status);
+  const h4Direction = inferH4ReactionDirection(h4Reaction);
+  const h1Direction = structure.direction || sweep.direction || stochastic.direction || null;
+  const hasSweep = !!sweep.direction && !sweep.stale;
+  const hasStructure = !!structure.direction;
+  const directionCompatible = !!h4Direction && !!h1Direction && h4Direction === h1Direction;
+  const directionOpposite = !!h4Direction && !!h1Direction && h4Direction !== h1Direction;
+  if(h4Status === "Failed Reaction" || retest.failed || directionOpposite) return { status: "Timing Failed", quality: "weak" };
+  if(h4Status === "Context Unavailable" || h4Status === "No Clear Reaction") return { status: hasSweep ? "Timing Weak" : "Timing Waiting", quality: hasSweep ? "weak" : "mixed" };
+  if(h4Status === "Weak Reaction") return { status: hasSweep && hasStructure ? "Timing Developing" : "Timing Weak", quality: hasSweep && hasStructure ? "developing" : "weak" };
+  if(hasSweep && !hasStructure) return { status: "Timing Developing", quality: "developing" };
+  if(["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction"].includes(h4Status) && hasSweep && hasStructure && (directionCompatible || !h4Direction) && !stochastic.contradictory){
+    return { status: "Timing Supportive", quality: "supportive" };
+  }
+  if(hasSweep || hasStructure || retest.supportive || stochastic.supportive) return { status: "Timing Developing", quality: "developing" };
+  return { status: "Timing Waiting", quality: "mixed" };
+}
+function buildH1TimingReasons(items){
+  return [...new Set((items || []).flat().filter(Boolean))].slice(0, 6);
+}
+function buildH1TimingRiskNotes(items){
+  return [...new Set((items || []).flat().filter(Boolean))].slice(0, 5);
+}
+function buildH1TimingContext(state = marketPreparationState, candles = latest1hCandles, h4Reaction = latestH4ReactionContext){
+  const hasCandles = Array.isArray(candles) && candles.length >= 3;
+  const h1Ready = state?.meta?.sourcesReady?.h1 === true;
+  const h1State = state?.h1 || {};
+  const hasState = h1Ready && !!(h1State.sweepStatus || h1State.structureStatus || h1State.stochastic?.ok);
+  if(!hasCandles && !hasState) return createEmptyH1TimingContext("Required 1H data/state is unavailable.");
+  const sweep = deriveH1SweepTimingContext(state, candles);
+  const structure = deriveH1MiniBosChochContext(state);
+  const detectedStructure = hasCandles ? detect1hStructure(candles) : null;
+  const detectedSweep = hasCandles ? detect1hLiquiditySweep(candles) : null;
+  const retest = deriveH1QuickRetestContext(candles, { direction: structure.direction, brokenLevel: detectedStructure?.broken }, { direction: sweep.direction, level: detectedSweep?.level });
+  const stochastic = deriveH1StochasticTimingContext(h1State.stochastic);
+  const classification = classifyH1TimingAgainstH4Reaction({ sweep, structure, retest, stochastic, h4Reaction });
+  const h4Status = h4Reaction?.status || "4H reaction context unavailable";
+  const h4Reasons = [];
+  const h4Risks = [];
+  if(/confirmed|developing/i.test(h4Status)) h4Reasons.push("1H timing is evaluated against active 4H reaction context.");
+  if(/weak|no clear|unavailable/i.test(h4Status)) h4Risks.push("1H timing remains cautious because 4H reaction context is not confirmed.");
+  if(/failed/i.test(h4Status)) h4Risks.push("4H reaction failed, so 1H timing cannot be supportive.");
+  const reasons = buildH1TimingReasons([sweep.reasons, structure.reasons, retest.reasons, stochastic.reasons, h4Reasons]);
+  const risks = buildH1TimingRiskNotes([sweep.risks, structure.risks, retest.risks, stochastic.risks, h4Risks]);
+  return {
+    available: true,
+    role: "timing_context",
+    status: normalizeH1TimingStatus(classification.status),
+    sweepStatus: sweep.status,
+    miniBosChochStatus: structure.status,
+    retestStatus: retest.status,
+    stochasticStatus: stochastic.label,
+    relatedH4Reaction: h4Status,
+    timingQuality: normalizeH1TimingQuality(classification.quality),
+    timingReasons: reasons.length ? reasons : ["1H timing data is available, but no clear timing refinement is visible yet."],
+    riskNotes: risks.length ? risks : ["Timing Context only; no scenario scoring or primary selection impact."],
+    use: "Timing Context only",
+    disclaimer: H1_TIMING_DISCLAIMER,
+  };
+}
+function formatH1TimingList(items, className){
+  const list = Array.isArray(items) && items.length ? items : ["Context unavailable."];
+  return `<ul class="${className}">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+function formatH1TimingPanel(context){
+  const safe = context || createEmptyH1TimingContext();
+  const status = normalizeH1TimingStatus(safe.status);
+  const statusClass = status.toLowerCase().replace(/[^a-z]+/g,"-");
+  return `<div class="h1-timing-header"><div><h3>1H Timing Context</h3><p>Display-only timing refinement against the current 4H Reaction Context.</p></div><span class="h1-timing-status h1-timing-status-${statusClass}">${escapeHtml(status)}</span></div><div class="h1-timing-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Timing Quality</span><strong>${escapeHtml(safe.timingQuality || "unavailable")}</strong></div><div><span>1H Sweep</span><strong>${escapeHtml(safe.sweepStatus || "Sweep context unavailable")}</strong></div><div><span>Mini BOS/CHOCH</span><strong>${escapeHtml(safe.miniBosChochStatus || "Structure context unavailable")}</strong></div><div><span>Quick Retest</span><strong>${escapeHtml(safe.retestStatus || "Retest context unavailable")}</strong></div><div><span>Stochastic</span><strong>${escapeHtml(safe.stochasticStatus || "Stochastic unavailable")}</strong></div><div><span>Related 4H Reaction</span><strong>${escapeHtml(safe.relatedH4Reaction || "4H reaction unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Timing Context only")}</strong></div></div><div class="h1-timing-list-block"><span>Timing Reasons</span>${formatH1TimingList(safe.timingReasons, "h1-timing-reasons")}</div><div class="h1-timing-list-block h1-timing-risk"><span>Risk Notes</span>${formatH1TimingList(safe.riskNotes, "h1-timing-risks")}</div><p class="h1-timing-safe">${escapeHtml(safe.disclaimer || H1_TIMING_DISCLAIMER)}</p>`;
+}
+function renderH1TimingContext(){
+  if(!els.h1TimingContextPanel) return;
+  latestH1TimingContext = buildH1TimingContext(marketPreparationState, latest1hCandles, latestH4ReactionContext);
+  els.h1TimingContextPanel.innerHTML = formatH1TimingPanel(latestH1TimingContext);
+}
+function runH1TimingContextFixtureTests(){
+  const baseCandles = [
+    { time: 1, open: 100, high: 101, low: 99, close: 100 },
+    { time: 2, open: 100, high: 102, low: 98, close: 99 },
+    { time: 3, open: 99, high: 101, low: 97, close: 100 },
+    { time: 4, open: 100, high: 103, low: 99, close: 102 },
+    { time: 5, open: 102, high: 104, low: 101, close: 103 },
+    { time: 6, open: 103, high: 104, low: 102, close: 103 },
+  ];
+  const h4Developing = { status: "Reaction Developing", reactionType: "Reclaim", relatedZone: { label: "4H Support" } };
+  const h4Weak = { status: "Weak Reaction", reactionType: "Sweep" };
+  const h4Failed = { status: "Failed Reaction", reactionType: "Failed Reclaim" };
+  const makeState = (h1 = {}, ready = true)=>({ meta: { sourcesReady: { h1: ready } }, h1: { sweepStatus: "No recent sweep", structureStatus: "No clear 1H structure shift", stochastic: { ok: true, label: "Stoch Neutral", status: "neutral" }, ...h1 } });
+  const missing = buildH1TimingContext({ meta: { sourcesReady: { h1: false } }, h1: {} }, [], h4Developing);
+  const sweepOnly = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep" }), baseCandles, h4Developing);
+  const supportive = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep", structureStatus: "Bullish CHoCH", stochastic: { ok: true, label: "Stoch Cross Up", status: "bullish_cross" } }), baseCandles, h4Developing);
+  const stale = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep", structureStatus: "No clear 1H structure shift" }), baseCandles, h4Weak);
+  const failedRetestCandles = [...baseCandles, { time: 7, open: 103, high: 104, low: 99, close: 99 }];
+  const failedRetest = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep", structureStatus: "Bearish CHoCH", stochastic: { ok: true, label: "Stoch Cross Down", status: "bearish_cross" } }), failedRetestCandles, h4Developing);
+  const stochasticSupport = buildH1TimingContext(makeState({ stochastic: { ok: true, label: "Stoch Cross Up", status: "bullish_cross" } }), baseCandles, h4Developing);
+  const h4FailedContext = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep", structureStatus: "Bullish CHoCH" }), baseCandles, h4Failed);
+  const h4WeakContext = buildH1TimingContext(makeState({ sweepStatus: "Bullish Sweep", structureStatus: "Bullish CHoCH" }), baseCandles, h4Weak);
+  const before = JSON.stringify({ state: makeState({ sweepStatus: "Bullish Sweep" }), candles: baseCandles, h4Developing });
+  const forbidden = /\bbuy\b|\bsell\b|entry|signal|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name: "missing 1H context returns unavailable", passed: missing.status === "Context Unavailable" },
+    { name: "sweep without mini BOS/CHOCH develops", passed: sweepOnly.status === "Timing Developing" },
+    { name: "compatible sweep plus mini BOS/CHOCH supports timing", passed: supportive.status === "Timing Supportive" },
+    { name: "stale or weak parent keeps timing cautious", passed: ["Timing Weak", "Timing Developing"].includes(stale.status) },
+    { name: "failed retest/opposite shift fails or weakens", passed: ["Timing Failed", "Timing Weak"].includes(failedRetest.status) },
+    { name: "stochastic supports but does not override", passed: stochasticSupport.status !== "Timing Supportive" },
+    { name: "H4 failed prevents supportive timing", passed: h4FailedContext.status !== "Timing Supportive" },
+    { name: "H4 weak keeps 1H cautious", passed: h4WeakContext.status !== "Timing Supportive" },
+    { name: "inputs are not mutated", passed: before === JSON.stringify({ state: makeState({ sweepStatus: "Bullish Sweep" }), candles: baseCandles, h4Developing }) },
+    { name: "wording avoids unsafe language", passed: !forbidden.test(JSON.stringify([missing, sweepOnly, supportive, stale, failedRetest])) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") {
+  window.runH1TimingContextFixtureTests = runH1TimingContextFixtureTests;
 }
 function runWeeklyStructureConflictCalibrationFixtureTests(){
   const bullishConflict = calibrateWeeklyStructureStatus({ available:true, status:"Bullish Structure", majorBias:"bullish", swingSequence:{status:"HH/HL"}, bosChochStatus:{status:"CHOCH Down"}, riskNotes:[] });
@@ -11484,6 +11711,7 @@ function render1hStructureSummary(candles){
     renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Structure = st.status;
     if(els.lower1hStructureSummary) els.lower1hStructureSummary.textContent=`1H Structure | Status: ${st.status} | Broken Level: ${st.broken?usd(st.broken):'—'} | Reference Swing: ${st.ref} | Latest Close: ${usd(st.latestClose)}`;
+    renderH1TimingContext();
   } catch(e){
     console.error('1H structure scanner failed', e);
     latest1hStructureStatus = '1H structure unavailable';
@@ -11524,8 +11752,9 @@ function render1hSweepSummary(candles){
     renderMarketPreparationMap(buildMarketPreparationMap());
     mtfState.h1Sweep = sweep.status;
     if(!els.lower1hSweepSummary) return;
-    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No diagnostic context detected (1H liquidity sweep).'; return; }
+    if(sweep.status==='No recent sweep'){ els.lower1hSweepSummary.textContent='No diagnostic context detected (1H liquidity sweep).'; renderH1TimingContext(); return; }
     els.lower1hSweepSummary.textContent=`1H Liquidity Sweep | Status: ${sweep.status} | Swept Level: ${usd(sweep.level)} | Candle Time: ${sweep.time} | Distance: ${f1(sweep.distance)}%`;
+    renderH1TimingContext();
   }catch(e){ console.error('1H sweep scanner failed',e); if(els.lower1hSweepSummary) els.lower1hSweepSummary.textContent='1H liquidity sweep unavailable.'; }
 }
 function renderLowerTfReactionSummary(){
@@ -11771,6 +12000,7 @@ renderTimeframeRoleAlignment();
 renderWeeklyMajorStructure();
 renderDailyValidationFoundation();
 renderH4ReactionContext();
+renderH1TimingContext();
 renderH4LiquiditySummary();
 renderKeyMarketZonesSummary();
 renderH4LiquidityDiagnosticsPanel();
