@@ -22,7 +22,7 @@ const els = {
   rightFvgCount: document.getElementById("rightFvgCount"), rightNearestFvg: document.getElementById("rightNearestFvg"), rightFvgStatus: document.getElementById("rightFvgStatus"),
   rightBiasTop: document.getElementById("rightBiasTop"), rightBiasMeta: document.getElementById("rightBiasMeta"), rightDivergence: document.getElementById("rightDivergence"), rightDivergenceMeta: document.getElementById("rightDivergenceMeta"),
   right4hFvgType: document.getElementById("right4hFvgType"), right4hFvgZone: document.getElementById("right4hFvgZone"), right4hFvgRelation: document.getElementById("right4hFvgRelation"), right4hFvgDistance: document.getElementById("right4hFvgDistance"), right4hFvgStatus: document.getElementById("right4hFvgStatus"), mtfWeeklyBias: document.getElementById("mtfWeeklyBias"), mtfDailyValidation: document.getElementById("mtfDailyValidation"), mtf4hReaction: document.getElementById("mtf4hReaction"), mtf1hTiming: document.getElementById("mtf1hTiming"), mtfFinalStatus: document.getElementById("mtfFinalStatus"), weeklyCandleW1: document.getElementById("weeklyCandleW1"), weeklyCandleW2: document.getElementById("weeklyCandleW2"), weeklyCandleW3: document.getElementById("weeklyCandleW3"), weeklyCandleReading: document.getElementById("weeklyCandleReading"), weeklyCandleCondition: document.getElementById("weeklyCandleCondition"), weeklySrResistanceZone: document.getElementById("weeklySrResistanceZone"), weeklySrResistanceMeta: document.getElementById("weeklySrResistanceMeta"), weeklySrSupportZone: document.getElementById("weeklySrSupportZone"), weeklySrSupportMeta: document.getElementById("weeklySrSupportMeta"), weeklySrMeaning: document.getElementById("weeklySrMeaning"), prepUpsideRows: document.getElementById("prepUpsideRows"), prepCurrentRow: document.getElementById("prepCurrentRow"), prepDownsideRows: document.getElementById("prepDownsideRows"),
-  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
+  prepCurrentDetail: document.getElementById("prepCurrentDetail"), prepCurrentDetailContent: document.getElementById("prepCurrentDetailContent"), prepCurrentDetailToggle: document.getElementById("prepCurrentDetailToggle"), pulseLabEngineMapPanel: document.getElementById("pulseLabEngineMapPanel"), timeframeRoleAlignmentPanel: document.getElementById("timeframeRoleAlignmentPanel"), weeklyMajorStructurePanel: document.getElementById("weeklyMajorStructurePanel"), dailyValidationFoundationPanel: document.getElementById("dailyValidationFoundationPanel"), h4ReactionContextPanel: document.getElementById("h4ReactionContextPanel"), h4LiquiditySummaryPanel: document.getElementById("h4LiquiditySummaryPanel"), h4LiquidityDiagnosticsPanel: document.getElementById("h4LiquidityDiagnosticsPanel"), h4LiquidityDiagnosticsBody: document.getElementById("h4LiquidityDiagnosticsBody"), h4LiquidityDiagnosticsSummary: document.getElementById("h4LiquidityDiagnosticsSummary"), keyMarketZonesSummaryPanel: document.getElementById("keyMarketZonesSummaryPanel"), marketPreparationMapDetails: document.getElementById("marketPreparationMapDetails"), tradePlanScenarioPanel: document.getElementById("tradePlanScenarioPanel"), multiScenarioPlanningPanel: document.getElementById("multiScenarioPlanningPanel"), ifvgContextPanel: document.getElementById("ifvgContextPanel"),
   fvgToggleBtn: document.getElementById("fvgToggleBtn"), biasToggleBtn: document.getElementById("biasToggleBtn"), fvgContent: document.getElementById("fvgContent"), biasContent: document.getElementById("biasContent"), fvgViewDetailsBtn: document.getElementById("fvgViewDetailsBtn"), biasViewDetailsBtn: document.getElementById("biasViewDetailsBtn"),
   priceChart: document.getElementById("priceChart"), priceChartError: document.getElementById("priceChartError"), rsiChart: document.getElementById("rsiChart"), rsiChartError: document.getElementById("rsiChartError"), weeklyRsiCard: document.getElementById("weeklyRsiCard"), weeklyLayerToggleBtn: document.getElementById("weeklyLayerToggleBtn"), weeklyLayerMenu: document.getElementById("weeklyLayerMenu"),
   ltfPanel: document.getElementById("ltfPanel"), ltfToggleBtn: document.getElementById("ltfToggleBtn"), ltfContent: document.getElementById("ltfContent"),
@@ -47,6 +47,7 @@ let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
 let latestDailyValidationContext = null;
+let latestH4ReactionContext = null;
 let ltfDailyChart = null;
 let ltf4hChart = null;
 let ltf1hChart = null;
@@ -4151,7 +4152,368 @@ function renderDailyValidationFoundation(dailySnapshot = null, weeklyContext = l
   const snapshot = dailySnapshot || buildDailyContextSnapshot(marketPreparationState.daily, marketPreparationState.currentPrice);
   latestDailyValidationContext = buildDailyValidationFoundationContext(snapshot, weeklyContext);
   els.dailyValidationFoundationPanel.innerHTML = formatDailyValidationFoundationPanel(latestDailyValidationContext);
+  renderH4ReactionContext();
   renderMtfSummary();
+}
+
+const H4_REACTION_STATUS_LABELS = ["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction", "Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable"];
+const H4_REACTION_TYPE_LABELS = ["Rejection", "Reclaim", "Retest", "Sweep", "Failed Reclaim", "Fakeout Risk", "No Clear Reaction"];
+function createEmptyH4ReactionContext(reason = "Required 4H reaction context is unavailable."){
+  return {
+    available: false,
+    role: "reaction_context",
+    status: "Context Unavailable",
+    reactionType: "No Clear Reaction",
+    relatedZone: null,
+    relatedZoneSource: null,
+    zoneRelation: "unavailable",
+    sweepStatus: null,
+    reclaimStatus: null,
+    rejectionStatus: null,
+    retestStatus: null,
+    fakeoutRisk: null,
+    bosChochContext: null,
+    liquidityContext: null,
+    fvgIfvgContext: null,
+    srContext: null,
+    alignmentWithDaily: latestDailyValidationContext?.status || null,
+    reactionReasons: [reason],
+    riskNotes: ["Reaction Context only; waiting for sufficient 4H data."],
+    use: "Reaction Context only",
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
+function normalizeH4ReactionStatus(status){
+  const text = String(status || "").trim().toLowerCase();
+  const match = H4_REACTION_STATUS_LABELS.find((item)=>item.toLowerCase() === text);
+  if(match) return match;
+  if(text.includes("confirm")) return "Reaction Confirmed";
+  if(text.includes("develop")) return "Reaction Developing";
+  if(text.includes("wait")) return "Waiting for Reaction";
+  if(text.includes("weak")) return "Weak Reaction";
+  if(text.includes("fail")) return "Failed Reaction";
+  if(text.includes("clear")) return "No Clear Reaction";
+  return "Context Unavailable";
+}
+function normalizeH4ReactionType(type){
+  const text = String(type || "").trim().toLowerCase();
+  const match = H4_REACTION_TYPE_LABELS.find((item)=>item.toLowerCase() === text);
+  if(match) return match;
+  if(text.includes("reject")) return "Rejection";
+  if(text.includes("reclaim")) return text.includes("fail") ? "Failed Reclaim" : "Reclaim";
+  if(text.includes("retest")) return "Retest";
+  if(text.includes("sweep")) return "Sweep";
+  if(text.includes("fakeout")) return "Fakeout Risk";
+  return "No Clear Reaction";
+}
+function getH4ReactionCurrentPrice(state = marketPreparationState, candles = latest4hCandles){
+  const latestClose = Number(Array.isArray(candles) && candles.length ? candles[candles.length - 1]?.close : null);
+  if(Number.isFinite(latestClose) && latestClose > 0) return latestClose;
+  const statePrice = Number(state?.currentPrice);
+  return Number.isFinite(statePrice) && statePrice > 0 ? statePrice : null;
+}
+function formatH4ReactionZoneLabel(zone){
+  if(!zone) return "Related zone unavailable";
+  const label = zone.label || zone.type || zone.source || "Reaction zone";
+  const lower = Number(zone.lower ?? zone.bottom ?? zone.price);
+  const upper = Number(zone.upper ?? zone.top ?? zone.price);
+  const range = Number.isFinite(lower) && Number.isFinite(upper) ? `${usd(Math.min(lower, upper))}–${usd(Math.max(lower, upper))}` : "range unavailable";
+  return `${label} · ${range}`;
+}
+function inferH4ReactionZoneSide(zone){
+  const text = `${zone?.label || ""} ${zone?.type || ""} ${zone?.source || ""} ${zone?.direction || ""} ${zone?.side || ""}`.toLowerCase();
+  if(text.includes("resistance") || text.includes("bearish") || text.includes("upside") || text.includes("supply")) return "resistance";
+  if(text.includes("support") || text.includes("bullish") || text.includes("downside") || text.includes("demand")) return "support";
+  return "zone";
+}
+function normalizeH4ReactionZone(rawZone, sourceLabel = null, fallbackLabel = null){
+  const normalized = normalizeLiquidityZone(rawZone, sourceLabel);
+  if(!normalized) return null;
+  const label = fallbackLabel || normalized.label || rawZone?.label || sourceLabel || "Reaction zone";
+  return {
+    label,
+    price: Number.isFinite(Number(normalized.center)) ? Number(normalized.center) : null,
+    top: normalized.upper,
+    bottom: normalized.lower,
+    lower: normalized.lower,
+    upper: normalized.upper,
+    source: sourceLabel || normalized.source || rawZone?.source || null,
+    type: normalized.type || rawZone?.type || null,
+    status: normalized.status || rawZone?.status || null,
+    quality: normalized.quality || rawZone?.quality || rawZone?.strength || null,
+    direction: normalized.direction || rawZone?.direction || null,
+    side: normalized.side || rawZone?.side || null,
+  };
+}
+function buildH4ReactionZoneCandidate(rawZone, sourceLabel, priority, currentPrice, candles, fallbackLabel = null){
+  const zone = normalizeH4ReactionZone(rawZone, sourceLabel, fallbackLabel);
+  if(!zone) return null;
+  const distance = calculateLiquidityZoneDistance(currentPrice, zone);
+  const relation = getH4ReactionZoneRelation(currentPrice, zone, candles);
+  return {
+    zone,
+    source: sourceLabel,
+    priority,
+    relation,
+    distancePct: Number.isFinite(distance.distancePct) ? distance.distancePct : null,
+    distanceAbs: Number.isFinite(distance.distanceAbs) ? distance.distanceAbs : null,
+  };
+}
+function collectH4ReactionZoneCandidates(state = marketPreparationState, mapData = state?.map, currentPrice = getH4ReactionCurrentPrice(state), candles = latest4hCandles){
+  if(!Number.isFinite(Number(currentPrice))) return [];
+  const candidates = [];
+  collectLiquidityMapRows(mapData).forEach((row)=>{
+    const candidate = buildH4ReactionZoneCandidate(row, "Market Map", 1, currentPrice, candles, row?.label || row?.primarySource || "Market Map Zone");
+    if(candidate) candidates.push(candidate);
+  });
+  const sr = state?.h4?.latest4hSrSummary || state?.h4?.srSummary || latest4hSrSummary;
+  [
+    { zone: sr?.support?.nearest, label: "4H Support" },
+    { zone: sr?.resistance?.nearest, label: "4H Resistance" },
+    { zone: sr?.support?.strongest, label: "4H Strong Support" },
+    { zone: sr?.resistance?.strongest, label: "4H Strong Resistance" },
+  ].forEach((item)=>{
+    const candidate = buildH4ReactionZoneCandidate(item.zone ? { ...item.zone, label: item.label } : null, "4H", 2, currentPrice, candles, item.label);
+    if(candidate) candidates.push(candidate);
+  });
+  const fvgDetails = Array.isArray(state?.h4?.latest4hFvgDetails) ? state.h4.latest4hFvgDetails : (Array.isArray(state?.h4?.fvgDetails) ? state.h4.fvgDetails : []);
+  const fvgZones = fvgDetails.length ? fvgDetails : (Array.isArray(state?.h4?.fvgZones) ? state.h4.fvgZones : []);
+  fvgZones.forEach((detail)=>{
+    if(typeof isInactiveFvgDetail === "function" && isInactiveFvgDetail(detail)) return;
+    const raw = detail?.sourceZone || detail?.zone || detail;
+    const label = detail?.label || detail?.ui?.label || detail?.type || "4H FVG / IFVG";
+    const candidate = buildH4ReactionZoneCandidate({ ...raw, label, type: detail?.type || raw?.type || null, direction: detail?.direction || raw?.direction || null }, "4H", 3, currentPrice, candles, label);
+    if(candidate) candidates.push(candidate);
+  });
+  return candidates;
+}
+function selectH4ReactionRelatedZone(state = marketPreparationState, mapData = state?.map, candles = latest4hCandles){
+  const currentPrice = getH4ReactionCurrentPrice(state, candles);
+  const candidates = collectH4ReactionZoneCandidates(state, mapData, currentPrice, candles)
+    .filter((candidate)=>Number.isFinite(Number(candidate.distancePct)) || ["inside", "touched", "rejected", "reclaimed", "broken"].includes(candidate.relation));
+  if(!candidates.length) return null;
+  const relationRank = { rejected: 0, reclaimed: 0, touched: 1, inside: 1, near: 2, broken: 3, unavailable: 9 };
+  const nearCandidates = candidates.filter((candidate)=>["inside", "near", "touched", "rejected", "reclaimed", "broken"].includes(candidate.relation) || Number(candidate.distancePct) <= 3);
+  const pool = nearCandidates.length ? nearCandidates : candidates.filter((candidate)=>Number(candidate.distancePct) <= 5);
+  if(!pool.length) return null;
+  return [...pool].sort((a,b)=>(relationRank[a.relation] ?? 8) - (relationRank[b.relation] ?? 8) || a.priority - b.priority || Number(a.distancePct ?? 999) - Number(b.distancePct ?? 999))[0] || null;
+}
+function candleTouchesH4ReactionZone(candle, zone){
+  if(!candle || !zone) return false;
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  return Number.isFinite(lower) && Number.isFinite(upper) && Number(candle.high) >= lower && Number(candle.low) <= upper;
+}
+function detectH4ReactionRetestBehavior(candles, zone){
+  if(!Array.isArray(candles) || candles.length < 5 || !zone) return false;
+  const recent = candles.slice(-3);
+  const prior = candles.slice(Math.max(0, candles.length - 10), Math.max(0, candles.length - 3));
+  const touchedRecently = recent.some((candle)=>candleTouchesH4ReactionZone(candle, zone));
+  if(!touchedRecently) return false;
+  const lower = Number(zone.lower);
+  const upper = Number(zone.upper);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return false;
+  return prior.some((candle)=>Number(candle.close) > upper || Number(candle.close) < lower);
+}
+function getH4ReactionZoneRelation(currentPrice, zone, candles = latest4hCandles){
+  const price = Number(currentPrice);
+  if(!Number.isFinite(price) || !zone) return "unavailable";
+  const lower = Number(zone.lower ?? zone.bottom ?? zone.price);
+  const upper = Number(zone.upper ?? zone.top ?? zone.price);
+  if(!Number.isFinite(lower) || !Number.isFinite(upper)) return "unavailable";
+  const normalized = { ...zone, lower: Math.min(lower, upper), upper: Math.max(lower, upper) };
+  const side = inferH4ReactionZoneSide(normalized);
+  const latest = Array.isArray(candles) && candles.length ? candles[candles.length - 1] : null;
+  const previous = Array.isArray(candles) && candles.length > 1 ? candles[candles.length - 2] : null;
+  const latestClose = Number(latest?.close);
+  const previousClose = Number(previous?.close);
+  const touchedRecently = Array.isArray(candles) ? candles.slice(-3).some((candle)=>candleTouchesH4ReactionZone(candle, normalized)) : false;
+  if(touchedRecently && side === "resistance" && Number.isFinite(latestClose) && latestClose < normalized.lower) return "rejected";
+  if(touchedRecently && side === "support" && Number.isFinite(latestClose) && latestClose > normalized.upper) return "rejected";
+  if(Number.isFinite(previousClose) && Number.isFinite(latestClose)){
+    if(previousClose < normalized.lower && latestClose >= normalized.lower) return "reclaimed";
+    if(previousClose > normalized.upper && latestClose <= normalized.upper) return "reclaimed";
+  }
+  if(touchedRecently && Number.isFinite(latestClose) && (latestClose > normalized.upper || latestClose < normalized.lower)) return "broken";
+  if(touchedRecently) return "touched";
+  if(price >= normalized.lower && price <= normalized.upper) return "inside";
+  const distance = calculateLiquidityZoneDistance(price, normalized);
+  return Number.isFinite(distance.distancePct) && distance.distancePct <= 1.5 ? "near" : "unavailable";
+}
+function deriveH4ReactionFromLiquidity(liquidityState){
+  const episode = liquidityState?.activeEpisode;
+  if(!episode) return { status: null, reactionType: null, reasons: [], risks: [], summary: null };
+  const status = String(episode.status || LIQUIDITY_OF_STATE.NONE).toLowerCase();
+  const reclaim = episode.reclaim || {};
+  const failureDetected = episode.failure?.detected || status === LIQUIDITY_OF_STATE.FAILED;
+  const summary = {
+    status: episode.status || null,
+    displayStatus: episode.displayStatus || null,
+    sweepType: episode.sweep?.type || null,
+    reclaimStatus: reclaim.status || null,
+    band: episode.band || null,
+    stale: !!episode.stale,
+  };
+  if(status === LIQUIDITY_OF_STATE.NONE && episode.sweep?.detected !== true) return { status: null, reactionType: null, reasons: [], risks: [], summary };
+  if(failureDetected) return { status: "Failed Reaction", reactionType: "Failed Reclaim", reasons: [episode.failure?.reason || "Existing H4 liquidity context shows failed reaction context."], risks: ["Failed reclaim/failure context remains diagnostic only."], summary };
+  if(status === LIQUIDITY_OF_STATE.CONFIRMED) return { status: "Reaction Confirmed", reactionType: reclaim.detected ? "Reclaim" : "Sweep", reasons: [episode.displayStatus || "Existing H4 liquidity context is confirmed."], risks: [], summary };
+  if(episode.stale || episode.band === LIQUIDITY_BAND.WEAK) return { status: "Weak Reaction", reactionType: reclaim.detected ? "Reclaim" : "Sweep", reasons: [episode.displayStatus || "Existing H4 liquidity context is weak or stale."], risks: ["H4 liquidity context is weak, stale, or lacks full corroboration."], summary };
+  if([LIQUIDITY_OF_STATE.POSSIBLE, LIQUIDITY_OF_STATE.VALID].includes(status)) return { status: "Reaction Developing", reactionType: reclaim.detected ? "Reclaim" : "Sweep", reasons: [episode.displayStatus || "Possible H4 liquidity sweep reaction is developing."], risks: reclaim.detected ? [] : ["H4 reclaim context is not complete."], summary };
+  return { status: null, reactionType: null, reasons: [], risks: [], summary };
+}
+function deriveH4ReactionFromZoneBehavior(relatedZoneCandidate, candles = latest4hCandles){
+  if(!relatedZoneCandidate?.zone) return { status: "No Clear Reaction", reactionType: "No Clear Reaction", reasons: [], risks: [] };
+  const relation = relatedZoneCandidate.relation || "unavailable";
+  const label = relatedZoneCandidate.zone.label || "related zone";
+  if(relation === "rejected") return { status: "Reaction Developing", reactionType: "Rejection", reasons: [`4H candles rejected from ${label}.`], risks: [] };
+  if(relation === "reclaimed") return { status: "Reaction Developing", reactionType: "Reclaim", reasons: [`4H candles reclaimed ${label}.`], risks: [] };
+  if(detectH4ReactionRetestBehavior(candles, relatedZoneCandidate.zone)) return { status: "Reaction Developing", reactionType: "Retest", reasons: [`4H is retesting ${label}; confirmation remains conservative.`], risks: ["Retest context is display-only and may remain incomplete."] };
+  if(relation === "broken") return { status: "Weak Reaction", reactionType: "Fakeout Risk", reasons: [`4H closed beyond ${label}; follow-through should be reviewed cautiously.`], risks: ["Zone break can become fakeout risk without follow-through."] };
+  if(["inside", "near", "touched"].includes(relation)) return { status: relation === "touched" ? "Reaction Developing" : "Waiting for Reaction", reactionType: relation === "touched" ? "Retest" : "No Clear Reaction", reasons: [`4H is ${relation} ${label}.`], risks: relation === "near" || relation === "inside" ? ["Related zone exists, but reaction evidence remains incomplete."] : [] };
+  return { status: "No Clear Reaction", reactionType: "No Clear Reaction", reasons: [], risks: [] };
+}
+function deriveH4ReactionFromStructure(structureStatus){
+  const status = String(structureStatus || "");
+  if(!status || /no clear|unavailable/i.test(status)) return { label: status || null, reasons: [], risks: [] };
+  return { label: status, reasons: [`4H structure context is ${status}.`], risks: [] };
+}
+function buildH4ReactionReasons(inputs){
+  return [...new Set((inputs || []).flat().filter(Boolean))].slice(0, 6);
+}
+function buildH4ReactionRiskNotes(inputs){
+  return [...new Set((inputs || []).flat().filter(Boolean))].slice(0, 5);
+}
+function buildH4ReactionFvgIfvgSummary(h4State){
+  const details = Array.isArray(h4State?.latest4hFvgDetails) ? h4State.latest4hFvgDetails : (Array.isArray(h4State?.fvgDetails) ? h4State.fvgDetails : []);
+  const broken = Array.isArray(h4State?.recentBrokenFvgDetails?.all) ? h4State.recentBrokenFvgDetails.all : [];
+  if(!details.length && !broken.length) return null;
+  return { activeCount: details.length, recentBrokenCount: broken.length, nearestLabel: details[0]?.label || details[0]?.type || null };
+}
+function buildH4ReactionContext(state = marketPreparationState, candles = latest4hCandles, mapData = state?.map, dailyContext = latestDailyValidationContext){
+  const h4State = state?.h4 || {};
+  const hasCandles = Array.isArray(candles) && candles.length >= 3;
+  const h4Ready = state?.meta?.sourcesReady?.h4 === true;
+  const hasState = h4Ready && !!(h4State?.liquidityOrderflowState || h4State?.srSummary || h4State?.latest4hSrSummary || h4State?.structureStatus || (Array.isArray(h4State?.fvgDetails) && h4State.fvgDetails.length));
+  if(!hasCandles && !hasState) return createEmptyH4ReactionContext("Required 4H data/state is unavailable.");
+  const currentPrice = getH4ReactionCurrentPrice(state, candles);
+  const relatedCandidate = selectH4ReactionRelatedZone(state, mapData, candles);
+  const relatedZone = relatedCandidate?.zone || null;
+  const zoneRelation = relatedZone ? getH4ReactionZoneRelation(currentPrice, relatedZone, candles) : "unavailable";
+  const liquidity = deriveH4ReactionFromLiquidity(h4State?.liquidityOrderflowState);
+  const zoneBehavior = deriveH4ReactionFromZoneBehavior(relatedCandidate ? { ...relatedCandidate, relation: zoneRelation } : null, candles);
+  const structure = deriveH4ReactionFromStructure(h4State?.latest4hStructureStatus || h4State?.structureStatus || latest4hStructureStatus);
+  let status = liquidity.status || zoneBehavior.status || "No Clear Reaction";
+  let reactionType = liquidity.reactionType || zoneBehavior.reactionType || "No Clear Reaction";
+  if(!liquidity.status && relatedZone && ["inside", "near"].includes(zoneRelation)) status = "Waiting for Reaction";
+  if(!relatedZone && !liquidity.status) status = "No Clear Reaction";
+  if(status === "No Clear Reaction") reactionType = "No Clear Reaction";
+  const dailyStatus = dailyContext?.status || null;
+  const dailyReasons = [];
+  const dailyRisks = [];
+  if(dailyStatus){
+    if(/transition|mixed|weakens|conflicts/i.test(dailyStatus)) dailyRisks.push("Daily validation remains mixed or cautious, so 4H reaction is treated carefully.");
+    else if(/aligns/i.test(dailyStatus)) dailyReasons.push("Daily validation supports current higher-timeframe context.");
+  }
+  const noZoneRisk = relatedZone ? [] : ["No safe related zone is close enough for a specific 4H reaction reference."];
+  const reasons = buildH4ReactionReasons([
+    relatedZone ? [`Related zone selected from ${relatedCandidate.source}.`, `Zone relation is ${zoneRelation}.`] : ["No clear related zone selected."],
+    liquidity.reasons,
+    zoneBehavior.reasons,
+    structure.reasons,
+    dailyReasons,
+  ]);
+  const risks = buildH4ReactionRiskNotes([liquidity.risks, zoneBehavior.risks, structure.risks, dailyRisks, noZoneRisk]);
+  return {
+    available: status !== "Context Unavailable",
+    role: "reaction_context",
+    status: normalizeH4ReactionStatus(status),
+    reactionType: normalizeH4ReactionType(reactionType),
+    relatedZone: relatedZone ? { label: relatedZone.label, price: relatedZone.price ?? relatedZone.center ?? null, top: relatedZone.upper, bottom: relatedZone.lower } : null,
+    relatedZoneSource: relatedCandidate?.source || null,
+    zoneRelation: relatedZone ? zoneRelation : "unavailable",
+    sweepStatus: liquidity.summary?.sweepType || null,
+    reclaimStatus: liquidity.summary?.reclaimStatus || null,
+    rejectionStatus: zoneRelation === "rejected" ? "Zone rejection context" : null,
+    retestStatus: reactionType === "Retest" ? "Retest context developing" : null,
+    fakeoutRisk: reactionType === "Fakeout Risk" || status === "Weak Reaction" ? "Review for fakeout risk" : null,
+    bosChochContext: structure.label || null,
+    liquidityContext: liquidity.summary,
+    fvgIfvgContext: buildH4ReactionFvgIfvgSummary(h4State),
+    srContext: h4State?.latest4hSrSummary || h4State?.srSummary || null,
+    alignmentWithDaily: dailyStatus,
+    reactionReasons: reasons.length ? reasons : ["4H data is available, but no meaningful reaction context is clear yet."],
+    riskNotes: risks.length ? risks : ["Reaction Context only; no scenario scoring or primary selection impact."],
+    use: "Reaction Context only",
+    disclaimer: createScenarioDisclaimer(),
+  };
+}
+function formatH4ReactionList(items, className){
+  const list = Array.isArray(items) && items.length ? items : ["Context unavailable."];
+  return `<ul class="${className}">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+function formatH4ReactionPanel(context){
+  const safe = context || createEmptyH4ReactionContext();
+  const status = normalizeH4ReactionStatus(safe.status);
+  const type = normalizeH4ReactionType(safe.reactionType);
+  const statusClass = status.toLowerCase().replace(/[^a-z]+/g,"-");
+  const relatedZoneText = safe.relatedZone ? formatH4ReactionZoneLabel({ ...safe.relatedZone, lower: safe.relatedZone.bottom, upper: safe.relatedZone.top }) : "Related zone unavailable";
+  const sweepReclaim = [safe.sweepStatus ? `Sweep: ${safe.sweepStatus}` : null, safe.reclaimStatus ? `Reclaim: ${safe.reclaimStatus}` : null].filter(Boolean).join(" · ") || "Sweep / reclaim context unavailable";
+  return `<div class="h4-reaction-header"><div><h3>4H Reaction Context</h3><p>Display-only reaction context against higher-timeframe and Market Map zones.</p></div><span class="h4-reaction-status h4-reaction-status-${statusClass}">${escapeHtml(status)}</span></div><div class="h4-reaction-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Reaction Type</span><strong>${escapeHtml(type)}</strong></div><div><span>Related Zone</span><strong>${escapeHtml(relatedZoneText)}</strong></div><div><span>Zone Source</span><strong>${escapeHtml(safe.relatedZoneSource || "unavailable")}</strong></div><div><span>Zone Relation</span><strong>${escapeHtml(safe.zoneRelation || "unavailable")}</strong></div><div><span>Sweep / Reclaim</span><strong>${escapeHtml(sweepReclaim)}</strong></div><div><span>BOS/CHOCH</span><strong>${escapeHtml(safe.bosChochContext || "Structure context unavailable")}</strong></div><div><span>Daily Alignment</span><strong>${escapeHtml(safe.alignmentWithDaily || "Daily validation unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Reaction Context only")}</strong></div></div><div class="h4-reaction-list-block"><span>Reaction Reasons</span>${formatH4ReactionList(safe.reactionReasons, "h4-reaction-reasons")}</div><div class="h4-reaction-list-block h4-reaction-risk"><span>Risk Notes</span>${formatH4ReactionList(safe.riskNotes, "h4-reaction-risks")}</div><p class="h4-reaction-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+}
+function renderH4ReactionContext(mapData = marketPreparationState.map){
+  if(!els.h4ReactionContextPanel) return;
+  latestH4ReactionContext = buildH4ReactionContext(marketPreparationState, latest4hCandles, mapData, latestDailyValidationContext);
+  els.h4ReactionContextPanel.innerHTML = formatH4ReactionPanel(latestH4ReactionContext);
+}
+function runH4ReactionContextFixtureTests(){
+  const baseCandles = [
+    { time: 1, open: 96, high: 98, low: 95, close: 97 },
+    { time: 2, open: 97, high: 99, low: 96, close: 98 },
+    { time: 3, open: 98, high: 101, low: 97, close: 100 },
+    { time: 4, open: 100, high: 101, low: 99, close: 100 },
+  ];
+  const makeState = (overrides = {})=>({ currentPrice: 100, h4: { structureStatus: "No clear 4H structure shift", liquidityOrderflowState: createEmptyLiquidityOrderflowState("4H", "fixture"), fvgDetails: [], srSummary: null, ...overrides.h4 }, map: overrides.map || { upside: [], downside: [] }, ...overrides });
+  const missing = buildH4ReactionContext({ h4: {}, map: {}, currentPrice: null }, [], {}, null);
+  const nearState = makeState({ map: { downside: [{ lower: 99, upper: 101, label: "Market Map Support", source: "fixture" }] } });
+  const near = buildH4ReactionContext(nearState, baseCandles, nearState.map, { status: "Transition / Mixed" });
+  const rejectionCandles = [...baseCandles, { time: 5, open: 101, high: 102, low: 97, close: 98 }];
+  const rejectionState = makeState({ currentPrice: 98, map: { upside: [{ lower: 100, upper: 102, label: "Market Map Resistance", source: "fixture" }] } });
+  const rejection = buildH4ReactionContext(rejectionState, rejectionCandles, rejectionState.map, { status: "Aligns With Weekly" });
+  const reclaimCandles = [
+    ...baseCandles.slice(0, -1),
+    { time: 4, open: 100, high: 101, low: 98, close: 99 },
+    { time: 5, open: 99, high: 102, low: 97, close: 101 },
+  ];
+  const reclaimState = makeState({ currentPrice: 101, map: { downside: [{ lower: 100, upper: 102, label: "Market Map Support", source: "fixture" }] } });
+  const reclaim = buildH4ReactionContext(reclaimState, reclaimCandles, reclaimState.map, { status: "Aligns With Weekly" });
+  const retestCandles = [{ time: 1, open: 102, high: 106, low: 101, close: 105 }, ...baseCandles.slice(1), { time: 5, open: 103, high: 103, low: 101, close: 102.5 }];
+  const retestState = makeState({ currentPrice: 102.5, map: { upside: [{ lower: 100, upper: 102, label: "Market Map Retest Zone", source: "fixture" }] } });
+  const retest = buildH4ReactionContext(retestState, retestCandles, retestState.map, { status: "Transition / Mixed" });
+  const failedLiquidity = createEmptyLiquidityOrderflowState("4H", "fixture");
+  failedLiquidity.activeEpisode = { status: LIQUIDITY_OF_STATE.FAILED, failure: { detected: true, reason: "Failed reclaim context" }, sweep: { type: LIQUIDITY_SWEEP_TYPE.SWEEP_HIGH }, reclaim: { status: LIQUIDITY_RECLAIM_STATUS.MISSED }, band: LIQUIDITY_BAND.WEAK };
+  const failedState = makeState({ h4: { liquidityOrderflowState: failedLiquidity } });
+  const before = JSON.stringify({ failedState, candles: baseCandles, map: failedState.map });
+  const failed = buildH4ReactionContext(failedState, baseCandles, failedState.map, { status: "Conflicts With Weekly" });
+  const structureState = makeState({ h4: { structureStatus: "Bearish BOS" } });
+  const structure = buildH4ReactionContext(structureState, baseCandles, structureState.map, { status: "Aligns With Weekly" });
+  const forbidden = /buy signal|sell signal|entry confirmed|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name: "missing 4H context returns unavailable", passed: missing.status === "Context Unavailable" },
+    { name: "near Market Map zone returns waiting or developing", passed: ["Waiting for Reaction", "Reaction Developing"].includes(near.status) && near.relatedZoneSource === "Market Map" },
+    { name: "rejection from zone is detected safely", passed: rejection.reactionType === "Rejection" },
+    { name: "reclaim context is detected safely", passed: reclaim.reactionType === "Reclaim" },
+    { name: "retest context is conservative", passed: ["Retest", "Fakeout Risk", "No Clear Reaction"].includes(retest.reactionType) && ["Reaction Developing", "Weak Reaction", "Waiting for Reaction", "No Clear Reaction"].includes(retest.status) },
+    { name: "failed reclaim/fakeout risk can fail or weaken", passed: ["Failed Reaction", "Weak Reaction"].includes(failed.status) },
+    { name: "H4 liquidity input is not mutated", passed: before === JSON.stringify({ failedState, candles: baseCandles, map: failedState.map }) },
+    { name: "H4 structure supports but does not force status", passed: structure.status !== "Reaction Confirmed" },
+    { name: "Daily validation does not force H4 status", passed: failed.alignmentWithDaily === "Conflicts With Weekly" && failed.status === "Failed Reaction" },
+    { name: "wording avoids direct action language", passed: !forbidden.test(JSON.stringify([missing, near, rejection, reclaim, failed])) },
+  ];
+  const failedCases = cases.filter((item)=>!item.passed).length;
+  return { passed: failedCases === 0, total: cases.length, failed: failedCases, results: cases };
+}
+if(typeof window !== "undefined") {
+  window.runH4ReactionContextFixtureTests = runH4ReactionContextFixtureTests;
 }
 function runWeeklyStructureConflictCalibrationFixtureTests(){
   const bullishConflict = calibrateWeeklyStructureStatus({ available:true, status:"Bullish Structure", majorBias:"bullish", swingSequence:{status:"HH/HL"}, bosChochStatus:{status:"CHOCH Down"}, riskNotes:[] });
@@ -7306,6 +7668,7 @@ function renderMarketPreparationMap(mapData){
   renderMultiScenarioPlanningSection(safeMap);
   renderPulseLabEngineMap();
   renderTimeframeRoleAlignment();
+  renderH4ReactionContext(safeMap);
   renderH4LiquiditySummary();
   renderKeyMarketZonesSummary(safeMap);
   renderIfvgContextPanel();
@@ -11407,6 +11770,7 @@ renderPulseLabEngineMap();
 renderTimeframeRoleAlignment();
 renderWeeklyMajorStructure();
 renderDailyValidationFoundation();
+renderH4ReactionContext();
 renderH4LiquiditySummary();
 renderKeyMarketZonesSummary();
 renderH4LiquidityDiagnosticsPanel();
