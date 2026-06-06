@@ -6426,6 +6426,93 @@ function addScenarioTimeframeContext(plans, context = createEmptyScenarioTimefra
 function getScenarioTimeframeStatusClass(label){
   return `scenario-timeframe-status-${String(label || "context-unavailable").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 }
+
+function normalizeScenarioTimeframeFactorImpact(){
+  return 0;
+}
+function createScenarioTimeframeScoreFactor(label, type = "neutral"){
+  const normalizedType = ["support", "caution", "neutral"].includes(type) ? type : "neutral";
+  return { label, type: normalizedType, impact: normalizeScenarioTimeframeFactorImpact(), displayOnly: true };
+}
+function buildWeeklyScenarioTimeframeScoreFactor(plan, context){
+  const direction = String(plan?.direction || "neutral").toLowerCase();
+  const label = normalizeScenarioTimeframeLabel(context?.weekly?.label);
+  const key = label.toLowerCase();
+  if(key.includes("bullish structure")){
+    if(direction === "bullish") return createScenarioTimeframeScoreFactor("Weekly context supports bullish planning direction", "support");
+    if(direction === "bearish") return createScenarioTimeframeScoreFactor("Weekly context conflicts with bearish planning direction", "caution");
+    return createScenarioTimeframeScoreFactor("Weekly context is directional while this scenario remains neutral", "neutral");
+  }
+  if(key.includes("bearish structure")){
+    if(direction === "bearish") return createScenarioTimeframeScoreFactor("Weekly context supports bearish planning direction", "support");
+    if(direction === "bullish") return createScenarioTimeframeScoreFactor("Weekly context conflicts with bullish planning direction", "caution");
+    return createScenarioTimeframeScoreFactor("Weekly context is directional while this scenario remains neutral", "neutral");
+  }
+  if(key.includes("mixed") || key.includes("macro") || key.includes("weak")) return createScenarioTimeframeScoreFactor("Weekly context remains mixed; directional planning stays cautious", "neutral");
+  return createScenarioTimeframeScoreFactor("Weekly context unavailable", "neutral");
+}
+function buildDailyScenarioTimeframeScoreFactor(context){
+  const label = normalizeScenarioTimeframeLabel(context?.daily?.label);
+  const key = label.toLowerCase();
+  if(key.includes("aligns with weekly")) return createScenarioTimeframeScoreFactor("Daily validation aligns with Weekly context", "support");
+  if(key.includes("weakens weekly")) return createScenarioTimeframeScoreFactor("Daily validation weakens Weekly context", "caution");
+  if(key.includes("conflicts with weekly")) return createScenarioTimeframeScoreFactor("Daily validation conflicts with Weekly context", "caution");
+  if(key.includes("transition") || key.includes("mixed")) return createScenarioTimeframeScoreFactor("Daily validation remains transitional", "caution");
+  return createScenarioTimeframeScoreFactor("Daily validation unavailable", "neutral");
+}
+function buildH4ScenarioTimeframeScoreFactor(context){
+  const label = normalizeScenarioTimeframeLabel(context?.h4?.label);
+  const key = label.toLowerCase();
+  if(key.includes("reaction confirmed")) return createScenarioTimeframeScoreFactor("4H reaction context is confirmed for review", "support");
+  if(key.includes("reaction developing")) return createScenarioTimeframeScoreFactor("4H reaction is developing", "support");
+  if(key.includes("waiting for reaction")) return createScenarioTimeframeScoreFactor("4H is waiting for reaction", "neutral");
+  if(key.includes("weak reaction")) return createScenarioTimeframeScoreFactor("4H reaction is weak", "caution");
+  if(key.includes("failed reaction")) return createScenarioTimeframeScoreFactor("4H reaction failed; planning remains cautious", "caution");
+  if(key.includes("no clear reaction")) return createScenarioTimeframeScoreFactor("4H reaction is unclear", "neutral");
+  return createScenarioTimeframeScoreFactor("4H reaction unavailable", "neutral");
+}
+function buildH1ScenarioTimeframeScoreFactor(context){
+  const label = normalizeScenarioTimeframeLabel(context?.h1?.label);
+  const h4Label = normalizeScenarioTimeframeLabel(context?.h4?.label).toLowerCase();
+  const key = label.toLowerCase();
+  const h4Supportive = h4Label.includes("reaction confirmed") || h4Label.includes("reaction developing");
+  if(key.includes("timing supportive")){
+    if(h4Supportive) return createScenarioTimeframeScoreFactor("1H timing is supportive but context-only", "support");
+    return createScenarioTimeframeScoreFactor("1H timing cannot improve context without supportive 4H reaction", "caution");
+  }
+  if(key.includes("timing developing")) return createScenarioTimeframeScoreFactor("1H timing is developing", "neutral");
+  if(key.includes("timing waiting")) return createScenarioTimeframeScoreFactor("1H timing is waiting", "neutral");
+  if(key.includes("timing weak")) return createScenarioTimeframeScoreFactor("1H timing is weak", "caution");
+  if(key.includes("timing failed")) return createScenarioTimeframeScoreFactor("1H timing failed; planning remains cautious", "caution");
+  return createScenarioTimeframeScoreFactor("1H timing unavailable", "neutral");
+}
+function buildScenarioTimeframeScoreFactors(plan){
+  const context = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
+  return [
+    buildWeeklyScenarioTimeframeScoreFactor(plan, context),
+    buildDailyScenarioTimeframeScoreFactor(context),
+    buildH4ScenarioTimeframeScoreFactor(context),
+    buildH1ScenarioTimeframeScoreFactor(context),
+  ].map((factor)=>({ ...factor, impact: 0, displayOnly: true }));
+}
+function addScenarioTimeframeScoreFactors(plans){
+  return (Array.isArray(plans) ? plans : []).map((plan)=>({
+    ...plan,
+    scenarioTimeframeScoreFactors: buildScenarioTimeframeScoreFactors(plan).map((factor)=>({ ...factor })),
+  }));
+}
+function formatScenarioTimeframeScoreFactors(plan){
+  const factors = Array.isArray(plan?.scenarioTimeframeScoreFactors) && plan.scenarioTimeframeScoreFactors.length ? plan.scenarioTimeframeScoreFactors.slice(0, 4) : buildScenarioTimeframeScoreFactors(plan).slice(0, 4);
+  return `
+    <div class="scenario-planning-block scenario-timeframe-score-factors">
+      <span>Timeframe Context Factors</span>
+      <p class="scenario-timeframe-score-note">Display-only · no numeric score impact</p>
+      <div class="scenario-timeframe-score-list">
+        ${factors.map((factor)=>`<div class="scenario-timeframe-score-factor scenario-timeframe-score-${escapeHtml(factor.type || "neutral")}"><strong>${escapeHtml(factor.label || "Timeframe context unavailable")}</strong><small>No numeric score impact</small></div>`).join("")}
+      </div>
+    </div>
+  `;
+}
 function formatScenarioTimeframeContextBlock(plan){
   const context = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
   const rows = [
@@ -6456,6 +6543,7 @@ function formatScenarioPlanningCard(plan){
       ${formatPrimaryScenarioBadge(plan)}
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
       ${formatScenarioScoreBlock(plan)}
+      ${formatScenarioTimeframeScoreFactors(plan)}
       ${formatScenarioTimeframeContextBlock(plan)}
       <div class="scenario-planning-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
@@ -6490,7 +6578,9 @@ function renderMultiScenarioPlanningSection(mapData){
   const plansWithConfirmation = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
   const plansWithPrimary = addDerivedPrimaryScenarioFlags(plansWithConfirmation, snapshot);
   const plansWithScore = addDerivedScenarioScore(plansWithPrimary, snapshot);
-  const plans = addScenarioTimeframeContext(plansWithScore, buildScenarioTimeframeContextSnapshot());
+  const timeframeContext = buildScenarioTimeframeContextSnapshot();
+  const plansWithTimeframeContext = addScenarioTimeframeContext(plansWithScore, timeframeContext);
+  const plans = addScenarioTimeframeScoreFactors(plansWithTimeframeContext);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 
@@ -6517,6 +6607,89 @@ function buildScenarioTimeframeFixtureSnapshot(){
     existingTradePlanScenario: null,
     disclaimer: createScenarioDisclaimer(),
   };
+}
+
+function runScenarioTimeframeScoreFactorsFixtureTests(){
+  const makePlan = (direction, contexts)=>({ direction, timeframeContext: buildScenarioTimeframeContextSnapshot(contexts) });
+  const weeklyAligned = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: null, h4: null, h1: null }))[0];
+  const weeklyConflict = buildScenarioTimeframeScoreFactors(makePlan("bearish", { weekly: { status: "Bullish Structure" }, daily: null, h4: null, h1: null }))[0];
+  const weeklyMixed = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: { status: "Macro Range" }, daily: null, h4: null, h1: null }))[0];
+  const dailyTransition = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: null, daily: { status: "Transition / Mixed" }, h4: null, h1: null }))[1];
+  const h4Weak = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: null, daily: null, h4: { status: "Weak Reaction" }, h1: null }))[2];
+  const h1SupportiveWithH4 = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: null, daily: null, h4: { status: "Reaction Developing" }, h1: { status: "Timing Supportive" } }))[3];
+  const h1SupportiveWithoutH4 = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: null, daily: null, h4: { status: "Weak Reaction" }, h1: { status: "Timing Supportive" } }))[3];
+  const allFactors = [weeklyAligned, weeklyConflict, weeklyMixed, dailyTransition, h4Weak, h1SupportiveWithH4, h1SupportiveWithoutH4];
+  const html = formatScenarioTimeframeScoreFactors({ scenarioTimeframeScoreFactors: allFactors.slice(0, 4) });
+  const forbidden = /buy score|sell score|entry score|signal score|best trade|guaranteed|high probability trade|must enter|must exit/i;
+  const cases = [
+    { name: "Weekly aligned direction creates support factor", passed: weeklyAligned.type === "support" && weeklyAligned.label === "Weekly context supports bullish planning direction" },
+    { name: "Weekly conflicting direction creates caution factor", passed: weeklyConflict.type === "caution" && weeklyConflict.label === "Weekly context conflicts with bearish planning direction" },
+    { name: "Weekly mixed or macro range creates cautious neutral factor", passed: weeklyMixed.type === "neutral" && /remains mixed/.test(weeklyMixed.label) },
+    { name: "Daily transition creates cautious non-alignment factor", passed: dailyTransition.type === "caution" && dailyTransition.label === "Daily validation remains transitional" && !/aligns/i.test(dailyTransition.label) },
+    { name: "H4 Weak Reaction creates caution factor only", passed: h4Weak.type === "caution" && h4Weak.label === "4H reaction is weak" && !/confirmed/i.test(h4Weak.label) },
+    { name: "1H Timing Supportive can support only with supportive 4H", passed: h1SupportiveWithH4.type === "support" && h1SupportiveWithH4.label === "1H timing is supportive but context-only" },
+    { name: "1H Timing Supportive has no support factor without supportive 4H", passed: h1SupportiveWithoutH4.type !== "support" && /cannot improve context/.test(h1SupportiveWithoutH4.label) },
+    { name: "all factors are display-only zero-impact", passed: allFactors.every((factor)=>factor.impact === 0 && factor.displayOnly === true) },
+    { name: "factor HTML states no numeric impact", passed: html.includes("Display-only") && html.includes("no numeric score impact") },
+    { name: "no unsafe wording appears", passed: !forbidden.test(JSON.stringify(allFactors) + html) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runScenarioTimeframeScoreNoImpactFixtureTests(){
+  const snapshot = buildScenarioTimeframeFixtureSnapshot();
+  const basePlans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const withPrimary = addDerivedPrimaryScenarioFlags(basePlans, snapshot);
+  const withScore = addDerivedScenarioScore(withPrimary, snapshot);
+  const timeframeContext = buildScenarioTimeframeContextSnapshot({
+    weekly: { status: "Bullish Structure" },
+    daily: { status: "Aligns With Weekly" },
+    h4: { status: "Reaction Developing" },
+    h1: { status: "Timing Supportive" },
+  });
+  const contextBefore = JSON.stringify(timeframeContext);
+  const beforePlans = JSON.stringify(withScore);
+  const projection = (plans)=>plans.map((plan)=>({
+    scenarioId: plan.scenarioId,
+    direction: plan.direction,
+    isPrimaryScenario: !!plan.isPrimaryScenario,
+    primaryScenarioLabel: plan.primaryScenarioLabel || null,
+    confirmationStatus: plan.confirmationStatus || null,
+    confirmationStatusLabel: plan.confirmationStatusLabel || null,
+    scenarioScore: plan.scenarioScore,
+    scenarioScoreLabel: plan.scenarioScoreLabel,
+    scenarioScoreFactors: plan.scenarioScoreFactors,
+    scenarioZone: plan.scenarioZone,
+    invalidationReference: plan.invalidationReference,
+    tp1: plan.tp1,
+    tp2: plan.tp2,
+    tp3: plan.tp3,
+    confirmationRequirements: plan.confirmationRequirements,
+    riskNotes: plan.riskNotes,
+  }));
+  const beforeProjection = JSON.stringify(projection(withScore));
+  const withContext = addScenarioTimeframeContext(withScore, timeframeContext);
+  const withTimeframeFactors = addScenarioTimeframeScoreFactors(withContext);
+  const afterProjection = JSON.stringify(projection(withTimeframeFactors));
+  const primaryBefore = withScore.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const primaryAfter = withTimeframeFactors.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const cases = [
+    { name: "numeric Scenario Score remains unchanged", passed: withScore.every((plan, index)=>plan.scenarioScore === withTimeframeFactors[index].scenarioScore) },
+    { name: "Scenario Score label remains unchanged", passed: withScore.every((plan, index)=>plan.scenarioScoreLabel === withTimeframeFactors[index].scenarioScoreLabel) },
+    { name: "existing scenarioScoreFactors remain unchanged", passed: withScore.every((plan, index)=>JSON.stringify(plan.scenarioScoreFactors) === JSON.stringify(withTimeframeFactors[index].scenarioScoreFactors)) },
+    { name: "Confirmation Status remains unchanged", passed: withScore.every((plan, index)=>plan.confirmationStatus === withTimeframeFactors[index].confirmationStatus && plan.confirmationStatusLabel === withTimeframeFactors[index].confirmationStatusLabel) },
+    { name: "Primary Scenario selection remains unchanged", passed: primaryBefore === primaryAfter },
+    { name: "scenario order remains unchanged", passed: withScore.map((plan)=>plan.scenarioId).join("|") === withTimeframeFactors.map((plan)=>plan.scenarioId).join("|") },
+    { name: "scenario references remain unchanged", passed: beforeProjection === afterProjection },
+    { name: "source timeframe context is not mutated", passed: contextBefore === JSON.stringify(timeframeContext) },
+    { name: "source scenario plans are not mutated", passed: beforePlans === JSON.stringify(withScore) && withScore.every((plan)=>!plan.timeframeContext && !plan.scenarioTimeframeScoreFactors) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runScenarioTimeframeScoreFactorsFixtureTests = runScenarioTimeframeScoreFactorsFixtureTests;
+  window.runScenarioTimeframeScoreNoImpactFixtureTests = runScenarioTimeframeScoreNoImpactFixtureTests;
 }
 function runScenarioTimeframeContextAttachmentFixtureTests(){
   const sourceContexts = {
