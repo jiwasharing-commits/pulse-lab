@@ -3949,10 +3949,127 @@ function formatWeeklyMacroRangeDisplay(macroRange){
   const range = Number.isFinite(Number(macroRange.support)) && Number.isFinite(Number(macroRange.resistance)) ? ` · ${formatWeeklyStructurePrice(macroRange.support)}–${formatWeeklyStructurePrice(macroRange.resistance)}` : "";
   return `${macroRange.status || "Unavailable"}${range}`;
 }
+function formatTimeframeContextHeaderPrice(price = marketPreparationState.currentPrice){
+  if(price === null || price === undefined || price === "") return "Price unavailable";
+  const value = Number(price);
+  return Number.isFinite(value) ? `Price ${usd(value)}` : "Price unavailable";
+}
+function updateTimeframeContextHeaderPrice(price = marketPreparationState.currentPrice){
+  const title = typeof document !== "undefined" ? document.getElementById("timeframeContextHeaderTitle") : null;
+  if(title) title.textContent = `Timeframe Context | ${formatTimeframeContextHeaderPrice(price)}`;
+}
+function summarizeContextText(value, fallback = "Unavailable"){
+  if(Array.isArray(value)) return value.filter(Boolean).slice(0, 2).join(" · ") || fallback;
+  if(value && typeof value === "object") return value.label || value.status || value.name || value.summary || value.reason || fallback;
+  return value === null || value === undefined || value === "" ? fallback : String(value);
+}
+function formatTimeframeContextInfoCard(label, value, note = ""){
+  const safeValue = summarizeContextText(value);
+  const noteHtml = note ? `<p>${escapeHtml(summarizeContextText(note, ""))}</p>` : "";
+  return `<article class="timeframe-context-info-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(safeValue)}</strong>${noteHtml}</article>`;
+}
+function formatTimeframeContextCardGrid(cards){
+  const safeCards = Array.isArray(cards) && cards.length ? cards : [{ label: "Context", value: "Unavailable", note: "Context not available yet." }];
+  return `<div class="timeframe-context-card-grid timeframe-context-card-grid-4">${safeCards.map((card)=>formatTimeframeContextInfoCard(card.label, card.value, card.note)).join("")}</div>`;
+}
+function getWeeklyContextMeaning(status){
+  if(status === "Bullish Structure") return "Weekly structure leans bullish.";
+  if(status === "Bearish Structure") return "Weekly structure leans bearish.";
+  if(status === "Macro Range") return "Weekly is range-focused.";
+  if(status === "Context Unavailable") return "Weekly context unavailable.";
+  return "Weekly is not clean bullish or bearish.";
+}
+function getDailyContextMeaning(status){
+  if(status === "Aligns With Weekly") return "Daily supports Weekly context.";
+  if(status === "Weakens Weekly") return "Daily weakens Weekly context.";
+  if(status === "Conflicts With Weekly") return "Daily conflicts with Weekly context.";
+  if(status === "Context Unavailable") return "Daily context unavailable.";
+  return "Daily remains transitional.";
+}
+function getH4ContextMeaning(status){
+  if(status === "Reaction Confirmed") return "4H reaction is confirmed for review.";
+  if(status === "Reaction Developing") return "4H reaction is developing.";
+  if(status === "Weak Reaction") return "4H reaction is weak.";
+  if(status === "Failed Reaction") return "4H reaction failed.";
+  if(status === "No Clear Reaction") return "4H reaction unclear.";
+  if(status === "Context Unavailable") return "4H context unavailable.";
+  return "4H is waiting for clearer reaction context.";
+}
+function getH1ContextMeaning(status){
+  if(status === "Timing Supportive") return "1H timing supports context but does not override higher timeframe.";
+  if(status === "Timing Developing") return "1H timing is developing.";
+  if(status === "Timing Waiting") return "1H timing is waiting.";
+  if(status === "Timing Weak") return "1H timing remains weak.";
+  if(status === "Timing Failed") return "1H timing failed.";
+  return "1H context unavailable.";
+}
+function getWeeklyContextCards(context){
+  const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
+  const fvg = safe.majorFvgContext ? `${safe.majorFvgContext.activeCount || 0} active · ${safe.majorFvgContext.recentBrokenCount || 0} IFVG` : "FVG context unavailable";
+  const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Daily / 4H validation needed."];
+  return [
+    { label: "Weekly Bias", value: safe.status || safe.majorBias || "Unavailable", note: getWeeklyContextMeaning(safe.status) },
+    { label: "Structure Shift", value: safe.bosChochStatus?.status || "None", note: safe.bosChochStatus?.note || "No close-confirmed Weekly shift." },
+    { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
+    { label: "Swing Sequence", value: safe.swingSequence?.status || "Unavailable", note: safe.swingSequence?.note || "Swing sequence context." },
+    { label: "Meaning", value: getWeeklyContextMeaning(safe.status), note: "Planning context only." },
+    { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
+    { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
+    { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
+  ];
+}
+function getDailyContextCards(context){
+  const safe = context || createEmptyDailyValidationContext("Daily validation alignment unavailable.");
+  const status = normalizeDailyValidationAlignmentStatus(safe.status);
+  const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Watch Daily structure validation."];
+  const keyZone = summarizeContextText(safe.dailySrContext?.nearestSupport || safe.dailySrContext?.nearestResistance || safe.dailyFvgContext?.nearest || safe.dailyFvgContext?.summary, "Daily key zone unavailable");
+  return [
+    { label: "Status", value: status, note: getDailyContextMeaning(status) },
+    { label: "Against Weekly", value: safe.weeklyReference || safe.alignmentWithWeekly?.weeklyReference || "Weekly context unavailable", note: safe.alignmentWithWeekly?.status || "Validation context." },
+    { label: "Selected Range", value: safe.selectedRange || "Unavailable", note: safe.structureMode || "Daily range context." },
+    { label: "Daily Pattern", value: safe.dailyPattern || "Daily pattern context unavailable", note: safe.channelStatus || safe.rangeStatus || safe.brokenChannelStatus || "Pattern context." },
+    { label: "Meaning", value: getDailyContextMeaning(status), note: "Display-only validation." },
+    { label: "Need Confirmation", value: "Watch Daily structure validation.", note: "Wait for clear range reaction." },
+    { label: "Key Zone", value: keyZone, note: "Daily zone context only." },
+    { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
+  ];
+}
+function getH4ContextCards(context){
+  const safe = context || createEmptyH4ReactionContext();
+  const status = normalizeH4ReactionStatus(safe.status);
+  const type = normalizeH4ReactionType(safe.reactionType);
+  const relatedZoneText = safe.relatedZone ? formatH4ReactionZoneLabel({ ...safe.relatedZone, lower: safe.relatedZone.bottom, upper: safe.relatedZone.top }) : "Related zone unavailable";
+  const liquidity = deriveH4LiquiditySummary(marketPreparationState?.h4?.liquidityOrderflowState);
+  const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Wait for cleaner reaction."];
+  return [
+    { label: "Status", value: status, note: getH4ContextMeaning(status) },
+    { label: "Related Zone", value: relatedZoneText, note: safe.relatedZoneSource || "Zone source unavailable." },
+    { label: "Reaction", value: type, note: safe.zoneRelation || "Reaction relation unavailable." },
+    { label: "Liquidity", value: formatH4LiquiditySummaryStatus(liquidity.status), note: liquidity.issue || liquidity.context },
+    { label: "Meaning", value: getH4ContextMeaning(status), note: "Reaction review only." },
+    { label: "Need Confirmation", value: "4H reclaim / BOS / strong close needed.", note: "Wait for cleaner reaction." },
+    { label: "BOS/CHOCH", value: safe.bosChochContext || "Structure context unavailable", note: safe.alignmentWithDaily || "Daily validation unavailable." },
+    { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
+  ];
+}
+function getH1ContextCards(context){
+  const safe = context || createEmptyH1TimingContext();
+  const status = normalizeH1TimingStatus(safe.status);
+  const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Timing does not override 4H / HTF context."];
+  return [
+    { label: "Status", value: status, note: getH1ContextMeaning(status) },
+    { label: "Sweep", value: safe.sweepStatus || "Sweep context unavailable", note: "1H liquidity timing context." },
+    { label: "Mini Structure", value: safe.miniBosChochStatus || "Structure context unavailable", note: "Mini BOS/CHOCH context." },
+    { label: "Stochastic", value: safe.stochasticStatus || "Stochastic unavailable", note: safe.timingQuality || "Timing quality unavailable." },
+    { label: "Meaning", value: getH1ContextMeaning(status), note: "Timing context only." },
+    { label: "Need Confirmation", value: "1H BOS / retest hold needed.", note: "Timing does not override 4H / HTF context." },
+    { label: "Retest", value: safe.retestStatus || "Retest context unavailable", note: "Wait for continuation reaction." },
+    { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
+  ];
+}
 function formatWeeklyMajorStructurePanel(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
-  const notes = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : [safe.available ? "Major Context only; not a direct trading signal." : "Waiting for sufficient Weekly structure context."];
-  return `<div class="weekly-major-structure-header"><div><h3>Weekly Major Structure</h3><p>Major Context only · scenario planning reference.</p></div><span class="weekly-major-status weekly-major-status-${String(safe.status || "unavailable").toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(safe.status || "Context Unavailable")}</span></div><div class="weekly-major-structure-grid"><div><span>Major Bias</span><strong>${escapeHtml(safe.majorBias || "unavailable")}</strong></div><div><span>Swing Sequence</span><strong>${escapeHtml(safe.swingSequence?.status || "Unavailable")}</strong></div><div><span>BOS/CHOCH</span><strong>${escapeHtml(safe.bosChochStatus?.status || "None")}</strong><small>${escapeHtml(safe.bosChochStatus?.note || "No close-confirmed Weekly BOS/CHOCH context.")}</small></div><div><span>Macro Range</span><strong>${escapeHtml(formatWeeklyMacroRangeDisplay(safe.macroRangeStatus))}</strong></div><div><span>Major Swing High</span><strong>${formatWeeklySwingDisplay(safe.majorSwingHigh)}</strong></div><div><span>Major Swing Low</span><strong>${formatWeeklySwingDisplay(safe.majorSwingLow)}</strong></div></div><div class="weekly-major-risk-notes"><span>Risk Notes</span><ul>${notes.map((note)=>`<li>${escapeHtml(note)}</li>`).join("")}</ul><p>${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p></div>`;
+  return `<div class="weekly-major-structure-header timeframe-context-card-header"><div><h3>Weekly Major Structure</h3><p>Major Context only · scenario planning reference.</p></div><span class="weekly-major-status weekly-major-status-${String(safe.status || "unavailable").toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(safe.status || "Context Unavailable")}</span></div>${formatTimeframeContextCardGrid(getWeeklyContextCards(safe))}<p class="weekly-major-risk-notes timeframe-context-card-note">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
 }
 function renderWeeklyMajorStructure(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context is loading.");
@@ -4146,7 +4263,7 @@ function formatDailyValidationList(items, className){
 function formatDailyValidationFoundationPanel(context){
   const safe = context || createEmptyDailyValidationContext("Daily validation alignment unavailable.");
   const status = normalizeDailyValidationAlignmentStatus(safe.status);
-  return `<div class="daily-validation-header"><div><h3>Daily Validation Alignment</h3><p>Display-only validation of Daily structure against Weekly Major Structure.</p></div><span class="daily-validation-status daily-validation-status-${status.toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(status)}</span></div><div class="daily-validation-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Selected Range</span><strong>${escapeHtml(safe.selectedRange || "unavailable")}</strong></div><div><span>Structure Mode</span><strong>${escapeHtml(safe.structureMode || "unavailable")}</strong></div><div><span>Daily Pattern</span><strong>${escapeHtml(safe.dailyPattern || "Daily pattern context unavailable")}</strong></div><div><span>Weekly Reference</span><strong>${escapeHtml(safe.weeklyReference || safe.alignmentWithWeekly?.weeklyReference || "Weekly structure context unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Structure Validation only")}</strong></div></div><div class="daily-validation-list-block"><span>Alignment Reasons</span>${formatDailyValidationList(safe.alignmentReasons, "daily-validation-reasons")}</div><div class="daily-validation-list-block daily-validation-risk"><span>Risk Notes</span>${formatDailyValidationList(safe.riskNotes, "daily-validation-risks")}</div><p class="daily-validation-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+  return `<div class="daily-validation-header timeframe-context-card-header"><div><h3>Daily Validation Alignment</h3><p>Display-only validation of Daily structure against Weekly Major Structure.</p></div><span class="daily-validation-status daily-validation-status-${status.toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(status)}</span></div>${formatTimeframeContextCardGrid(getDailyContextCards(safe))}<p class="daily-validation-safe timeframe-context-card-note">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
 }
 function renderDailyValidationFoundation(dailySnapshot = null, weeklyContext = latestWeeklyMajorStructureContext){
   if(!els.dailyValidationFoundationPanel) return;
@@ -4455,11 +4572,8 @@ function formatH4ReactionList(items, className){
 function formatH4ReactionPanel(context){
   const safe = context || createEmptyH4ReactionContext();
   const status = normalizeH4ReactionStatus(safe.status);
-  const type = normalizeH4ReactionType(safe.reactionType);
   const statusClass = status.toLowerCase().replace(/[^a-z]+/g,"-");
-  const relatedZoneText = safe.relatedZone ? formatH4ReactionZoneLabel({ ...safe.relatedZone, lower: safe.relatedZone.bottom, upper: safe.relatedZone.top }) : "Related zone unavailable";
-  const sweepReclaim = [safe.sweepStatus ? `Sweep: ${safe.sweepStatus}` : null, safe.reclaimStatus ? `Reclaim: ${safe.reclaimStatus}` : null].filter(Boolean).join(" · ") || "Sweep / reclaim context unavailable";
-  return `<div class="h4-reaction-header"><div><h3>4H Reaction Context</h3><p>Display-only reaction context against higher-timeframe and Market Map zones.</p></div><span class="h4-reaction-status h4-reaction-status-${statusClass}">${escapeHtml(status)}</span></div><div class="h4-reaction-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Reaction Type</span><strong>${escapeHtml(type)}</strong></div><div><span>Related Zone</span><strong>${escapeHtml(relatedZoneText)}</strong></div><div><span>Zone Source</span><strong>${escapeHtml(safe.relatedZoneSource || "unavailable")}</strong></div><div><span>Zone Relation</span><strong>${escapeHtml(safe.zoneRelation || "unavailable")}</strong></div><div><span>Sweep / Reclaim</span><strong>${escapeHtml(sweepReclaim)}</strong></div><div><span>BOS/CHOCH</span><strong>${escapeHtml(safe.bosChochContext || "Structure context unavailable")}</strong></div><div><span>Daily Alignment</span><strong>${escapeHtml(safe.alignmentWithDaily || "Daily validation unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Reaction Context only")}</strong></div></div><div class="h4-reaction-list-block"><span>Reaction Reasons</span>${formatH4ReactionList(safe.reactionReasons, "h4-reaction-reasons")}</div><div class="h4-reaction-list-block h4-reaction-risk"><span>Risk Notes</span>${formatH4ReactionList(safe.riskNotes, "h4-reaction-risks")}</div><p class="h4-reaction-safe">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+  return `<div class="h4-reaction-header timeframe-context-card-header"><div><h3>4H Reaction Context</h3><p>Display-only reaction context against higher-timeframe and Market Map zones.</p></div><span class="h4-reaction-status h4-reaction-status-${statusClass}">${escapeHtml(status)}</span></div>${formatTimeframeContextCardGrid(getH4ContextCards(safe))}<p class="h4-reaction-safe timeframe-context-card-note">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
 }
 function renderH4ReactionContext(mapData = marketPreparationState.map){
   if(!els.h4ReactionContextPanel) return;
@@ -4693,7 +4807,7 @@ function formatH1TimingPanel(context){
   const safe = context || createEmptyH1TimingContext();
   const status = normalizeH1TimingStatus(safe.status);
   const statusClass = status.toLowerCase().replace(/[^a-z]+/g,"-");
-  return `<div class="h1-timing-header"><div><h3>1H Timing Context</h3><p>Display-only timing refinement against the current 4H Reaction Context.</p></div><span class="h1-timing-status h1-timing-status-${statusClass}">${escapeHtml(status)}</span></div><div class="h1-timing-grid"><div><span>Status</span><strong>${escapeHtml(status)}</strong></div><div><span>Timing Quality</span><strong>${escapeHtml(safe.timingQuality || "unavailable")}</strong></div><div><span>1H Sweep</span><strong>${escapeHtml(safe.sweepStatus || "Sweep context unavailable")}</strong></div><div><span>Mini BOS/CHOCH</span><strong>${escapeHtml(safe.miniBosChochStatus || "Structure context unavailable")}</strong></div><div><span>Quick Retest</span><strong>${escapeHtml(safe.retestStatus || "Retest context unavailable")}</strong></div><div><span>Stochastic</span><strong>${escapeHtml(safe.stochasticStatus || "Stochastic unavailable")}</strong></div><div><span>Related 4H Reaction</span><strong>${escapeHtml(safe.relatedH4Reaction || "4H reaction unavailable")}</strong></div><div><span>Use</span><strong>${escapeHtml(safe.use || "Timing Context only")}</strong></div></div><div class="h1-timing-list-block"><span>Timing Reasons</span>${formatH1TimingList(safe.timingReasons, "h1-timing-reasons")}</div><div class="h1-timing-list-block h1-timing-risk"><span>Risk Notes</span>${formatH1TimingList(safe.riskNotes, "h1-timing-risks")}</div><p class="h1-timing-safe">${escapeHtml(safe.disclaimer || H1_TIMING_DISCLAIMER)}</p>`;
+  return `<div class="h1-timing-header timeframe-context-card-header"><div><h3>1H Timing Context</h3><p>Display-only timing refinement against the current 4H Reaction Context.</p></div><span class="h1-timing-status h1-timing-status-${statusClass}">${escapeHtml(status)}</span></div>${formatTimeframeContextCardGrid(getH1ContextCards(safe))}<p class="h1-timing-safe timeframe-context-card-note">${escapeHtml(safe.disclaimer || H1_TIMING_DISCLAIMER)}</p>`;
 }
 function renderH1TimingContext(){
   if(!els.h1TimingContextPanel) return;
@@ -9105,6 +9219,7 @@ function renderMarketPreparationMap(mapData){
   if(positionStatus.recentReactionMemory) marketPreparationState.h4.recentReaction = positionStatus.recentReactionMemory;
   marketPreparationState.fvgQuality = buildFvgQualityScore();
   marketPreparationState.map = { upside: safeMap.upside || [], downside: safeMap.downside || [], currentRowText: safeMap.currentRowText || "● Price unavailable" };
+  updateTimeframeContextHeaderPrice();
   refreshTradePlanScenario(safeMap);
   renderTradePlanScenario();
   renderMultiScenarioPlanningSection(safeMap);
@@ -9312,7 +9427,13 @@ function formatSummaryValue(value, fallback = "—"){
 function renderH4LiquiditySummary(){
   if(!els.h4LiquiditySummaryPanel) return;
   const summary = deriveH4LiquiditySummary(marketPreparationState?.h4?.liquidityOrderflowState);
-  els.h4LiquiditySummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div><span class="context-summary-status ${formatContextSummaryStatusClass(summary.status)}">${escapeHtml(formatH4LiquiditySummaryStatus(summary.status))}</span></div><div class="context-summary-grid"><div><span>Status</span><strong>${escapeHtml(formatH4LiquiditySummaryStatus(summary.status))}</strong></div><div><span>Context</span><strong>${escapeHtml(summary.context)}</strong></div><div><span>Issue</span><strong>${escapeHtml(summary.issue)}</strong></div><div><span>Use</span><strong>${escapeHtml(summary.use)}</strong></div></div>`;
+  const cards = [
+    { label: "Status", value: formatH4LiquiditySummaryStatus(summary.status), note: "H4 liquidity context." },
+    { label: "Context", value: summary.context, note: "Read-only diagnostic context." },
+    { label: "Issue", value: summary.issue, note: "Confirmation review detail." },
+    { label: "Use", value: summary.use, note: "Planning context only." },
+  ];
+  els.h4LiquiditySummaryPanel.innerHTML = `<div class="context-summary-header timeframe-context-card-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div><span class="context-summary-status ${formatContextSummaryStatusClass(summary.status)}">${escapeHtml(formatH4LiquiditySummaryStatus(summary.status))}</span></div>${formatTimeframeContextCardGrid(cards)}`;
 }
 function selectKeyMarketZone(rows, mode = "nearest"){
   const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
@@ -12033,6 +12154,106 @@ function runTimeframeContextTabsFixtureTests(){
 }
 if(typeof window !== "undefined") window.runTimeframeContextTabsFixtureTests = runTimeframeContextTabsFixtureTests;
 
+function runTimeframeContextCardGridFixtureTests(){
+  const weekly = {
+    available: true,
+    status: "Mixed Structure",
+    majorBias: "mixed",
+    bosChochStatus: { status: "CHOCH Down", note: "Close-confirmed structure change." },
+    macroRangeStatus: { status: "Active Range", support: 90000, resistance: 110000 },
+    swingSequence: { status: "Mixed", note: "Swing sequence remains mixed." },
+    majorFvgContext: { activeCount: 2, recentBrokenCount: 1, source: "Weekly FVG / IFVG context" },
+    riskNotes: ["Weekly is not clean bullish or bearish."],
+  };
+  const daily = {
+    status: "Transition / Mixed",
+    selectedRange: "3M",
+    structureMode: "Range-aware",
+    dailyPattern: "Horizontal Range · active",
+    weeklyReference: "Weekly Major Structure · Mixed Structure",
+    alignmentWithWeekly: { status: "transition", weeklyReference: "Weekly Major Structure · Mixed Structure" },
+    dailyFvgContext: { summary: "Daily FVG context" },
+    riskNotes: ["Daily remains transitional."],
+  };
+  const h4 = {
+    status: "Weak Reaction",
+    reactionType: "Retest",
+    relatedZone: { label: "4H Support", bottom: 98000, top: 99000 },
+    relatedZoneSource: "Market Map",
+    zoneRelation: "testing",
+    bosChochContext: "No clear 4H structure shift",
+    alignmentWithDaily: "Transition / Mixed",
+    riskNotes: ["4H reaction is weak."],
+  };
+  const h1 = {
+    status: "Timing Weak",
+    sweepStatus: "Bullish Sweep",
+    miniBosChochStatus: "No clear 1H structure shift",
+    stochasticStatus: "Stoch Neutral",
+    timingQuality: "Weak",
+    retestStatus: "Retest waiting",
+    riskNotes: ["Timing does not override 4H / HTF context."],
+  };
+  const before = JSON.stringify({ weekly, daily, h4, h1 });
+  const weeklyHtml = formatTimeframeContextCardGrid(getWeeklyContextCards(weekly));
+  const dailyHtml = formatTimeframeContextCardGrid(getDailyContextCards(daily));
+  const h4Html = formatTimeframeContextCardGrid(getH4ContextCards(h4));
+  const h1Html = formatTimeframeContextCardGrid(getH1ContextCards(h1));
+  const missingHtml = [formatTimeframeContextCardGrid(getWeeklyContextCards(null)), formatTimeframeContextCardGrid(getDailyContextCards(null)), formatTimeframeContextCardGrid(getH4ContextCards(null)), formatTimeframeContextCardGrid(getH1ContextCards(null))].join("");
+  const combined = `${formatTimeframeContextHeaderPrice(60735)} ${formatTimeframeContextHeaderPrice(null)} ${weeklyHtml}${dailyHtml}${h4Html}${h1Html}${missingHtml}`;
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit/i;
+  const cases = [
+    { name: "Timeframe Context header includes Price or Price unavailable", passed: formatTimeframeContextHeaderPrice(60735) === "Price $60,735" && formatTimeframeContextHeaderPrice(null) === "Price unavailable" },
+    { name: "Weekly tab renders card grid", passed: /timeframe-context-card-grid/.test(weeklyHtml) },
+    { name: "Daily tab renders card grid", passed: /timeframe-context-card-grid/.test(dailyHtml) },
+    { name: "4H tab renders card grid", passed: /timeframe-context-card-grid/.test(h4Html) },
+    { name: "1H tab renders card grid", passed: /timeframe-context-card-grid/.test(h1Html) },
+    { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Sequence", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Sequence"].every((label)=>weeklyHtml.includes(label)) },
+    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Pattern", passed: ["Status", "Against Weekly", "Selected Range", "Daily Pattern"].every((label)=>dailyHtml.includes(label)) },
+    { name: "4H cards include Status, Related Zone, Reaction, Liquidity", passed: ["Status", "Related Zone", "Reaction", "Liquidity"].every((label)=>h4Html.includes(label)) },
+    { name: "1H cards include Status, Sweep, Mini Structure, Stochastic", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) },
+    { name: "Card grid supports 4-card layout class", passed: /timeframe-context-card-grid-4/.test(combined) },
+    { name: "Missing context fallback renders safely", passed: /Unavailable|Context Unavailable|context unavailable/i.test(missingHtml) },
+    { name: "No context data mutation", passed: before === JSON.stringify({ weekly, daily, h4, h1 }) },
+    { name: "No unsafe wording appears", passed: !forbidden.test(combined) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runTimeframeContextCardGridNoImpactFixtureTests(){
+  const weekly = createEmptyWeeklyMajorStructureContext("Weekly fixture unavailable.");
+  const daily = createEmptyDailyValidationContext("Daily fixture unavailable.");
+  const h4 = createEmptyH4ReactionContext("4H fixture unavailable.");
+  const h1 = createEmptyH1TimingContext("1H fixture unavailable.");
+  const h4LiquidityState = { activeEpisode: { status: LIQUIDITY_OF_STATE.POSSIBLE, band: LIQUIDITY_BAND.USABLE, displayStatus: "Possible liquidity context", reclaim: {}, sweep: {} }, diagnostics: {} };
+  const scenarioFixture = buildScenarioReadabilityFixturePlans();
+  const marketMapBefore = JSON.stringify(marketPreparationState.map || null);
+  const before = JSON.stringify({ weekly, daily, h4, h1, h4LiquidityState, plans: scenarioFixture.plans });
+  formatTimeframeContextCardGrid(getWeeklyContextCards(weekly));
+  formatTimeframeContextCardGrid(getDailyContextCards(daily));
+  formatTimeframeContextCardGrid(getH4ContextCards(h4));
+  formatTimeframeContextCardGrid(getH1ContextCards(h1));
+  deriveH4LiquiditySummary(h4LiquidityState);
+  const tabsBefore = runTimeframeContextTabsFixtureTests();
+  const after = JSON.stringify({ weekly, daily, h4, h1, h4LiquidityState, plans: scenarioFixture.plans });
+  const cases = [
+    { name: "Weekly context object unchanged", passed: before === after },
+    { name: "Daily context object unchanged", passed: before === after },
+    { name: "4H context object unchanged", passed: before === after },
+    { name: "1H context object unchanged", passed: before === after },
+    { name: "H4 liquidity summary object unchanged", passed: before === after },
+    { name: "Scenario data unchanged", passed: JSON.stringify(scenarioFixture.plans) === JSON.stringify(scenarioFixture.plans) && before === after },
+    { name: "Market Map data unchanged", passed: marketMapBefore === JSON.stringify(marketPreparationState.map || null) },
+    { name: "Existing timeframe context tab behavior unchanged", passed: tabsBefore.passed === true },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runTimeframeContextCardGridFixtureTests = runTimeframeContextCardGridFixtureTests;
+  window.runTimeframeContextCardGridNoImpactFixtureTests = runTimeframeContextCardGridNoImpactFixtureTests;
+}
+
 function setupCollapsibleSections(){
   bindEngineMapModalEvents();
   bindTimeframeRoleModalControls();
@@ -13637,6 +13858,7 @@ async function loadDashboard(){
 
 els.refreshBtn.addEventListener("click", loadDashboard);
 loadVersionMeta();
+updateTimeframeContextHeaderPrice();
 renderPulseLabEngineMap();
 renderTimeframeRoleAlignment();
 renderWeeklyMajorStructure();
