@@ -6669,6 +6669,129 @@ function formatScenarioTimeframeContextBlock(plan){
     </div>
   `;
 }
+
+const TIMEFRAME_CONFIRMATION_STATUSES = Object.freeze(["supportive", "developing", "caution", "blocking", "unavailable"]);
+function normalizeTimeframeConfirmationStatus(status){
+  const normalized = String(status || "unavailable").trim().toLowerCase();
+  return TIMEFRAME_CONFIRMATION_STATUSES.includes(normalized) ? normalized : "unavailable";
+}
+function getTimeframeConfirmationLabel(status){
+  const normalized = normalizeTimeframeConfirmationStatus(status);
+  if(normalized === "supportive") return "Supportive Review";
+  if(normalized === "developing") return "Developing Review";
+  if(normalized === "caution") return "Caution Review";
+  if(normalized === "blocking") return "Blocking Review";
+  return "Context Unavailable";
+}
+function getWeeklyScenarioDirectionCompatibility(plan, timeframeContext){
+  const direction = String(plan?.direction || "neutral").toLowerCase();
+  const weeklyDirection = getScenarioTimeframeWeeklyDirection(timeframeContext);
+  const label = normalizeScenarioTimeframeLabel(timeframeContext?.weekly?.label).toLowerCase();
+  if(!weeklyDirection){
+    if(label.includes("mixed") || label.includes("macro") || label.includes("weak")) return { status: "caution", reason: "Weekly context keeps confirmation review cautious." };
+    return { status: "unavailable", reason: "Weekly context unavailable." };
+  }
+  if(direction === "neutral") return { status: "neutral", reason: "Weekly context is noted for neutral planning only." };
+  if(weeklyDirection === direction) return { status: "aligned", reason: "Weekly context aligns with scenario direction." };
+  return { status: "conflict", blocker: "Weekly context conflicts with scenario direction." };
+}
+function getDailyScenarioValidationCompatibility(plan, timeframeContext){
+  const direction = String(plan?.direction || "neutral").toLowerCase();
+  const weeklyDirection = getScenarioTimeframeWeeklyDirection(timeframeContext);
+  const label = normalizeScenarioTimeframeLabel(timeframeContext?.daily?.label).toLowerCase();
+  if(label.includes("aligns with weekly")){
+    if(direction !== "neutral" && weeklyDirection === direction) return { status: "aligned", reason: "Daily validation supports the Weekly context for this scenario." };
+    return { status: "neutral", reason: "Daily validation needs matching Weekly direction for stronger review." };
+  }
+  if(label.includes("conflicts with weekly")) return { status: "conflict", blocker: "Daily validation conflicts with Weekly context." };
+  if(label.includes("weakens weekly")) return { status: "caution", reason: "Daily validation weakens Weekly context." };
+  if(label.includes("transition") || label.includes("mixed")) return { status: "caution", reason: "Daily validation remains transitional." };
+  return { status: "unavailable", reason: "Daily validation unavailable." };
+}
+function areTimeframeContextsUnavailable(timeframeContext){
+  return [timeframeContext?.weekly, timeframeContext?.daily, timeframeContext?.h4, timeframeContext?.h1]
+    .every((item)=>normalizeScenarioTimeframeLabel(item?.label).toLowerCase().includes("context unavailable"));
+}
+function deriveTimeframeConfirmationReview(plan){
+  const timeframeContext = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
+  const reasons = [];
+  const blockers = [];
+  if(areTimeframeContextsUnavailable(timeframeContext)){
+    return {
+      timeframeConfirmationStatus: "unavailable",
+      timeframeConfirmationLabel: getTimeframeConfirmationLabel("unavailable"),
+      timeframeConfirmationReasons: ["Timeframe confirmation context unavailable."],
+      timeframeConfirmationBlockers: [],
+      timeframeConfirmationUse: "Timeframe confirmation review only",
+      timeframeConfirmationDisclaimer: "Planning context only · does not replace Confirmation Status.",
+    };
+  }
+  const weekly = getWeeklyScenarioDirectionCompatibility(plan, timeframeContext);
+  const daily = getDailyScenarioValidationCompatibility(plan, timeframeContext);
+  if(weekly.reason) reasons.push(weekly.reason);
+  if(weekly.blocker) blockers.push(weekly.blocker);
+  if(daily.reason) reasons.push(daily.reason);
+  if(daily.blocker && getScenarioTimeframeWeeklyDirection(timeframeContext)) blockers.push(daily.blocker);
+  const h4Label = normalizeScenarioTimeframeLabel(timeframeContext?.h4?.label).toLowerCase();
+  const h1Label = normalizeScenarioTimeframeLabel(timeframeContext?.h1?.label).toLowerCase();
+  if(h4Label.includes("failed reaction")) blockers.push("4H reaction failed; blocks strong timeframe confirmation review.");
+  else if(h4Label.includes("reaction confirmed")) reasons.push("4H reaction context supports confirmation review.");
+  else if(h4Label.includes("reaction developing")) reasons.push("4H reaction is developing; review remains in progress.");
+  else if(h4Label.includes("waiting for reaction")) reasons.push("4H is waiting for reaction.");
+  else if(h4Label.includes("weak reaction")) reasons.push("4H reaction is weak; confirmation review stays cautious.");
+  else if(h4Label.includes("no clear reaction")) reasons.push("4H reaction is unclear.");
+  else reasons.push("4H reaction unavailable.");
+  const h4Supportive = h4Label.includes("reaction confirmed") || h4Label.includes("reaction developing");
+  if(h1Label.includes("timing supportive")){
+    if(h4Supportive) reasons.push("1H timing supports the current 4H reaction context only.");
+    else reasons.push("1H timing cannot support review without 4H reaction context.");
+  } else if(h1Label.includes("timing failed")){
+    if(h4Label.includes("weak reaction") || h4Label.includes("failed reaction")) blockers.push("1H timing failed while 4H context is weak or failed.");
+    else reasons.push("1H timing failed; confirmation review stays cautious.");
+  } else if(h1Label.includes("timing weak")) reasons.push("1H timing is weak and context-only.");
+  else if(h1Label.includes("timing waiting")) reasons.push("1H timing is waiting and context-only.");
+  else if(h1Label.includes("timing developing")) reasons.push("1H timing is developing and context-only.");
+  else reasons.push("1H timing unavailable.");
+  const hasCompleteReferences = hasScenarioZone(plan?.scenarioZone) && !!plan?.invalidationReference && !!plan?.tp1;
+  if(!hasCompleteReferences) reasons.push("Scenario references are incomplete for supportive timeframe review.");
+  let status = "caution";
+  if(blockers.length) status = "blocking";
+  else if(hasCompleteReferences && h4Label.includes("reaction confirmed") && !h1Label.includes("timing failed") && ![weekly.status, daily.status].includes("conflict")) status = "supportive";
+  else if(h4Label.includes("reaction developing") || h4Label.includes("waiting for reaction") || (hasCompleteReferences && !h4Label.includes("weak reaction") && !h4Label.includes("no clear reaction"))) status = "developing";
+  if([weekly.status, daily.status].includes("caution") && status === "supportive") status = "caution";
+  return {
+    timeframeConfirmationStatus: status,
+    timeframeConfirmationLabel: getTimeframeConfirmationLabel(status),
+    timeframeConfirmationReasons: [...new Set(reasons)].slice(0, 5),
+    timeframeConfirmationBlockers: [...new Set(blockers)].slice(0, 4),
+    timeframeConfirmationUse: "Timeframe confirmation review only",
+    timeframeConfirmationDisclaimer: "Planning context only · does not replace Confirmation Status.",
+  };
+}
+function addTimeframeConfirmationReview(plans){
+  return (Array.isArray(plans) ? plans : []).map((plan)=>({ ...plan, ...deriveTimeframeConfirmationReview(plan) }));
+}
+function formatTimeframeConfirmationList(items, className){
+  const list = Array.isArray(items) ? items.filter(Boolean).slice(0, 4) : [];
+  if(!list.length) return '<p class="scenario-planning-muted">—</p>';
+  return `<ul class="${className}">${list.map((item)=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+function formatTimeframeConfirmationReviewBlock(plan){
+  const status = normalizeTimeframeConfirmationStatus(plan?.timeframeConfirmationStatus);
+  const label = plan?.timeframeConfirmationLabel || getTimeframeConfirmationLabel(status);
+  const blockers = Array.isArray(plan?.timeframeConfirmationBlockers) ? plan.timeframeConfirmationBlockers : [];
+  return `
+    <div class="scenario-planning-block scenario-timeframe-confirmation scenario-timeframe-confirmation-${status}">
+      <span>Timeframe Confirmation Review</span>
+      <div class="scenario-timeframe-confirmation-head"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(plan?.timeframeConfirmationUse || "Timeframe confirmation review only")}</small></div>
+      <div class="scenario-timeframe-confirmation-grid">
+        <div><em>Reasons</em>${formatTimeframeConfirmationList(plan?.timeframeConfirmationReasons, "scenario-timeframe-confirmation-reasons")}</div>
+        <div><em>Blockers</em>${formatTimeframeConfirmationList(blockers, "scenario-timeframe-confirmation-blockers")}</div>
+      </div>
+      <p class="scenario-timeframe-confirmation-note">${escapeHtml(plan?.timeframeConfirmationDisclaimer || "Planning context only · does not replace Confirmation Status.")}</p>
+    </div>
+  `;
+}
 function formatScenarioPlanningCard(plan){
   const statusLabel = formatScenarioPlanningStatusLabel(plan?.status);
   const invalidationText = plan?.invalidationReference ? formatScenarioReferenceLevel(plan.invalidationReference) : "—";
@@ -6680,6 +6803,7 @@ function formatScenarioPlanningCard(plan){
       </div>
       ${formatPrimaryScenarioBadge(plan)}
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
+      ${formatTimeframeConfirmationReviewBlock(plan)}
       ${formatScenarioScoreBlock(plan)}
       ${formatScenarioTimeframeScoreFactors(plan)}
       ${formatScenarioCalibratedScoreBlock(plan)}
@@ -6720,7 +6844,8 @@ function renderMultiScenarioPlanningSection(mapData){
   const timeframeContext = buildScenarioTimeframeContextSnapshot();
   const plansWithTimeframeContext = addScenarioTimeframeContext(plansWithScore, timeframeContext);
   const plansWithTimeframeFactors = addScenarioTimeframeScoreFactors(plansWithTimeframeContext);
-  const plans = addScenarioTimeframeScoreCalibration(plansWithTimeframeFactors);
+  const plansWithCalibration = addScenarioTimeframeScoreCalibration(plansWithTimeframeFactors);
+  const plans = addTimeframeConfirmationReview(plansWithCalibration);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 
@@ -6750,6 +6875,120 @@ function buildScenarioTimeframeFixtureSnapshot(){
 }
 
 
+
+function buildTimeframeConfirmationReviewFixturePlan(contexts = {}, overrides = {}){
+  const zone = { lower: 90, upper: 92, midpoint: 91, label: "Fixture scenario zone" };
+  const target = { lower: 110, upper: 112, midpoint: 111, price: 111, label: "Fixture target" };
+  return {
+    scenarioId: overrides.scenarioId || "fixture_scenario",
+    scenarioType: overrides.scenarioType || "bullish_reversal",
+    direction: overrides.direction || "bullish",
+    status: overrides.status || "waiting",
+    scenarioZone: overrides.scenarioZone === undefined ? zone : overrides.scenarioZone,
+    invalidationReference: overrides.invalidationReference === undefined ? { price: 89, label: "Below scenario zone" } : overrides.invalidationReference,
+    tp1: overrides.tp1 === undefined ? target : overrides.tp1,
+    tp2: overrides.tp2 === undefined ? target : overrides.tp2,
+    tp3: overrides.tp3 === undefined ? target : overrides.tp3,
+    confirmationStatus: overrides.confirmationStatus || "waiting",
+    confirmationStatusLabel: overrides.confirmationStatusLabel || "Waiting Confirmation",
+    confirmationReasons: overrides.confirmationReasons || ["Fixture confirmation remains unchanged."],
+    scenarioScore: overrides.scenarioScore ?? 5,
+    scenarioScoreLabel: overrides.scenarioScoreLabel || "Developing context",
+    scenarioScoreFactors: overrides.scenarioScoreFactors || [{ label: "Fixture score factor", impact: 5 }],
+    scenarioBaseScore: overrides.scenarioBaseScore ?? 5,
+    scenarioBaseScoreLabel: overrides.scenarioBaseScoreLabel || "Developing context",
+    scenarioTimeframeModifier: overrides.scenarioTimeframeModifier ?? 0,
+    scenarioTimeframeModifierFactors: overrides.scenarioTimeframeModifierFactors || [],
+    scenarioCalibratedScore: overrides.scenarioCalibratedScore ?? 5,
+    scenarioCalibratedScoreLabel: overrides.scenarioCalibratedScoreLabel || "Developing calibrated context",
+    timeframeContext: buildScenarioTimeframeContextSnapshot(contexts),
+  };
+}
+function runTimeframeConfirmationReviewFixtureTests(){
+  const missing = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: null, daily: null, h4: null, h1: null }));
+  const supportive = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Confirmed" }, h1: { status: "Timing Supportive" } }));
+  const developing = addTimeframeConfirmationReview([buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Developing" }, h1: { status: "Timing Waiting" } })])[0];
+  const weak = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Weak Reaction" }, h1: { status: "Timing Weak" } }));
+  const failed = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Failed Reaction" }, h1: { status: "Timing Supportive" } }));
+  const dailyConflict = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Conflicts With Weekly" }, h4: { status: "Reaction Confirmed" }, h1: { status: "Timing Supportive" } }));
+  const weeklyMixed = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Macro Range" }, daily: { status: "Transition / Mixed" }, h4: { status: "Reaction Confirmed" }, h1: { status: "Timing Supportive" } }));
+  const h1Alone = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: null, daily: null, h4: null, h1: { status: "Timing Supportive" } }));
+  const h1WithH4 = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Developing" }, h1: { status: "Timing Supportive" } }));
+  const h1FailedBlocking = deriveTimeframeConfirmationReview(buildTimeframeConfirmationReviewFixturePlan({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Weak Reaction" }, h1: { status: "Timing Failed" } }));
+  const html = formatTimeframeConfirmationReviewBlock({ ...supportive });
+  const forbidden = /entry confirmed|buy confirmed|sell confirmed|signal confirmed|high probability|best setup|must enter|must exit/i;
+  const cases = [
+    { name: "all contexts missing returns Context Unavailable", passed: missing.timeframeConfirmationStatus === "unavailable" && missing.timeframeConfirmationLabel === "Context Unavailable" },
+    { name: "4H Reaction Confirmed with complete references returns Supportive Review", passed: supportive.timeframeConfirmationStatus === "supportive" && supportive.timeframeConfirmationLabel === "Supportive Review" },
+    { name: "4H Reaction Developing returns Developing Review, not existing Confirmed", passed: developing.timeframeConfirmationStatus === "developing" && developing.confirmationStatus === "waiting" },
+    { name: "4H Weak Reaction returns Caution Review", passed: weak.timeframeConfirmationStatus === "caution" },
+    { name: "4H Failed Reaction returns Blocking Review", passed: failed.timeframeConfirmationStatus === "blocking" },
+    { name: "Daily Conflicts With Weekly blocks Supportive Review", passed: dailyConflict.timeframeConfirmationStatus === "blocking" && dailyConflict.timeframeConfirmationBlockers.some((item)=>/Daily validation conflicts/.test(item)) },
+    { name: "Weekly Mixed or Macro keeps review cautious", passed: weeklyMixed.timeframeConfirmationStatus === "caution" },
+    { name: "1H Timing Supportive does not create Supportive Review alone", passed: h1Alone.timeframeConfirmationStatus !== "supportive" },
+    { name: "1H Timing Supportive adds reason only if 4H is supportive or developing", passed: h1WithH4.timeframeConfirmationReasons.some((item)=>/1H timing supports/.test(item)) && h1Alone.timeframeConfirmationReasons.some((item)=>/cannot support/.test(item)) },
+    { name: "1H Timing Failed adds blocker when 4H is weak or failed", passed: h1FailedBlocking.timeframeConfirmationStatus === "blocking" && h1FailedBlocking.timeframeConfirmationBlockers.some((item)=>/1H timing failed/.test(item)) },
+    { name: "no unsafe wording appears", passed: !forbidden.test(JSON.stringify([missing, supportive, developing, weak, failed, dailyConflict, weeklyMixed, h1Alone, h1WithH4, h1FailedBlocking]) + html) },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+function runTimeframeConfirmationReviewNoImpactFixtureTests(){
+  const snapshot = buildScenarioTimeframeFixtureSnapshot();
+  const basePlans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const withPrimary = addDerivedPrimaryScenarioFlags(basePlans, snapshot);
+  const withScore = addDerivedScenarioScore(withPrimary, snapshot);
+  const timeframeContext = buildScenarioTimeframeContextSnapshot({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Confirmed" }, h1: { status: "Timing Supportive" } });
+  const contextBefore = JSON.stringify(timeframeContext);
+  const plansBefore = JSON.stringify(withScore);
+  const projection = (plans)=>plans.map((plan)=>({
+    scenarioId: plan.scenarioId,
+    confirmationStatus: plan.confirmationStatus,
+    confirmationStatusLabel: plan.confirmationStatusLabel,
+    confirmationReasons: plan.confirmationReasons,
+    scenarioScore: plan.scenarioScore,
+    scenarioScoreLabel: plan.scenarioScoreLabel,
+    scenarioScoreFactors: plan.scenarioScoreFactors,
+    scenarioBaseScore: plan.scenarioBaseScore,
+    scenarioTimeframeModifier: plan.scenarioTimeframeModifier,
+    scenarioCalibratedScore: plan.scenarioCalibratedScore,
+    isPrimaryScenario: !!plan.isPrimaryScenario,
+    scenarioZone: plan.scenarioZone,
+    invalidationReference: plan.invalidationReference,
+    tp1: plan.tp1,
+    tp2: plan.tp2,
+    tp3: plan.tp3,
+  }));
+  const beforeProjection = JSON.stringify(projection(withScore));
+  const withContext = addScenarioTimeframeContext(withScore, timeframeContext);
+  const withFactors = addScenarioTimeframeScoreFactors(withContext);
+  const withCalibration = addScenarioTimeframeScoreCalibration(withFactors);
+  const beforeReviewProjection = JSON.stringify(projection(withCalibration));
+  const reviewed = addTimeframeConfirmationReview(withCalibration);
+  const afterProjection = JSON.stringify(projection(reviewed));
+  const primaryBefore = withCalibration.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const primaryAfter = reviewed.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const cases = [
+    { name: "existing confirmationStatus remains unchanged", passed: withCalibration.every((plan, index)=>plan.confirmationStatus === reviewed[index].confirmationStatus) },
+    { name: "existing confirmationStatusLabel remains unchanged", passed: withCalibration.every((plan, index)=>plan.confirmationStatusLabel === reviewed[index].confirmationStatusLabel) },
+    { name: "existing confirmationReasons remain unchanged", passed: withCalibration.every((plan, index)=>JSON.stringify(plan.confirmationReasons) === JSON.stringify(reviewed[index].confirmationReasons)) },
+    { name: "Scenario Score remains unchanged", passed: withCalibration.every((plan, index)=>plan.scenarioScore === reviewed[index].scenarioScore && plan.scenarioScoreLabel === reviewed[index].scenarioScoreLabel && JSON.stringify(plan.scenarioScoreFactors) === JSON.stringify(reviewed[index].scenarioScoreFactors)) },
+    { name: "Timeframe Calibration remains unchanged", passed: beforeReviewProjection === afterProjection },
+    { name: "Primary Scenario selection remains unchanged", passed: primaryBefore === primaryAfter },
+    { name: "scenario order remains unchanged", passed: withCalibration.map((plan)=>plan.scenarioId).join("|") === reviewed.map((plan)=>plan.scenarioId).join("|") },
+    { name: "Scenario Zone, Invalidation, and TP references remain unchanged", passed: beforeProjection === JSON.stringify(projection(withScore)) && beforeReviewProjection === afterProjection },
+    { name: "source contexts are not mutated", passed: contextBefore === JSON.stringify(timeframeContext) },
+    { name: "source scenario plans are not mutated", passed: plansBefore === JSON.stringify(withScore) && withScore.every((plan)=>!plan.timeframeConfirmationStatus) },
+    { name: "review fields are separate", passed: reviewed.every((plan)=>plan.timeframeConfirmationStatus && plan.confirmationStatus !== undefined) },
+    { name: "existing projection remains unchanged after review", passed: beforeReviewProjection === afterProjection },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runTimeframeConfirmationReviewFixtureTests = runTimeframeConfirmationReviewFixtureTests;
+  window.runTimeframeConfirmationReviewNoImpactFixtureTests = runTimeframeConfirmationReviewNoImpactFixtureTests;
+}
 function runScenarioTimeframeCalibrationFixtureTests(){
   const makePlan = (direction, contexts, score = 5)=>({
     direction,
