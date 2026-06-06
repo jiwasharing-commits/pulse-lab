@@ -6861,9 +6861,57 @@ function formatScenarioPlanningCard(plan){
     </article>
   `;
 }
+function getMultiScenarioTabLabel(plan){
+  const text = `${plan?.scenarioId || ""} ${plan?.scenarioType || ""} ${plan?.displayTitle || ""}`.toLowerCase();
+  if(text.includes("breakout") && !text.includes("breakdown")) return "Breakout";
+  if(text.includes("breakdown")) return "Breakdown";
+  if(text.includes("wait") || text.includes("no-trade") || text.includes("no_trade")) return "Wait";
+  if(text.includes("bearish") || plan?.direction === "bearish") return "Bearish";
+  if(text.includes("bullish") || plan?.direction === "bullish") return "Bullish";
+  return plan?.displayTitle || "Scenario";
+}
+function getMultiScenarioTabKey(plan, index = 0){
+  const base = plan?.scenarioId || plan?.scenarioType || getMultiScenarioTabLabel(plan) || `scenario-${index + 1}`;
+  const safe = String(base).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `scenario-${index + 1}`;
+  return `multi-scenario-${safe}-${index}`;
+}
+function isWaitNoTradeScenario(plan){
+  const text = `${plan?.scenarioId || ""} ${plan?.scenarioType || ""} ${plan?.displayTitle || ""}`.toLowerCase();
+  return text.includes("wait") || text.includes("no-trade") || text.includes("no_trade") || plan?.direction === "neutral";
+}
+function selectDefaultMultiScenarioTabPlan(plans = []){
+  const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
+  if(!scenarios.length) return null;
+  const primary = scenarios.find((plan)=>plan?.isPrimary === true || plan?.isPrimaryScenario === true);
+  if(primary) return primary;
+  const wait = scenarios.find(isWaitNoTradeScenario);
+  if(wait) return wait;
+  const scored = scenarios
+    .map((plan, index)=>({ plan, index, score: Number(plan?.scenarioScore) }))
+    .filter((item)=>Number.isFinite(item.score))
+    .sort((a,b)=>b.score - a.score || a.index - b.index);
+  if(scored.length) return scored[0].plan;
+  return scenarios[0];
+}
+function formatMultiScenarioPlanningTabs(scenarios){
+  const activePlan = selectDefaultMultiScenarioTabPlan(scenarios);
+  const activeIndex = Math.max(0, scenarios.findIndex((plan)=>plan === activePlan));
+  const tabs = scenarios.map((plan, index)=>{
+    const key = getMultiScenarioTabKey(plan, index);
+    const active = index === activeIndex;
+    const score = Number.isFinite(Number(plan?.scenarioScore)) ? ` · ${Number(plan.scenarioScore).toFixed(Number.isInteger(Number(plan.scenarioScore)) ? 0 : 1)}/10` : "";
+    return `<button id="${key}-tab" class="multi-scenario-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active ? "true" : "false"}" aria-controls="${key}-panel" data-multi-scenario-tab="${key}-panel"><span>${escapeHtml(getMultiScenarioTabLabel(plan))}</span><small>${escapeHtml(score.replace(/^ · /, ""))}</small></button>`;
+  }).join("");
+  const panels = scenarios.map((plan, index)=>{
+    const key = getMultiScenarioTabKey(plan, index);
+    const active = index === activeIndex;
+    return `<section id="${key}-panel" class="multi-scenario-tab-panel${active ? " is-active" : ""}" role="tabpanel" aria-labelledby="${key}-tab"${active ? "" : " hidden"}>${formatScenarioPlanningCard(plan)}</section>`;
+  }).join("");
+  return `<div class="multi-scenario-tabs" data-active-scenario-panel="${escapeHtml(getMultiScenarioTabKey(activePlan, activeIndex))}-panel"><div class="multi-scenario-tab-list" role="tablist" aria-label="Multi-Scenario Planning tabs">${tabs}</div>${panels}</div>`;
+}
 function formatMultiScenarioPlanningSection(plans = []){
   const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
-  const cardsHtml = scenarios.length ? `<div class="scenario-planning-grid-cards">${scenarios.map(formatScenarioPlanningCard).join("")}</div>` : '<p class="scenario-planning-empty">No multi-scenario planning context available yet.</p>';
+  const cardsHtml = scenarios.length ? formatMultiScenarioPlanningTabs(scenarios) : '<p class="scenario-planning-empty">No multi-scenario planning context available yet.</p>';
   return `
     <div class="scenario-planning-header">
       <div>
@@ -6874,6 +6922,31 @@ function formatMultiScenarioPlanningSection(plans = []){
     ${cardsHtml}
     <p class="scenario-planning-footer">${escapeHtml(createScenarioDisclaimer())}</p>
   `;
+}
+function activateMultiScenarioTab(button){
+  const tabsRoot = button?.closest?.(".multi-scenario-tabs");
+  const targetId = button?.dataset?.multiScenarioTab;
+  if(!tabsRoot || !targetId) return;
+  tabsRoot.querySelectorAll(".multi-scenario-tab").forEach((tab)=>{
+    const selected = tab === button;
+    tab.classList.toggle("is-active", selected);
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+  tabsRoot.querySelectorAll(".multi-scenario-tab-panel").forEach((panel)=>{
+    const selected = panel.id === targetId;
+    panel.classList.toggle("is-active", selected);
+    panel.hidden = !selected;
+  });
+  tabsRoot.dataset.activeScenarioPanel = targetId;
+}
+function bindMultiScenarioPlanningTabs(root = (typeof document !== "undefined" ? document : null)){
+  if(!root || typeof document === "undefined") return;
+  const scope = root?.querySelector?.(".multi-scenario-tabs") ? root : document;
+  scope.querySelectorAll(".multi-scenario-tab").forEach((button)=>{
+    if(button.dataset.multiScenarioBound === "true") return;
+    button.dataset.multiScenarioBound = "true";
+    button.addEventListener("click", ()=>activateMultiScenarioTab(button));
+  });
 }
 function renderMultiScenarioPlanningSection(mapData){
   if(!els.multiScenarioPlanningPanel) return;
@@ -6887,6 +6960,7 @@ function renderMultiScenarioPlanningSection(mapData){
   const plansWithCalibration = addScenarioTimeframeScoreCalibration(plansWithTimeframeFactors);
   const plans = addTimeframeConfirmationReview(plansWithCalibration);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
+  bindMultiScenarioPlanningTabs(els.multiScenarioPlanningPanel);
 }
 
 function buildScenarioTimeframeFixtureSnapshot(){
@@ -7393,6 +7467,106 @@ if(typeof window !== "undefined"){
   window.runScenarioTimeframeContextAttachmentFixtureTests = runScenarioTimeframeContextAttachmentFixtureTests;
   window.runScenarioTimeframeContextNoImpactFixtureTests = runScenarioTimeframeContextNoImpactFixtureTests;
 }
+function buildMultiScenarioTabsFixturePlans(overrides = {}){
+  const makePlan = (scenarioId, scenarioType, displayTitle, score, extra = {})=>buildTimeframeConfirmationReviewFixturePlan(
+    { weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Developing" }, h1: { status: "Timing Waiting" } },
+    { scenarioId, scenarioType, displayTitle, scenarioScore: score, scenarioBaseScore: score, scenarioCalibratedScore: score, ...extra }
+  );
+  const plans = [
+    makePlan("potential_bullish_scenario", "bullish_reversal", "Potential Bullish Scenario", 7, { direction: "bullish" }),
+    makePlan("potential_bearish_scenario", "bearish_reversal", "Potential Bearish Scenario", 6, { direction: "bearish" }),
+    makePlan("breakout_retest_scenario", "breakout_retest", "Breakout Retest Scenario", 5, { direction: "bullish" }),
+    makePlan("breakdown_retest_scenario", "breakdown_retest", "Breakdown Retest Scenario", 4, { direction: "bearish" }),
+    makePlan("wait_no_trade_scenario", "wait_no_trade", "Wait / No-Trade Scenario", 3, { direction: "neutral" }),
+  ];
+  if(overrides.primaryIndex !== undefined && plans[overrides.primaryIndex]) plans[overrides.primaryIndex].isPrimaryScenario = true;
+  return plans.map((plan, index)=>({
+    ...plan,
+    confirmationStatus: plan.confirmationStatus || "waiting",
+    confirmationStatusLabel: plan.confirmationStatusLabel || "Waiting Confirmation",
+    timeframeConfirmationStatus: plan.timeframeConfirmationStatus || "developing",
+    timeframeConfirmationLabel: plan.timeframeConfirmationLabel || "Developing Review",
+    timeframeConfirmationReasons: plan.timeframeConfirmationReasons || ["Fixture timeframe review remains separate."],
+    timeframeConfirmationBlockers: plan.timeframeConfirmationBlockers || [],
+    confirmationRequirements: plan.confirmationRequirements || ["Wait for scenario reference confirmation."],
+    confluenceSources: plan.confluenceSources || ["Fixture confluence"],
+    riskNotes: plan.riskNotes || ["Planning context only."],
+    scenarioScoreLabel: plan.scenarioScoreLabel || getScenarioScoreLabel(plan.scenarioScore),
+    scenarioBaseScoreLabel: plan.scenarioBaseScoreLabel || getScenarioScoreLabel(plan.scenarioBaseScore),
+    scenarioCalibratedScoreLabel: plan.scenarioCalibratedScoreLabel || getScenarioCalibratedScoreLabel(plan.scenarioCalibratedScore),
+    scenarioScoreFactors: plan.scenarioScoreFactors || [],
+    scenarioTimeframeModifierFactors: plan.scenarioTimeframeModifierFactors || [],
+    tabIndex: index,
+  }));
+}
+function getVisibleMultiScenarioPanelCount(html){
+  return (html.match(/class="multi-scenario-tab-panel is-active"/g) || []).length;
+}
+function runMultiScenarioPlanningTabsFixtureTests(){
+  const primaryPlans = buildMultiScenarioTabsFixturePlans({ primaryIndex: 1 });
+  const primaryHtml = formatMultiScenarioPlanningSection(primaryPlans);
+  const noPrimaryPlans = buildMultiScenarioTabsFixturePlans();
+  const waitFallback = selectDefaultMultiScenarioTabPlan(noPrimaryPlans);
+  const noWaitPlans = noPrimaryPlans.filter((plan)=>!isWaitNoTradeScenario(plan)).map((plan, index)=>({ ...plan, scenarioScore: index === 2 ? 9 : plan.scenarioScore }));
+  const scoreFallback = selectDefaultMultiScenarioTabPlan(noWaitPlans);
+  const firstFallback = selectDefaultMultiScenarioTabPlan(noWaitPlans.map((plan)=>({ ...plan, scenarioScore: null })));
+  let clickWorks = true;
+  if(typeof document !== "undefined" && typeof document.createElement === "function"){
+    const host = document.createElement("div");
+    if(host?.querySelectorAll && host?.querySelector){
+      host.innerHTML = formatMultiScenarioPlanningSection(primaryPlans);
+      bindMultiScenarioPlanningTabs(host);
+      const targetButton = host.querySelector('[data-multi-scenario-tab*="breakout"]') || host.querySelectorAll(".multi-scenario-tab")[2];
+      if(targetButton){
+        targetButton.click();
+        clickWorks = targetButton.classList.contains("is-active") && !!host.querySelector(`#${targetButton.dataset.multiScenarioTab}.is-active:not([hidden])`);
+      }
+    }
+  }
+  const before = JSON.stringify(primaryPlans);
+  formatMultiScenarioPlanningSection(primaryPlans);
+  const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|best trade|must enter|must exit/i;
+  const cases = [
+    { name: "Multi-Scenario tab container renders", passed: primaryHtml.includes('class="multi-scenario-tabs"') },
+    { name: "Bullish / Bearish / Breakout / Breakdown / Wait tabs render", passed: ["Bullish", "Bearish", "Breakout", "Breakdown", "Wait"].every((label)=>primaryHtml.includes(`>${label}<`) || primaryHtml.includes(`<span>${label}</span>`)) },
+    { name: "Only one scenario panel is visible by default", passed: getVisibleMultiScenarioPanelCount(primaryHtml) === 1 },
+    { name: "Default active tab is the Primary Scenario if present", passed: selectDefaultMultiScenarioTabPlan(primaryPlans)?.scenarioId === "potential_bearish_scenario" && /potential-bearish-scenario-1-panel/.test(primaryHtml) && /id="multi-scenario-potential-bearish-scenario-1-panel" class="multi-scenario-tab-panel is-active"/.test(primaryHtml) },
+    { name: "No Primary fallback selects Wait / No-Trade", passed: waitFallback?.scenarioId === "wait_no_trade_scenario" },
+    { name: "No Wait fallback selects highest score", passed: scoreFallback?.scenarioId === "breakout_retest_scenario" },
+    { name: "No score fallback selects first available scenario", passed: firstFallback?.scenarioId === noWaitPlans[0]?.scenarioId },
+    { name: "Scenario card content remains present", passed: ["Confirmation Status", "Scenario Score", "Scenario Zone", "Invalidation Reference", "TP1 Reference", "Timeframe Confirmation Review"].every((label)=>primaryHtml.includes(label)) },
+    { name: "Hidden scenario cards become available when activated", passed: clickWorks },
+    { name: "Scenario data is not mutated", passed: before === JSON.stringify(primaryPlans) },
+    { name: "No unsafe wording appears", passed: !forbidden.test(primaryHtml) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runMultiScenarioPlanningTabsNoImpactFixtureTests(){
+  const plans = buildMultiScenarioTabsFixturePlans({ primaryIndex: 0 });
+  const before = JSON.stringify(plans);
+  const projectionBefore = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const orderBefore = plans.map((plan)=>plan.scenarioId).join("|");
+  const primaryBefore = plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const reviewBefore = plans.map((plan)=>plan.timeframeConfirmationStatus).join("|");
+  const calibrationBefore = plans.map((plan)=>`${plan.scenarioBaseScore}|${plan.scenarioTimeframeModifier}|${plan.scenarioCalibratedScore}`).join("||");
+  formatMultiScenarioPlanningSection(plans);
+  const projectionAfter = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const cases = [
+    { name: "scenario order unchanged", passed: orderBefore === plans.map((plan)=>plan.scenarioId).join("|") },
+    { name: "Primary Scenario unchanged", passed: primaryBefore === plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|") },
+    { name: "Confirmation Status unchanged", passed: projectionBefore === projectionAfter && plans.every((plan)=>plan.confirmationStatus && plan.confirmationStatusLabel) },
+    { name: "Scenario Score unchanged", passed: projectionBefore === projectionAfter && plans.every((plan)=>Number.isFinite(Number(plan.scenarioScore)) || plan.scenarioScore === null) },
+    { name: "Timeframe Confirmation Review unchanged", passed: reviewBefore === plans.map((plan)=>plan.timeframeConfirmationStatus).join("|") },
+    { name: "Timeframe Calibration unchanged", passed: calibrationBefore === plans.map((plan)=>`${plan.scenarioBaseScore}|${plan.scenarioTimeframeModifier}|${plan.scenarioCalibratedScore}`).join("||") },
+    { name: "Scenario Zone unchanged", passed: projectionBefore === projectionAfter },
+    { name: "Invalidation Reference unchanged", passed: projectionBefore === projectionAfter },
+    { name: "TP1 / TP2 / TP3 unchanged", passed: projectionBefore === projectionAfter },
+    { name: "source plans not mutated", passed: before === JSON.stringify(plans) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
 function runMultiScenarioPlanningUiFixtureTests(){
   const statusLabelsSafe = formatScenarioPlanningStatusLabel("ready") === "Ready for Review" && formatScenarioPlanningStatusLabel("waiting") === "Waiting" && formatScenarioPlanningStatusLabel("invalid") === "Invalid" && formatScenarioPlanningStatusLabel("informational") === "Informational";
   const missingRefsSafe = formatScenarioReferenceLevel(null) === "—" && formatScenarioZoneDisplay(null) === "—";
@@ -7410,7 +7584,11 @@ function runMultiScenarioPlanningUiFixtureTests(){
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
-if(typeof window !== "undefined") window.runMultiScenarioPlanningUiFixtureTests = runMultiScenarioPlanningUiFixtureTests;
+if(typeof window !== "undefined"){
+  window.runMultiScenarioPlanningUiFixtureTests = runMultiScenarioPlanningUiFixtureTests;
+  window.runMultiScenarioPlanningTabsFixtureTests = runMultiScenarioPlanningTabsFixtureTests;
+  window.runMultiScenarioPlanningTabsNoImpactFixtureTests = runMultiScenarioPlanningTabsNoImpactFixtureTests;
+}
 function getIfvgContextItems(){
   const sources = [
     { timeframe: "Weekly", memory: marketPreparationState.weekly?.recentBrokenFvgDetails },
