@@ -9167,8 +9167,8 @@ function buildKeyMarketZonesSummary(mapData = marketPreparationState.map, state 
 }
 function renderKeyMarketZonesSummary(mapData){
   if(!els.keyMarketZonesSummaryPanel) return;
-  const summary = buildKeyMarketZonesSummary(mapData || marketPreparationState.map, marketPreparationState);
-  els.keyMarketZonesSummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>Market Zones</h3><p>Planning context only · upside, current price, and downside zones.</p></div></div><div class="key-market-zones-grid">${formatKeyMarketZoneCard("Nearest Upside Zone", summary.nearestUpside)}${formatKeyMarketZoneCard("Nearest Downside Zone", summary.nearestDownside)}${formatKeyMarketZoneCard("Major Upside Zone", summary.majorUpside)}${formatKeyMarketZoneCard("Major Downside Zone", summary.majorDownside)}<article class="key-market-zone-item key-market-position"><span>Current Price Position</span><strong>${escapeHtml(summary.currentPricePosition)}</strong><p>Planning context only.</p></article></div>`;
+  buildKeyMarketZonesSummary(mapData || marketPreparationState.map, marketPreparationState);
+  els.keyMarketZonesSummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>Market Zones</h3><p>Planning context only · upside, current price, and downside zones.</p></div></div>`;
 }
 function runH4LiquiditySummaryFixtureTests(){
   const missing = deriveH4LiquiditySummary(null);
@@ -9231,18 +9231,15 @@ function runKeyMarketZonesMergedUiFixtureTests(){
   const summaryHtml = summaryPanel?.innerHTML || "";
   const usageHtml = formatMarketMapScenarioBadges({ side: "downside", lower: 90, upper: 92 }, buildScenarioMarketMapUsageIndex([{ displayTitle: "Fixture Scenario", scenarioZone: { sourceSide: "downside", lower: 90, upper: 92 } }]));
   const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
-  if(details) details.open = true;
-  const opened = !!details && details.open === true;
-  if(details) details.open = false;
   const cases = [
-    { name: "Unified Key Market Zones section renders", passed: !!panel },
-    { name: "Key Market Zones Summary content remains visible by default", passed: !!summaryPanel && !summaryPanel.hidden && /Nearest Upside Zone|Nearest Downside Zone|Current Price Position/i.test(summaryHtml) },
-    { name: "Market Preparation Map Details content remains present", passed: !!details && !!prepCard && !!document.getElementById("prepUpsideRows") && !!document.getElementById("prepDownsideRows") },
-    { name: "Full Market Map details are collapsed by default", passed: !!details && details.open !== true },
-    { name: "Opening details would reveal Full Market Map content", passed: opened },
+    { name: "Unified Market Zones section renders", passed: !!panel },
+    { name: "Market Zones header remains visible by default", passed: !!summaryPanel && !summaryPanel.hidden && /Market Zones|Planning context only/i.test(summaryHtml) },
+    { name: "Duplicate summary cards are not visible by default", passed: !/Nearest Upside Zone|Nearest Downside Zone|Major Upside Zone|Major Downside Zone|Current Price Position/.test(summaryHtml) },
+    { name: "Market Preparation Map content remains present", passed: !!details && !!prepCard && !!document.getElementById("prepUpsideRows") && !!document.getElementById("prepDownsideRows") },
+    { name: "Full Market Map is no longer a collapsed duplicate details block", passed: !!details && details.tagName !== "DETAILS" },
     { name: "Export PDF button remains present", passed: !!exportButton },
     { name: "Scenario usage badges remain present", passed: /Used as Scenario Zone/.test(usageHtml) },
-    { name: "Zone references remain unchanged", passed: /\$110–\$112|\$90–\$92/.test(summaryHtml) },
+    { name: "Zone references remain derivable", passed: /\$110–\$112|\$90–\$92/.test(JSON.stringify(buildKeyMarketZonesSummary(sampleMap, { currentPricePosition: { currentPosition: "Between key zones" } }))) },
     { name: "Market Map rows are not mutated", passed: before === JSON.stringify(sampleMap) },
     { name: "No unsafe wording appears", passed: !forbidden.test(summaryHtml + usageHtml + (panel?.textContent || "")) },
   ];
@@ -9329,6 +9326,40 @@ function runMarketZonesCardLayoutFixtureTests(){
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function runMarketZonesNoDuplicateSummaryFixtureTests(){
+  const { map, usageIndex } = buildMarketZonesCardLayoutFixtureData();
+  const before = JSON.stringify(map);
+  const summaryPanel = document.getElementById("keyMarketZonesSummaryPanel");
+  const panel = document.getElementById("keyMarketZonesPanel");
+  const exportButton = document.getElementById("exportPdfBtn");
+  renderKeyMarketZonesSummary(map);
+  const summaryHtml = summaryPanel?.innerHTML || "";
+  const upsideHtml = renderMarketZonesCardLayout(getPriceLadderRows(map.upside), { nearestRow: map.upside[0], nearestLabel: "Nearest Upside", usageIndex });
+  const downsideHtml = renderMarketZonesCardLayout(getPriceLadderRows(map.downside), { nearestRow: map.downside[0], nearestLabel: "Nearest Downside", usageIndex });
+  const currentHtml = renderCurrentPriceChips({ compactRowText: map.currentRowText, chips: [{ label: "Price", value: "$100,000" }, { label: "Daily", value: "range context" }, { label: "4H", value: "no clear shift" }, { label: "RSI", value: "recovering" }, { label: "1H Sweep", value: "Bullish Sweep" }, { label: "1H Structure", value: "No clear shift" }] });
+  const combined = `${summaryHtml}<section class="market-zones-main"><p>Upside Zones</p>${upsideHtml}<div id="prepCurrentRow">${currentHtml}</div><p>Downside Zones</p>${downsideHtml}</section>`;
+  const duplicateSummaryVisible = /Nearest Upside Zone|Major Upside Zone|Nearest Downside Zone|Major Downside Zone|Current Price Position/.test(summaryHtml);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  const scenarioBefore = JSON.stringify(buildScenarioMarketMapUsageIndex([{ displayTitle: "Fixture Scenario", scenarioZone: { sourceSide: "downside", lower: 90, upper: 92 }, tp1: { sourceSide: "upside", lower: 110, upper: 112 } }]));
+  const scenarioAfter = JSON.stringify(usageIndex);
+  const cases = [
+    { name: "Market Zones section renders", passed: !!panel && /Market Zones/.test(summaryHtml) },
+    { name: "Old duplicate summary cards are not visible in default UI", passed: !duplicateSummaryVisible && !/key-market-zones-grid/.test(summaryHtml) },
+    { name: "Upside Zones card section remains visible", passed: /Upside Zones/.test(combined) && /market-zone-card/.test(upsideHtml) },
+    { name: "Current Price chip row remains visible", passed: /prep-current-chip/.test(currentHtml) && /Price/.test(currentHtml) },
+    { name: "Downside Zones card section remains visible", passed: /Downside Zones/.test(combined) && /market-zone-card/.test(downsideHtml) },
+    { name: "Zone price ranges remain visible", passed: /\$110–\$112/.test(upsideHtml) && /\$90–\$92/.test(downsideHtml) },
+    { name: "Distances remain visible", passed: /5\.3% away/.test(upsideHtml) && /3\.1% away/.test(downsideHtml) },
+    { name: "Scenario usage badges remain visible", passed: /Used as TP1 Reference/.test(upsideHtml) && /Used as Scenario Zone/.test(downsideHtml) },
+    { name: "Export PDF remains available", passed: !!exportButton },
+    { name: "Market Map rows are not mutated", passed: before === JSON.stringify(map) },
+    { name: "Scenario references remain unchanged", passed: scenarioBefore === scenarioAfter },
+    { name: "No unsafe wording appears", passed: !forbidden.test(combined) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+
 function runMarketZonesCardLayoutNoImpactFixtureTests(){
   const { map } = buildMarketZonesCardLayoutFixtureData();
   const before = JSON.stringify(map);
@@ -9359,6 +9390,7 @@ function runMarketZonesCardLayoutNoImpactFixtureTests(){
 }
 if(typeof window !== "undefined"){
   window.runMarketZonesCardLayoutFixtureTests = runMarketZonesCardLayoutFixtureTests;
+  window.runMarketZonesNoDuplicateSummaryFixtureTests = runMarketZonesNoDuplicateSummaryFixtureTests;
   window.runMarketZonesCardLayoutNoImpactFixtureTests = runMarketZonesCardLayoutNoImpactFixtureTests;
 }
 if(typeof window !== "undefined"){
