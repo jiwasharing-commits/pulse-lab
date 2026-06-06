@@ -26,6 +26,9 @@
       <section class="status-strip" aria-live="polite"><span id="statusText">Loading BTC weekly monitor...</span></section>
 
       <main class="dashboard-flow">
+        <div class="engine-map-launch-row">
+          <button id="engineMapOpenBtn" class="refresh-btn secondary engine-map-open-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="engineMapModal">Engine Map</button>
+        </div>
         <section class="panel macro-card conclusion-card">
           <div class="macro-card-header">
             <h2>Multi-Timeframe Conclusion</h2>
@@ -63,15 +66,6 @@
               <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
             </article>
           </div>
-          <section id="pulseLabEngineMapPanel" class="engine-map-card" aria-live="polite">
-            <div class="engine-map-header">
-              <div>
-                <h3>Pulse Lab Engine Map</h3>
-                <p>Read-only overview of the analysis engines powering the dashboard.</p>
-              </div>
-            </div>
-            <p class="engine-map-empty">Engine context is loading.</p>
-          </section>
           <section id="timeframeRoleAlignmentPanel" class="timeframe-role-card" aria-live="polite">
             <div class="engine-map-header">
               <div>
@@ -355,6 +349,27 @@
           </section>
         </section>
       </main>
+    </div>
+    <div id="engineMapModal" class="engine-map-modal" hidden role="dialog" aria-modal="true" aria-labelledby="engineMapModalTitle">
+      <div id="engineMapBackdrop" class="engine-map-modal-backdrop"></div>
+      <div class="engine-map-modal-dialog">
+        <div class="engine-map-modal-header">
+          <div>
+            <h2 id="engineMapModalTitle">Pulse Lab Engine Map</h2>
+            <p>Read-only overview of the analysis engines powering the dashboard.</p>
+          </div>
+          <button id="engineMapCloseBtn" class="refresh-btn secondary engine-map-close-btn" type="button" aria-label="Close Engine Map">Close</button>
+        </div>
+        <section id="pulseLabEngineMapPanel" class="engine-map-card engine-map-modal-content" aria-live="polite">
+          <div class="engine-map-header">
+            <div>
+              <h3>Pulse Lab Engine Map</h3>
+              <p>Read-only overview of the analysis engines powering the dashboard.</p>
+            </div>
+          </div>
+          <p class="engine-map-empty">Engine context is loading.</p>
+        </section>
+      </div>
     </div>
     <div id="drawingManagerModal" class="drawing-manager-modal" hidden>
       <div class="drawing-manager-backdrop"></div>

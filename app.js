@@ -6670,6 +6670,42 @@ function formatScenarioTimeframeContextBlock(plan){
   `;
 }
 
+function formatScenarioCompactCalibrationSummary(plan){
+  const baseScore = plan?.scenarioBaseScore ?? normalizeScenarioScore(plan?.scenarioScore);
+  const modifier = capScenarioTimeframeModifier(plan?.scenarioTimeframeModifier);
+  const calibratedScore = plan?.scenarioCalibratedScore ?? (baseScore === null ? null : normalizeScenarioCalibratedScore(baseScore + modifier));
+  return `Base ${escapeHtml(formatScenarioScoreValue(baseScore))} · Modifier ${escapeHtml(formatScenarioTimeframeModifierValue(modifier))} · Calibrated ${escapeHtml(formatScenarioScoreValue(calibratedScore))}`;
+}
+function formatScenarioCompactTimeframeContext(plan){
+  const context = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
+  const rows = [
+    { key: "weekly", label: "Weekly", data: context.weekly },
+    { key: "daily", label: "Daily", data: context.daily },
+    { key: "h4", label: "4H", data: context.h4 },
+    { key: "h1", label: "1H", data: context.h1 },
+  ];
+  return `<div class="scenario-timeframe-compact-chips">${rows.map((row)=>`<span class="scenario-timeframe-compact-chip ${getScenarioTimeframeStatusClass(row.data?.label)}"><em>${escapeHtml(row.label)}</em>${escapeHtml(normalizeScenarioTimeframeLabel(row.data?.label))}</span>`).join("")}</div>`;
+}
+function formatScenarioSecondaryTimeframeDetails(plan){
+  return `
+    <details class="scenario-planning-block scenario-secondary-timeframe-details">
+      <summary><span>Timeframe Details</span><small>${formatScenarioCompactCalibrationSummary(plan)}</small></summary>
+      <p class="scenario-secondary-timeframe-note">Separate context layer · does not replace Scenario Score · does not affect Primary Scenario or Confirmation Status</p>
+      ${formatScenarioCompactTimeframeContext(plan)}
+      ${formatScenarioCalibratedScoreBlock(plan)}
+      ${formatScenarioTimeframeScoreFactors(plan)}
+      ${formatScenarioTimeframeContextBlock(plan)}
+    </details>
+  `;
+}
+function formatScenarioRiskNotesBlock(plan){
+  const list = Array.isArray(plan?.riskNotes) ? plan.riskNotes.filter(Boolean).slice(0, 3) : [];
+  if(list.length > 2){
+    return `<details class="scenario-planning-block scenario-risk-notes-details"><summary><span>Risk Notes</span><small>${list.length} context notes</small></summary>${formatScenarioRiskNotes(list)}</details>`;
+  }
+  return `<div class="scenario-planning-block"><span>Risk Notes</span>${formatScenarioRiskNotes(list)}</div>`;
+}
+
 const TIMEFRAME_CONFIRMATION_STATUSES = Object.freeze(["supportive", "developing", "caution", "blocking", "unavailable"]);
 function normalizeTimeframeConfirmationStatus(status){
   const normalized = String(status || "unavailable").trim().toLowerCase();
@@ -6779,16 +6815,22 @@ function formatTimeframeConfirmationList(items, className){
 function formatTimeframeConfirmationReviewBlock(plan){
   const status = normalizeTimeframeConfirmationStatus(plan?.timeframeConfirmationStatus);
   const label = plan?.timeframeConfirmationLabel || getTimeframeConfirmationLabel(status);
-  const blockers = Array.isArray(plan?.timeframeConfirmationBlockers) ? plan.timeframeConfirmationBlockers : [];
+  const reasons = Array.isArray(plan?.timeframeConfirmationReasons) ? plan.timeframeConfirmationReasons.filter(Boolean) : [];
+  const blockers = Array.isArray(plan?.timeframeConfirmationBlockers) ? plan.timeframeConfirmationBlockers.filter(Boolean) : [];
+  const summary = blockers[0] || reasons[0] || "Timeframe confirmation context unavailable.";
   return `
     <div class="scenario-planning-block scenario-timeframe-confirmation scenario-timeframe-confirmation-${status}">
       <span>Timeframe Confirmation Review</span>
-      <div class="scenario-timeframe-confirmation-head"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(plan?.timeframeConfirmationUse || "Timeframe confirmation review only")}</small></div>
-      <div class="scenario-timeframe-confirmation-grid">
-        <div><em>Reasons</em>${formatTimeframeConfirmationList(plan?.timeframeConfirmationReasons, "scenario-timeframe-confirmation-reasons")}</div>
-        <div><em>Blockers</em>${formatTimeframeConfirmationList(blockers, "scenario-timeframe-confirmation-blockers")}</div>
-      </div>
-      <p class="scenario-timeframe-confirmation-note">${escapeHtml(plan?.timeframeConfirmationDisclaimer || "Planning context only · does not replace Confirmation Status.")}</p>
+      <div class="scenario-timeframe-confirmation-head"><strong>${escapeHtml(label)}</strong><small>Context review only</small></div>
+      <p class="scenario-timeframe-confirmation-summary">${escapeHtml(summary)}</p>
+      <details class="scenario-timeframe-confirmation-details">
+        <summary>Review details</summary>
+        <div class="scenario-timeframe-confirmation-grid">
+          <div><em>Reasons</em>${formatTimeframeConfirmationList(reasons, "scenario-timeframe-confirmation-reasons")}</div>
+          <div><em>Blockers</em>${formatTimeframeConfirmationList(blockers, "scenario-timeframe-confirmation-blockers")}</div>
+        </div>
+      </details>
+      <p class="scenario-timeframe-confirmation-note">Does not replace Confirmation Status.</p>
     </div>
   `;
 }
@@ -6805,10 +6847,7 @@ function formatScenarioPlanningCard(plan){
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
       ${formatTimeframeConfirmationReviewBlock(plan)}
       ${formatScenarioScoreBlock(plan)}
-      ${formatScenarioTimeframeScoreFactors(plan)}
-      ${formatScenarioCalibratedScoreBlock(plan)}
-      ${formatScenarioTimeframeContextBlock(plan)}
-      <div class="scenario-planning-grid">
+      <div class="scenario-planning-grid scenario-reference-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
         <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
         <div class="scenario-planning-row"><span>TP1 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp1))}</strong></div>
@@ -6816,8 +6855,9 @@ function formatScenarioPlanningCard(plan){
         <div class="scenario-planning-row"><span>TP3 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp3))}</strong></div>
         <div class="scenario-planning-row"><span>Confluence Reason</span><strong>${escapeHtml(formatScenarioConfluenceList(plan?.confluenceSources))}</strong></div>
       </div>
+      ${formatScenarioSecondaryTimeframeDetails(plan)}
       <div class="scenario-planning-block"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
-      <div class="scenario-planning-block"><span>Risk Notes</span>${formatScenarioRiskNotes(plan?.riskNotes)}</div>
+      ${formatScenarioRiskNotesBlock(plan)}
     </article>
   `;
 }
@@ -6985,9 +7025,98 @@ function runTimeframeConfirmationReviewNoImpactFixtureTests(){
   const failedCount = cases.filter((result)=>!result.passed).length;
   return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
 }
+function buildScenarioReadabilityFixturePlans(){
+  const snapshot = buildScenarioTimeframeFixtureSnapshot();
+  const basePlans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const withPrimary = addDerivedPrimaryScenarioFlags(basePlans, snapshot);
+  const withScore = addDerivedScenarioScore(withPrimary, snapshot);
+  const timeframeContext = buildScenarioTimeframeContextSnapshot({ weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Confirmed" }, h1: { status: "Timing Supportive" } });
+  const withContext = addScenarioTimeframeContext(withScore, timeframeContext);
+  const withFactors = addScenarioTimeframeScoreFactors(withContext);
+  const withCalibration = addScenarioTimeframeScoreCalibration(withFactors);
+  return { snapshot, plans: addTimeframeConfirmationReview(withCalibration) };
+}
+function getScenarioReadabilityProjection(plans){
+  return (Array.isArray(plans) ? plans : []).map((plan)=>({
+    scenarioId: plan.scenarioId,
+    isPrimaryScenario: !!plan.isPrimaryScenario,
+    confirmationStatus: plan.confirmationStatus,
+    confirmationStatusLabel: plan.confirmationStatusLabel,
+    confirmationReasons: plan.confirmationReasons,
+    timeframeConfirmationStatus: plan.timeframeConfirmationStatus,
+    scenarioScore: plan.scenarioScore,
+    scenarioScoreLabel: plan.scenarioScoreLabel,
+    scenarioScoreFactors: plan.scenarioScoreFactors,
+    scenarioBaseScore: plan.scenarioBaseScore,
+    scenarioTimeframeModifier: plan.scenarioTimeframeModifier,
+    scenarioCalibratedScore: plan.scenarioCalibratedScore,
+    scenarioTimeframeModifierFactors: plan.scenarioTimeframeModifierFactors,
+    scenarioZone: plan.scenarioZone,
+    invalidationReference: plan.invalidationReference,
+    tp1: plan.tp1,
+    tp2: plan.tp2,
+    tp3: plan.tp3,
+  }));
+}
+function runMultiScenarioCardReadabilityFixtureTests(){
+  const { plans } = buildScenarioReadabilityFixturePlans();
+  const plan = plans.find((item)=>item.isPrimaryScenario) || plans[0];
+  const before = JSON.stringify(plan);
+  const html = formatScenarioPlanningCard(plan);
+  const detailsIndex = html.indexOf('scenario-secondary-timeframe-details');
+  const scenarioZoneIndex = html.indexOf('Scenario Zone');
+  const invalidationIndex = html.indexOf('Invalidation Reference');
+  const tp1Index = html.indexOf('TP1 Reference');
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  const cases = [
+    { name: "Scenario card still renders Primary Scenario badge when applicable", passed: !plan.isPrimaryScenario || html.includes('scenario-primary-badge') },
+    { name: "Confirmation Status remains present", passed: html.includes('Confirmation Status') && html.includes('scenario-confirmation-block') },
+    { name: "Timeframe Confirmation Review remains present", passed: html.includes('Timeframe Confirmation Review') && html.includes('scenario-timeframe-confirmation') },
+    { name: "Scenario Score remains present", passed: html.includes('Scenario Score') && html.includes('scenario-score-block') },
+    { name: "Scenario Zone remains present", passed: scenarioZoneIndex >= 0 },
+    { name: "Invalidation Reference remains present", passed: invalidationIndex >= 0 },
+    { name: "TP1, TP2, and TP3 remain present", passed: html.includes('TP1 Reference') && html.includes('TP2 Reference') && html.includes('TP3 Reference') },
+    { name: "Timeframe Calibration remains present", passed: html.includes('Timeframe Calibration') && html.includes('scenario-timeframe-calibration') },
+    { name: "Timeframe Context Factors remain present", passed: html.includes('Timeframe Context Factors') && html.includes('scenario-timeframe-score-factors') },
+    { name: "Timeframe Context remains present", passed: html.includes('Timeframe Context') && html.includes('scenario-timeframe-context') },
+    { name: "Secondary timeframe details are compact/collapsible", passed: /<details[^>]+scenario-secondary-timeframe-details/.test(html) && html.includes('<summary><span>Timeframe Details</span>') },
+    { name: "Scenario references appear before secondary timeframe details", passed: detailsIndex > scenarioZoneIndex && detailsIndex > invalidationIndex && detailsIndex > tp1Index },
+    { name: "No unsafe wording appears", passed: !forbidden.test(html) },
+    { name: "No scenario data mutation", passed: before === JSON.stringify(plan) },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
+function runMultiScenarioCardReadabilityNoImpactFixtureTests(){
+  const { snapshot, plans } = buildScenarioReadabilityFixturePlans();
+  const plansBefore = JSON.stringify(plans);
+  const projectionBefore = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const marketRowsBefore = JSON.stringify({ upsideRows: snapshot.upsideRows, downsideRows: snapshot.downsideRows });
+  const orderBefore = plans.map((plan)=>plan.scenarioId).join('|');
+  const primaryBefore = plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join('|');
+  const html = formatMultiScenarioPlanningSection(plans);
+  const projectionAfter = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const cases = [
+    { name: "scenario order unchanged", passed: orderBefore === plans.map((plan)=>plan.scenarioId).join('|') },
+    { name: "Primary Scenario selection unchanged", passed: primaryBefore === plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join('|') },
+    { name: "Confirmation Status unchanged", passed: projectionBefore === projectionAfter && plans.every((plan)=>plan.confirmationStatus && plan.confirmationStatusLabel) },
+    { name: "Timeframe Confirmation Review status unchanged", passed: plans.every((plan)=>plan.timeframeConfirmationStatus && html.includes(plan.timeframeConfirmationLabel || getTimeframeConfirmationLabel(plan.timeframeConfirmationStatus))) },
+    { name: "Scenario Score unchanged", passed: plans.every((plan)=>Number.isFinite(Number(plan.scenarioScore)) || plan.scenarioScore === null || plan.scenarioScore === undefined) && projectionBefore === projectionAfter },
+    { name: "Timeframe Calibration unchanged", passed: plans.every((plan)=>plan.scenarioBaseScore !== undefined && plan.scenarioCalibratedScore !== undefined) && projectionBefore === projectionAfter },
+    { name: "Scenario Zone unchanged", passed: projectionBefore === projectionAfter },
+    { name: "Invalidation unchanged", passed: projectionBefore === projectionAfter },
+    { name: "TP1, TP2, and TP3 unchanged", passed: projectionBefore === projectionAfter },
+    { name: "Market Map rows unchanged", passed: marketRowsBefore === JSON.stringify({ upsideRows: snapshot.upsideRows, downsideRows: snapshot.downsideRows }) },
+    { name: "source scenario plans not mutated", passed: plansBefore === JSON.stringify(plans) },
+  ];
+  const failedCount = cases.filter((result)=>!result.passed).length;
+  return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
+}
 if(typeof window !== "undefined"){
   window.runTimeframeConfirmationReviewFixtureTests = runTimeframeConfirmationReviewFixtureTests;
   window.runTimeframeConfirmationReviewNoImpactFixtureTests = runTimeframeConfirmationReviewNoImpactFixtureTests;
+  window.runMultiScenarioCardReadabilityFixtureTests = runMultiScenarioCardReadabilityFixtureTests;
+  window.runMultiScenarioCardReadabilityNoImpactFixtureTests = runMultiScenarioCardReadabilityNoImpactFixtureTests;
 }
 function runScenarioTimeframeCalibrationFixtureTests(){
   const makePlan = (direction, contexts, score = 5)=>({
@@ -11266,7 +11395,62 @@ function setDailyPresetUI(preset){
 }
 function getDailyPresetLimit(preset){ return DAILY_PRESET_LIMITS[preset] || DAILY_PRESET_LIMITS["3m"]; }
 
+function getEngineMapModalElements(){
+  return {
+    openBtn: document.getElementById("engineMapOpenBtn"),
+    modal: document.getElementById("engineMapModal"),
+    closeBtn: document.getElementById("engineMapCloseBtn"),
+    backdrop: document.getElementById("engineMapBackdrop"),
+    panel: document.getElementById("pulseLabEngineMapPanel"),
+  };
+}
+function setEngineMapModalOpen(open){
+  const { openBtn, modal, closeBtn } = getEngineMapModalElements();
+  if(!modal) return;
+  modal.hidden = !open;
+  modal.classList.toggle("open", !!open);
+  if(openBtn) openBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  if(open && closeBtn && typeof closeBtn.focus === "function") closeBtn.focus({ preventScroll: true });
+  if(!open && openBtn && typeof openBtn.focus === "function") openBtn.focus({ preventScroll: true });
+}
+function openEngineMapModal(){ setEngineMapModalOpen(true); }
+function closeEngineMapModal(){ setEngineMapModalOpen(false); }
+function bindEngineMapModalEvents(){
+  const { openBtn, closeBtn, backdrop } = getEngineMapModalElements();
+  openBtn?.addEventListener("click", openEngineMapModal);
+  closeBtn?.addEventListener("click", closeEngineMapModal);
+  backdrop?.addEventListener("click", closeEngineMapModal);
+}
+function runEngineMapModalFixtureTests(){
+  const before = JSON.stringify(getPulseLabStateForMarketMapSample());
+  renderPulseLabEngineMap();
+  const { openBtn, modal, closeBtn, panel } = getEngineMapModalElements();
+  const inlineEngineMapCount = document.querySelectorAll ? Array.from(document.querySelectorAll("main #pulseLabEngineMapPanel")).length : 0;
+  const content = panel?.innerHTML || "";
+  const panelInModal = !!panel && !!modal && (typeof modal.contains !== "function" || modal.contains(panel));
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  openEngineMapModal();
+  const opened = !!modal && modal.hidden === false && modal.classList.contains("open") && openBtn?.getAttribute("aria-expanded") === "true";
+  closeEngineMapModal();
+  const closed = !!modal && modal.hidden === true && !modal.classList.contains("open") && openBtn?.getAttribute("aria-expanded") === "false";
+  const cases = [
+    { name: "Engine Map button renders", passed: !!openBtn && /Engine Map/.test(openBtn.textContent || "") },
+    { name: "Full Engine Map panel is not visible inline by default", passed: inlineEngineMapCount === 0 },
+    { name: "Modal container exists", passed: !!modal && modal.getAttribute("role") === "dialog" },
+    { name: "Existing Engine Map content renders inside modal", passed: panelInModal && /Pulse Lab Engine Map|RSI|Market Map|Scenario/i.test(content) },
+    { name: "Open button adds visible state", passed: opened },
+    { name: "Close action removes visible state", passed: closed },
+    { name: "Close button renders", passed: !!closeBtn && /Close/.test(closeBtn.textContent || "") },
+    { name: "Modal wording contains no unsafe trading wording", passed: !forbidden.test(content) },
+    { name: "No engine map data mutation", passed: before === JSON.stringify(getPulseLabStateForMarketMapSample()) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runEngineMapModalFixtureTests = runEngineMapModalFixtureTests;
+
 function setupCollapsibleSections(){
+  bindEngineMapModalEvents();
   els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setDailyPresetUI(dailyPreset || '3m'); setLtfPresetUI('3m'); renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
@@ -11291,7 +11475,7 @@ function setupCollapsibleSections(){
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   els.exportPdfBtn?.addEventListener('click', exportMarketReportPdf);
-  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); } });
+  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); closeEngineMapModal(); } });
   setDailyPresetUI('3m');
   setLtfPresetUI('3m');
   restoreToggleState();
