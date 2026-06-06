@@ -4003,6 +4003,34 @@ function getH1ContextMeaning(status){
   if(status === "Timing Failed") return "1H timing failed.";
   return "1H context unavailable.";
 }
+function getWeeklyRsiPoints(dataset = weeklyDatasetCache){
+  return (Array.isArray(dataset) ? dataset : [])
+    .map((item)=>item?.rsi)
+    .filter((value)=>value !== null && value !== undefined && value !== "")
+    .map((value)=>Number(value))
+    .filter((value)=>Number.isFinite(value));
+}
+function getLatestWeeklyRsiValue(dataset = weeklyDatasetCache){
+  const points = getWeeklyRsiPoints(dataset);
+  return points.length ? points[points.length - 1] : null;
+}
+function deriveWeeklyRsiSlopeLabel(dataset = weeklyDatasetCache, tolerance = 0.1){
+  const points = getWeeklyRsiPoints(dataset);
+  if(points.length < 2) return "Unavailable";
+  const latest = points[points.length - 1];
+  const previous = points[points.length - 2];
+  const delta = latest - previous;
+  if(delta > tolerance) return "Rising";
+  if(delta < -tolerance) return "Falling";
+  return "Flat";
+}
+function formatWeeklyRsiValue(value = getLatestWeeklyRsiValue()){
+  if(value === null || value === undefined || value === "") return "RSI unavailable";
+  return Number.isFinite(Number(value)) ? `RSI ${Number(value).toFixed(1)}` : "RSI unavailable";
+}
+function formatWeeklyRsiCard(dataset = weeklyDatasetCache){
+  return { label: "Weekly RSI", value: formatWeeklyRsiValue(getLatestWeeklyRsiValue(dataset)), note: `Slope: ${deriveWeeklyRsiSlopeLabel(dataset)}` };
+}
 function getWeeklyContextCards(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
   const fvg = safe.majorFvgContext ? `${safe.majorFvgContext.activeCount || 0} active · ${safe.majorFvgContext.recentBrokenCount || 0} IFVG` : "FVG context unavailable";
@@ -4011,11 +4039,11 @@ function getWeeklyContextCards(context){
     { label: "Weekly Bias", value: safe.status || safe.majorBias || "Unavailable", note: getWeeklyContextMeaning(safe.status) },
     { label: "Structure Shift", value: safe.bosChochStatus?.status || "None", note: safe.bosChochStatus?.note || "No close-confirmed Weekly shift." },
     { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
-    { label: "Swing Sequence", value: safe.swingSequence?.status || "Unavailable", note: safe.swingSequence?.note || "Swing sequence context." },
-    { label: "Meaning", value: getWeeklyContextMeaning(safe.status), note: "Planning context only." },
+    { label: "Swing Structure", value: safe.swingSequence?.status || "Unavailable", note: safe.swingSequence?.note || "Swing structure context." },
+    formatWeeklyRsiCard(),
+    { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
     { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
     { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
-    { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
   ];
 }
 function getDailyContextCards(context){
@@ -12208,7 +12236,7 @@ function runTimeframeContextCardGridFixtureTests(){
     { name: "Daily tab renders card grid", passed: /timeframe-context-card-grid/.test(dailyHtml) },
     { name: "4H tab renders card grid", passed: /timeframe-context-card-grid/.test(h4Html) },
     { name: "1H tab renders card grid", passed: /timeframe-context-card-grid/.test(h1Html) },
-    { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Sequence", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Sequence"].every((label)=>weeklyHtml.includes(label)) },
+    { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Structure, Weekly RSI, and FVG Context", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Structure", "Weekly RSI", "FVG Context"].every((label)=>weeklyHtml.includes(label)) && !weeklyHtml.includes("Swing Sequence") },
     { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Pattern", passed: ["Status", "Against Weekly", "Selected Range", "Daily Pattern"].every((label)=>dailyHtml.includes(label)) },
     { name: "4H cards include Status, Related Zone, Reaction, Liquidity", passed: ["Status", "Related Zone", "Reaction", "Liquidity"].every((label)=>h4Html.includes(label)) },
     { name: "1H cards include Status, Sweep, Mini Structure, Stochastic", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) },
@@ -12220,6 +12248,37 @@ function runTimeframeContextCardGridFixtureTests(){
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function runWeeklyRsiCardFixtureTests(){
+  const weeklyContext = createEmptyWeeklyMajorStructureContext("Weekly fixture context.");
+  const before = JSON.stringify(weeklyContext);
+  const risingDataset = [{ rsi: 50.0 }, { rsi: 52.4 }];
+  const fallingDataset = [{ rsi: 52.4 }, { rsi: 51.0 }];
+  const flatDataset = [{ rsi: 52.4 }, { rsi: 52.45 }];
+  const missingDataset = [{ rsi: null }, { rsi: undefined }];
+  const risingCard = formatTimeframeContextInfoCard(formatWeeklyRsiCard(risingDataset).label, formatWeeklyRsiCard(risingDataset).value, formatWeeklyRsiCard(risingDataset).note);
+  const missingCard = formatTimeframeContextInfoCard(formatWeeklyRsiCard(missingDataset).label, formatWeeklyRsiCard(missingDataset).value, formatWeeklyRsiCard(missingDataset).note);
+  const weeklyHtml = formatTimeframeContextCardGrid([
+    ...getWeeklyContextCards({ ...weeklyContext, status: "Mixed Structure", swingSequence: { status: "Range", recentSwings: [] }, majorFvgContext: { activeCount: 1, recentBrokenCount: 0, source: "Weekly FVG / IFVG context" } }).filter((card)=>card.label !== "Weekly RSI"),
+    formatWeeklyRsiCard(risingDataset),
+  ]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit/i;
+  const cases = [
+    { name: "Weekly tab renders a Weekly RSI card", passed: /Weekly RSI/.test(risingCard) && /Weekly RSI/.test(weeklyHtml) },
+    { name: "Weekly RSI card shows RSI value when finite", passed: /RSI 52\.4/.test(risingCard) && formatWeeklyRsiValue(52.4) === "RSI 52.4" },
+    { name: "Weekly RSI card shows RSI unavailable fallback when missing", passed: /RSI unavailable/.test(missingCard) && formatWeeklyRsiValue(null) === "RSI unavailable" },
+    { name: "Weekly RSI card shows Slope: Rising when latest RSI is higher", passed: /Slope: Rising/.test(risingCard) && deriveWeeklyRsiSlopeLabel(risingDataset) === "Rising" },
+    { name: "Weekly RSI card shows Slope: Falling when latest RSI is lower", passed: deriveWeeklyRsiSlopeLabel(fallingDataset) === "Falling" },
+    { name: "Weekly RSI card shows Slope: Flat within tolerance", passed: deriveWeeklyRsiSlopeLabel(flatDataset) === "Flat" },
+    { name: "Weekly RSI card does not introduce unsafe wording", passed: !forbidden.test(risingCard + missingCard + weeklyHtml) },
+    { name: "Weekly context object is not mutated", passed: before === JSON.stringify(weeklyContext) },
+    { name: "Existing Weekly Major Structure fixture still passes", passed: runWeeklyMajorStructureFixtureTests().passed === true },
+    { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyRsiCardFixtureTests = runWeeklyRsiCardFixtureTests;
+
 function runTimeframeContextCardGridNoImpactFixtureTests(){
   const weekly = createEmptyWeeklyMajorStructureContext("Weekly fixture unavailable.");
   const daily = createEmptyDailyValidationContext("Daily fixture unavailable.");
