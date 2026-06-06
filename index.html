@@ -28,6 +28,7 @@
       <main class="dashboard-flow">
         <div class="engine-map-launch-row">
           <button id="engineMapOpenBtn" class="refresh-btn secondary engine-map-open-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="engineMapModal">Engine Map</button>
+          <button id="timeframeRoleOpenBtn" class="refresh-btn secondary engine-map-open-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="timeframeRoleModal">Timeframe Role</button>
         </div>
         <section class="panel macro-card conclusion-card">
           <div class="macro-card-header">
@@ -66,15 +67,6 @@
               <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
             </article>
           </div>
-          <section id="timeframeRoleAlignmentPanel" class="timeframe-role-card" aria-live="polite">
-            <div class="engine-map-header">
-              <div>
-                <h3>Timeframe Role Alignment</h3>
-                <p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p>
-              </div>
-            </div>
-            <p class="engine-map-empty">Timeframe role context is loading.</p>
-          </section>
           <section id="weeklyMajorStructurePanel" class="weekly-major-structure-card" aria-live="polite">
             <div class="engine-map-header">
               <div>
@@ -368,6 +360,27 @@
             </div>
           </div>
           <p class="engine-map-empty">Engine context is loading.</p>
+        </section>
+      </div>
+    </div>
+    <div id="timeframeRoleModal" class="engine-map-modal timeframe-role-modal" hidden role="dialog" aria-modal="true" aria-labelledby="timeframeRoleModalTitle">
+      <div id="timeframeRoleBackdrop" class="engine-map-modal-backdrop"></div>
+      <div class="engine-map-modal-dialog">
+        <div class="engine-map-modal-header">
+          <div>
+            <h2 id="timeframeRoleModalTitle">Timeframe Role Alignment</h2>
+            <p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p>
+          </div>
+          <button id="timeframeRoleCloseBtn" class="refresh-btn secondary engine-map-close-btn" type="button" aria-label="Close Timeframe Role Alignment">Close</button>
+        </div>
+        <section id="timeframeRoleAlignmentPanel" class="timeframe-role-card engine-map-modal-content" aria-live="polite">
+          <div class="engine-map-header">
+            <div>
+              <h3>Timeframe Role Alignment</h3>
+              <p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p>
+            </div>
+          </div>
+          <p class="engine-map-empty">Timeframe role context is loading.</p>
         </section>
       </div>
     </div>

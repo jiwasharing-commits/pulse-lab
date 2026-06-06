@@ -11449,8 +11449,64 @@ function runEngineMapModalFixtureTests(){
 }
 if(typeof window !== "undefined") window.runEngineMapModalFixtureTests = runEngineMapModalFixtureTests;
 
+function getTimeframeRoleModalElements(){
+  return {
+    openBtn: document.getElementById("timeframeRoleOpenBtn"),
+    modal: document.getElementById("timeframeRoleModal"),
+    closeBtn: document.getElementById("timeframeRoleCloseBtn"),
+    backdrop: document.getElementById("timeframeRoleBackdrop"),
+    panel: document.getElementById("timeframeRoleAlignmentPanel"),
+  };
+}
+function setTimeframeRoleModalOpen(open){
+  const { openBtn, modal, closeBtn } = getTimeframeRoleModalElements();
+  if(!modal) return;
+  modal.hidden = !open;
+  modal.classList.toggle("open", !!open);
+  if(openBtn) openBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  if(open && closeBtn && typeof closeBtn.focus === "function") closeBtn.focus({ preventScroll: true });
+  if(!open && openBtn && typeof openBtn.focus === "function") openBtn.focus({ preventScroll: true });
+}
+function openTimeframeRoleModal(){ setTimeframeRoleModalOpen(true); }
+function closeTimeframeRoleModal(){ setTimeframeRoleModalOpen(false); }
+function bindTimeframeRoleModalControls(){
+  const { openBtn, closeBtn, backdrop } = getTimeframeRoleModalElements();
+  openBtn?.addEventListener("click", openTimeframeRoleModal);
+  closeBtn?.addEventListener("click", closeTimeframeRoleModal);
+  backdrop?.addEventListener("click", closeTimeframeRoleModal);
+}
+function runTimeframeRoleModalFixtureTests(){
+  const before = JSON.stringify(buildTimeframeRoleAlignmentSnapshot());
+  renderTimeframeRoleAlignment();
+  const { openBtn, modal, closeBtn, panel } = getTimeframeRoleModalElements();
+  const inlineRolePanelCount = document.querySelectorAll ? Array.from(document.querySelectorAll("main #timeframeRoleAlignmentPanel")).length : 0;
+  const content = panel?.innerHTML || "";
+  const panelInModal = !!panel && !!modal && (typeof modal.contains !== "function" || modal.contains(panel));
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  openTimeframeRoleModal();
+  const opened = !!modal && modal.hidden === false && modal.classList.contains("open") && openBtn?.getAttribute("aria-expanded") === "true";
+  closeTimeframeRoleModal();
+  const closed = !!modal && modal.hidden === true && !modal.classList.contains("open") && openBtn?.getAttribute("aria-expanded") === "false";
+  const roleLabelsPresent = ["Weekly", "Daily", "4H", "1H"].every((label)=>content.includes(label));
+  const cases = [
+    { name: "Timeframe Role button renders", passed: !!openBtn && /Timeframe Role/.test(openBtn.textContent || "") },
+    { name: "Full Timeframe Role Alignment is not visible inline by default", passed: inlineRolePanelCount === 0 },
+    { name: "Modal container exists", passed: !!modal && modal.getAttribute("role") === "dialog" },
+    { name: "Existing Timeframe Role content renders inside modal", passed: panelInModal && /Timeframe Role Alignment|Major Context|Structure Validation|Reaction Context|Timing Context/i.test(content) },
+    { name: "Weekly, Daily, 4H, and 1H role cards remain present", passed: roleLabelsPresent },
+    { name: "Open button adds visible state", passed: opened },
+    { name: "Close button removes visible state", passed: closed },
+    { name: "No unsafe trading wording appears", passed: !forbidden.test(content) },
+    { name: "Timeframe role data is not mutated", passed: before === JSON.stringify(buildTimeframeRoleAlignmentSnapshot()) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runTimeframeRoleModalFixtureTests = runTimeframeRoleModalFixtureTests;
+
 function setupCollapsibleSections(){
   bindEngineMapModalEvents();
+  bindTimeframeRoleModalControls();
   els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setDailyPresetUI(dailyPreset || '3m'); setLtfPresetUI('3m'); renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
@@ -11475,7 +11531,7 @@ function setupCollapsibleSections(){
   els.h4DrawTrendlineBtn?.addEventListener('click', ()=>enableTrendlineDrawMode('h4'));
   els.h4ManageBtn?.addEventListener('click', ()=>openDrawingManager('h4'));
   els.exportPdfBtn?.addEventListener('click', exportMarketReportPdf);
-  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); closeEngineMapModal(); } });
+  window.addEventListener("keydown", (e)=>{ if(e.key === "Escape"){ disableManualLinePlacement(); disableTrendlineDrawMode(); closePdfReportPreview(); closeChartLayerMenus(); closeEngineMapModal(); closeTimeframeRoleModal(); } });
   setDailyPresetUI('3m');
   setLtfPresetUI('3m');
   restoreToggleState();
