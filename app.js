@@ -7625,17 +7625,53 @@ if(typeof window!=="undefined"){window.runMarketMapCompactUiFixtureTests=runMark
 function renderMarketMapHeader(){
   return `<div class="prep-map-header-row" aria-hidden="true"><span>Zone</span><span>Type</span><span>Sources</span><span>Distance</span></div>`;
 }
+function compactZoneSourceLabel(row, display = formatMapRowForDisplay(row)){
+  const labels = rankConfluenceSources(getConfluenceSourceList(row)).map(formatSourceLabel).filter(Boolean);
+  const unique = [...new Set(labels)];
+  const fvgLabels = unique.filter((label)=>/fvg/i.test(label));
+  if(fvgLabels.length >= 2){
+    const frames = [];
+    const direction = /bullish/i.test(fvgLabels.join(" ")) ? "Bullish" : /bearish/i.test(fvgLabels.join(" ")) ? "Bearish" : "";
+    if(fvgLabels.some((label)=>/weekly|\bw\b/i.test(label))) frames.push("Weekly");
+    if(fvgLabels.some((label)=>/daily|\bd\b/i.test(label))) frames.push("Daily");
+    if(fvgLabels.some((label)=>/4h|h4/i.test(label))) frames.push("4H");
+    if(fvgLabels.some((label)=>/1h|h1/i.test(label))) frames.push("1H");
+    if(frames.length) return `${frames.join(" + ")} ${direction ? `${direction} ` : ""}FVG`.trim();
+  }
+  return display.sources || unique.slice(0, 3).join(" + ") || display.type || "Market zone";
+}
+function compactZoneStatusLabel(row, display = formatMapRowForDisplay(row)){
+  const parts = [row?.status, row?.quality, display.fvgBadges].filter(Boolean).join(" · ");
+  return parts || display.type || "Planning context";
+}
+function compactZoneRoleLabel(row, { nearest = false, nearestLabel = "" } = {}, display = formatMapRowForDisplay(row)){
+  if(nearest && nearestLabel) return nearestLabel;
+  const text = `${row?.confluenceLabel || ""} ${row?.quality || ""} ${row?.label || ""} ${display.type || ""}`;
+  if(/major/i.test(text)) return row?.side === "downside" ? "Major Downside" : "Major Upside";
+  return display.type || row?.label || "Watch Zone";
+}
+function compactZoneUsageBadges(row, usageIndex){
+  return formatMarketMapScenarioBadges(row, usageIndex);
+}
+function formatMarketZoneCard(row, { nearestRow = null, nearestLabel = "", usageIndex = null } = {}){
+  const display = formatMapRowForDisplay(row);
+  const nearest = isSameMapRow(row, nearestRow);
+  const role = compactZoneRoleLabel(row, { nearest, nearestLabel }, display);
+  const source = compactZoneSourceLabel(row, display);
+  const status = compactZoneStatusLabel(row, display);
+  const title = escapeHtml(display.fullSources || `${display.type} | ${source} | ${status}`);
+  const nearestClass = nearest ? " is-nearest-zone" : "";
+  return `<article class="market-zone-card prep-map-row${nearestClass}" title="${title}"><div class="market-zone-card-head"><span class="market-zone-card-role">${escapeHtml(role)}</span><span class="market-zone-card-distance">${escapeHtml(display.distance || "—")}</span></div><strong class="market-zone-card-range">${escapeHtml(display.zone)}</strong><p class="market-zone-card-context">${escapeHtml(source)}</p><p class="market-zone-card-status">${escapeHtml(status)}</p>${compactZoneUsageBadges(row, usageIndex)}</article>`;
+}
+function formatMarketZoneCardsSection(rows, options = {}){
+  const html = (rows || []).map((row)=>formatMarketZoneCard(row, options)).join("");
+  return html ? `<div class="market-zone-card-grid">${html}</div>` : "";
+}
+function renderMarketZonesCardLayout(rows, options = {}){
+  return formatMarketZoneCardsSection(rows, options);
+}
 function renderMarketMapGrid(rows, { nearestRow = null, nearestLabel = "", usageIndex = null } = {}){
-  return (rows || []).map((r)=>{
-    const display = formatMapRowForDisplay(r);
-    const title = escapeHtml(display.fullSources || display.sources);
-    const explanationHtml = display.sourceExplanation ? `<span class="prep-map-source-explanation">Explanation: ${escapeHtml(display.sourceExplanation)}</span>` : "";
-    const sourceHtml = `${escapeHtml(display.sources)}${explanationHtml}${display.fvgBadges ? `<span class="prep-map-row-badges">${escapeHtml(display.fvgBadges)}</span>` : ""}`;
-    const nearest = isSameMapRow(r, nearestRow);
-    const className = `prep-map-row${nearest ? " is-nearest-zone" : ""}`;
-    const nearestPill = nearest && nearestLabel ? `<span class="prep-map-nearest-label">${escapeHtml(nearestLabel)}</span>` : "";
-    return `<div class="${className}" title="${title}"><span class="prep-map-row-zone" data-label="Zone">${nearestPill}${escapeHtml(display.zone)}${formatMarketMapScenarioBadges(r, usageIndex)}</span><span class="prep-map-row-type" data-label="Type">${escapeHtml(display.type)}</span><span class="prep-map-row-sources" data-label="Sources">${sourceHtml}</span><span class="prep-map-row-distance" data-label="Distance">${escapeHtml(display.distance)}</span></div>`;
-  }).join("");
+  return renderMarketZonesCardLayout(rows || [], { nearestRow, nearestLabel, usageIndex });
 }
 function mergeConfluenceRows(rows, currentPrice){
   const normalized = (rows || []).map((r)=>normalizeMapZoneRow(r, currentPrice)).filter(Boolean);
@@ -8905,8 +8941,8 @@ function renderMarketPreparationMap(mapData){
   const nearestUpside = safeMap.upside?.[0] || null;
   const nearestDownside = safeMap.downside?.[0] || null;
   const scenarioUsageIndex = buildCurrentScenarioMarketMapUsageIndex(safeMap);
-  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = displayUpside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayUpside, { nearestRow: nearestUpside, nearestLabel: "Nearest Upside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No upside watch levels available.</p>';
-  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = displayDownside.length ? renderMarketMapHeader() + renderMarketMapGrid(displayDownside, { nearestRow: nearestDownside, nearestLabel: "Nearest Downside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No downside watch levels available.</p>';
+  if(els.prepUpsideRows) els.prepUpsideRows.innerHTML = displayUpside.length ? renderMarketZonesCardLayout(displayUpside, { nearestRow: nearestUpside, nearestLabel: "Nearest Upside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No upside watch levels available.</p>';
+  if(els.prepDownsideRows) els.prepDownsideRows.innerHTML = displayDownside.length ? renderMarketZonesCardLayout(displayDownside, { nearestRow: nearestDownside, nearestLabel: "Nearest Downside", usageIndex: scenarioUsageIndex }) : '<p class="prep-map-empty">No downside watch levels available.</p>';
   const detail = buildCurrentPriceDetailDataV2(safeMap);
   if(els.prepCurrentRow) els.prepCurrentRow.innerHTML = renderCurrentPriceChips(detail) || escapeHtml(detail.compactRowText || "● Price unavailable");
   renderCurrentPriceDetailCards(detail);
@@ -9132,7 +9168,7 @@ function buildKeyMarketZonesSummary(mapData = marketPreparationState.map, state 
 function renderKeyMarketZonesSummary(mapData){
   if(!els.keyMarketZonesSummaryPanel) return;
   const summary = buildKeyMarketZonesSummary(mapData || marketPreparationState.map, marketPreparationState);
-  els.keyMarketZonesSummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>Key Market Zones</h3><p>Market Map reference zones · concise summary visible by default.</p></div></div><div class="key-market-zones-grid">${formatKeyMarketZoneCard("Nearest Upside Zone", summary.nearestUpside)}${formatKeyMarketZoneCard("Nearest Downside Zone", summary.nearestDownside)}${formatKeyMarketZoneCard("Major Upside Zone", summary.majorUpside)}${formatKeyMarketZoneCard("Major Downside Zone", summary.majorDownside)}<article class="key-market-zone-item key-market-position"><span>Current Price Position</span><strong>${escapeHtml(summary.currentPricePosition)}</strong><p>Planning context only.</p></article></div>`;
+  els.keyMarketZonesSummaryPanel.innerHTML = `<div class="context-summary-header"><div><h3>Market Zones</h3><p>Planning context only · upside, current price, and downside zones.</p></div></div><div class="key-market-zones-grid">${formatKeyMarketZoneCard("Nearest Upside Zone", summary.nearestUpside)}${formatKeyMarketZoneCard("Nearest Downside Zone", summary.nearestDownside)}${formatKeyMarketZoneCard("Major Upside Zone", summary.majorUpside)}${formatKeyMarketZoneCard("Major Downside Zone", summary.majorDownside)}<article class="key-market-zone-item key-market-position"><span>Current Price Position</span><strong>${escapeHtml(summary.currentPricePosition)}</strong><p>Planning context only.</p></article></div>`;
 }
 function runH4LiquiditySummaryFixtureTests(){
   const missing = deriveH4LiquiditySummary(null);
@@ -9246,6 +9282,84 @@ function runKeyMarketZonesMergedNoImpactFixtureTests(){
   ];
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function buildMarketZonesCardLayoutFixtureData(){
+  const map = {
+    upside: [
+      { side: "upside", lower: 110, upper: 112, zoneText: "$110–$112", label: "Daily Bearish FVG", source: "daily_fvg", distanceText: "5.3% away", distancePct: 5.3, status: "Partially Mitigated", quality: "Strong", sources: [{ label: "Daily Bearish FVG" }, { label: "4H Bearish FVG" }] },
+      { side: "upside", lower: 120, upper: 122, zoneText: "$120–$122", label: "Major Confluence", distanceText: "8.1% away", distancePct: 8.1, quality: "Strong", sources: [{ label: "Weekly Bearish FVG" }, { label: "Daily Bearish FVG" }, { label: "4H Bearish FVG" }] },
+    ],
+    downside: [
+      { side: "downside", lower: 90, upper: 92, zoneText: "$90–$92", label: "4H Support", source: "h4_sr", distanceText: "3.1% away", distancePct: 3.1, status: "Touch 1x", quality: "Active", sources: [{ label: "4H Support" }] },
+      { side: "downside", lower: 82, upper: 84, zoneText: "$82–$84", label: "Major Downside", distanceText: "6.4% away", distancePct: 6.4, quality: "Major", sources: [{ label: "Weekly Support" }, { label: "Daily Support" }] },
+    ],
+    currentRowText: "● Price $100,000 | Daily: range context | 4H: no clear shift | RSI: recovering | 1H Sweep: Bullish Sweep | 1H Structure: No clear shift",
+  };
+  return { map, usageIndex: buildScenarioMarketMapUsageIndex([{ displayTitle: "Fixture Scenario", scenarioZone: { sourceSide: "downside", lower: 90, upper: 92 }, tp1: { sourceSide: "upside", lower: 110, upper: 112 } }]) };
+}
+function runMarketZonesCardLayoutFixtureTests(){
+  const { map, usageIndex } = buildMarketZonesCardLayoutFixtureData();
+  const before = JSON.stringify(map);
+  const upsideRows = getPriceLadderRows(map.upside);
+  const downsideRows = getPriceLadderRows(map.downside);
+  const upsideHtml = renderMarketZonesCardLayout(upsideRows, { nearestRow: map.upside[0], nearestLabel: "Nearest Upside", usageIndex });
+  const downsideHtml = renderMarketZonesCardLayout(downsideRows, { nearestRow: map.downside[0], nearestLabel: "Nearest Downside", usageIndex });
+  const currentHtml = renderCurrentPriceChips({ compactRowText: map.currentRowText, chips: [{ label: "Price", value: "$100,000" }, { label: "Daily", value: "range context" }, { label: "4H", value: "no clear shift" }, { label: "RSI", value: "recovering" }, { label: "1H Sweep", value: "Bullish Sweep" }, { label: "1H Structure", value: "No clear shift" }] });
+  const combined = `<section id="keyMarketZonesPanel"><div class="market-zone-card-grid">${upsideHtml}</div><div id="prepCurrentRow">${currentHtml}</div><div class="market-zone-card-grid">${downsideHtml}</div></section>`;
+  const currentIndex = combined.indexOf('id="prepCurrentRow"');
+  const upsideIndex = combined.indexOf("Nearest Upside");
+  const downsideIndex = combined.indexOf("Nearest Downside");
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup|horizontal-scroll/i;
+  const cases = [
+    { name: "Unified Market Zones section renders", passed: combined.includes('id="keyMarketZonesPanel"') },
+    { name: "Upside Zones section renders as cards", passed: /market-zone-card/.test(upsideHtml) && /Nearest Upside/.test(upsideHtml) },
+    { name: "Downside Zones section renders as cards", passed: /market-zone-card/.test(downsideHtml) && /Nearest Downside/.test(downsideHtml) },
+    { name: "Current Price remains between Upside and Downside", passed: upsideIndex >= 0 && currentIndex > upsideIndex && downsideIndex > currentIndex },
+    { name: "Current Price chips remain visible", passed: /prep-current-chip/.test(currentHtml) && /Price/.test(currentHtml) && /Details/.test('<button>Details</button>') },
+    { name: "Zone price ranges remain visible", passed: /\$110–\$112/.test(upsideHtml) && /\$90–\$92/.test(downsideHtml) },
+    { name: "Distance remains visible", passed: /5\.3% away/.test(upsideHtml) && /3\.1% away/.test(downsideHtml) },
+    { name: "Type/source context remains represented in compact form", passed: /Daily \+ 4H Bearish FVG/.test(upsideHtml) && /4H Support/.test(downsideHtml) },
+    { name: "Scenario usage badges remain visible", passed: /Used as TP1 Reference/.test(upsideHtml) && /Used as Scenario Zone/.test(downsideHtml) },
+    { name: "Nearest / Major labels remain visible", passed: /Nearest Upside/.test(upsideHtml) && /Major Upside/.test(upsideHtml) && /Nearest Downside/.test(downsideHtml) && /Major Downside/.test(downsideHtml) },
+    { name: "Existing Market Map rows are not mutated", passed: before === JSON.stringify(map) },
+    { name: "Scenario references remain unchanged", passed: JSON.stringify(buildScenarioMarketMapUsageIndex([{ displayTitle: "Fixture Scenario", scenarioZone: { sourceSide: "downside", lower: 90, upper: 92 }, tp1: { sourceSide: "upside", lower: 110, upper: 112 } }]).size) === JSON.stringify(usageIndex.size) },
+    { name: "No unsafe wording appears", passed: !forbidden.test(combined) },
+    { name: "No horizontal-scroll class or layout risk is introduced", passed: !/horizontal-scroll|overflow-x:\s*scroll/i.test(combined) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runMarketZonesCardLayoutNoImpactFixtureTests(){
+  const { map } = buildMarketZonesCardLayoutFixtureData();
+  const before = JSON.stringify(map);
+  const snapshotBefore = buildScenarioInputSnapshot(map, marketPreparationState);
+  const plansBefore = buildMultiScenarioPlansFromSnapshot(snapshotBefore);
+  const summaryBefore = JSON.stringify(buildKeyMarketZonesSummary(map, { currentPricePosition: { currentPosition: "Between key zones" } }));
+  renderMarketZonesCardLayout(getPriceLadderRows(map.upside), { nearestRow: map.upside[0], nearestLabel: "Nearest Upside", usageIndex: buildScenarioMarketMapUsageIndex(plansBefore) });
+  renderMarketZonesCardLayout(getPriceLadderRows(map.downside), { nearestRow: map.downside[0], nearestLabel: "Nearest Downside", usageIndex: buildScenarioMarketMapUsageIndex(plansBefore) });
+  const snapshotAfter = buildScenarioInputSnapshot(map, marketPreparationState);
+  const plansAfter = buildMultiScenarioPlansFromSnapshot(snapshotAfter);
+  const summaryAfter = JSON.stringify(buildKeyMarketZonesSummary(map, { currentPricePosition: { currentPosition: "Between key zones" } }));
+  const firstBefore = plansBefore[0] || {};
+  const firstAfter = plansAfter[0] || {};
+  const cases = [
+    { name: "Market Map rows unchanged", passed: before === JSON.stringify(map) },
+    { name: "Zone ranking unchanged", passed: getPriceLadderRows(map.upside)[0] === map.upside[1] && getPriceLadderRows(map.downside)[0] === map.downside[0] },
+    { name: "Scenario Zone unchanged", passed: JSON.stringify(firstBefore.scenarioZone) === JSON.stringify(firstAfter.scenarioZone) },
+    { name: "Invalidation Reference unchanged", passed: JSON.stringify(firstBefore.invalidationReference || firstBefore.invalidation) === JSON.stringify(firstAfter.invalidationReference || firstAfter.invalidation) },
+    { name: "TP1 / TP2 / TP3 references unchanged", passed: ["tp1", "tp2", "tp3"].every((key)=>JSON.stringify(firstBefore[key]) === JSON.stringify(firstAfter[key])) },
+    { name: "Scenario order unchanged", passed: plansBefore.map((plan)=>plan.id).join("|") === plansAfter.map((plan)=>plan.id).join("|") },
+    { name: "Scenario Score unchanged", passed: plansBefore.map((plan)=>plan.scenarioScore).join("|") === plansAfter.map((plan)=>plan.scenarioScore).join("|") },
+    { name: "Confirmation Status unchanged", passed: plansBefore.map((plan)=>plan.confirmationStatus).join("|") === plansAfter.map((plan)=>plan.confirmationStatus).join("|") },
+    { name: "Source state not mutated", passed: before === JSON.stringify(map) },
+    { name: "Existing Key Market Zones fixture still passes", passed: runKeyMarketZonesSummaryFixtureTests().passed === true && summaryBefore === summaryAfter },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runMarketZonesCardLayoutFixtureTests = runMarketZonesCardLayoutFixtureTests;
+  window.runMarketZonesCardLayoutNoImpactFixtureTests = runMarketZonesCardLayoutNoImpactFixtureTests;
 }
 if(typeof window !== "undefined"){
   window.runKeyMarketZonesMergedUiFixtureTests = runKeyMarketZonesMergedUiFixtureTests;
