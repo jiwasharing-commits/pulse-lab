@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulse Lab</title>
+    <link rel="stylesheet" href="style.css?v=patch-6b-1" />
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Pulse Lab</h1>
+          <p>Bitcoin Weekly RSI Monitor</p>
+        </div>
+        <div class="header-meta">
+          <div id="appLastUpdated" class="meta-line">Last Updated: —</div>
+          <div id="dataRefreshed" class="meta-line">Data Refreshed: —</div>
+        </div>
+        <div class="topbar-actions"><div class="layer-control global-layer-control"><button id="globalLayerToggleBtn" class="refresh-btn secondary layer-toggle-btn" type="button" title="Show or hide chart overlay layers." aria-label="Show or hide chart overlay layers." aria-haspopup="true" aria-expanded="false" aria-controls="globalLayerMenu">Global Layers ▾</button><div id="globalLayerMenu" class="layer-menu global-layer-menu" hidden><span class="layer-preset-label">Apply to all:</span><div class="layer-preset-actions"><button type="button" data-global-layer-preset="default">Default</button><button type="button" data-global-layer-preset="clean">Clean</button><button type="button" data-global-layer-preset="full">Full</button><button type="button" data-global-layer-preset="manual">Manual</button><button type="button" data-global-layer-preset="preparation">Prep</button></div><button id="resetAllLayersBtn" class="refresh-btn secondary chart-tool-btn layer-reset-btn" type="button">Reset All Layers</button></div></div><button id="chartZoomToggleBtn" class="refresh-btn secondary chart-zoom-toggle" type="button" aria-pressed="false" title="Mouse wheel scrolls the page; use drag, axis drag, or pinch for chart interaction." aria-label="Chart interaction off. Mouse wheel scrolls the page; use drag, axis drag, or pinch for chart interaction.">Chart Interaction: OFF</button><button id="refreshBtn" class="refresh-btn" type="button" title="Refresh market data." aria-label="Refresh market data.">Refresh</button></div>
+      </header>
+
+      <section class="status-strip" aria-live="polite"><span id="statusText">Loading BTC weekly monitor...</span></section>
+
+      <main class="dashboard-flow">
+        <div class="engine-map-launch-row">
+          <button id="engineMapOpenBtn" class="refresh-btn secondary engine-map-open-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="engineMapModal">Engine Map</button>
+          <button id="timeframeRoleOpenBtn" class="refresh-btn secondary engine-map-open-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="timeframeRoleModal">Timeframe Role</button>
+        </div>
+        <section class="panel macro-card conclusion-card">
+          <div class="macro-card-header">
+            <h2>Multi-Timeframe Conclusion</h2>
+            <p>Final weekly + 4H + 1H conclusion</p>
+          </div>
+          <div class="conclusion-grid internal-data-panel">
+            <article class="panel mini-panel conclusion-item">
+              <h3>BTC Price</h3>
+              <p id="btcPrice" class="value">—</p>
+              <p id="btc24hInline" class="meta">24h: —</p>
+              <p id="btcPriceMeta" class="meta submeta">Loading...</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3>Fear &amp; Greed</h3>
+              <p class="mini-line" id="leftFearGreed">Fear &amp; Greed: —</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3 title="Multi-Timeframe Summary (Weekly bias, 4H reaction, 1H timing)">Final Status</h3>
+              <p class="mini-line mtf-final" id="mtfFinalStatus">Final Status: waiting</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3>Weekly Bias</h3>
+              <p class="mini-line" id="mtfWeeklyBias">Weekly Bias: waiting</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3>Daily Validation</h3>
+              <p class="mini-line" id="mtfDailyValidation">Daily: waiting</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3>4H Reaction</h3>
+              <p class="mini-line" id="mtf4hReaction">4H Reaction: waiting</p>
+            </article>
+            <article class="panel mini-panel conclusion-item">
+              <h3>1H Timing</h3>
+              <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
+            </article>
+          </div>
+          <section id="timeframeContextTabs" class="timeframe-context-tabs" aria-label="Timeframe Context">
+            <div class="timeframe-context-tabs-header">
+              <div>
+                <h3 id="timeframeContextHeaderTitle">Timeframe Context | Price unavailable</h3>
+                <p>Weekly, Daily, 4H, and 1H market context in one compact view.</p>
+              </div>
+            </div>
+            <div class="timeframe-context-tab-list" role="tablist" aria-label="Timeframe Context Tabs">
+              <button id="timeframeContextTabWeekly" class="timeframe-context-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="timeframeContextPanelWeekly" data-timeframe-tab="weekly">Weekly</button>
+              <button id="timeframeContextTabDaily" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelDaily" data-timeframe-tab="daily">Daily</button>
+              <button id="timeframeContextTabH4" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelH4" data-timeframe-tab="h4">4H</button>
+              <button id="timeframeContextTabH1" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelH1" data-timeframe-tab="h1">1H</button>
+            </div>
+            <div class="timeframe-context-tab-panels">
+              <div id="timeframeContextPanelWeekly" class="timeframe-context-tab-panel is-active" role="tabpanel" aria-labelledby="timeframeContextTabWeekly" data-timeframe-panel="weekly">
+                <section id="weeklyMajorStructurePanel" class="weekly-major-structure-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>Weekly Major Structure</h3>
+                      <p>Major Context only · structure planning reference.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">Weekly major structure context is loading.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelDaily" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabDaily" data-timeframe-panel="daily" hidden>
+                <section id="dailyValidationFoundationPanel" class="daily-validation-foundation-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>Daily Validation Alignment</h3>
+                      <p>Display-only validation of Daily structure against Weekly Major Structure.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">Daily validation foundation is loading.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelH4" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabH4" data-timeframe-panel="h4" hidden>
+                <section id="h4ReactionContextPanel" class="h4-reaction-context-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>4H Reaction Context</h3>
+                      <p>Display-only reaction context against higher-timeframe and Market Map zones.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">4H reaction context is loading.</p>
+                </section>
+                <section id="h4LiquiditySummaryPanel" class="context-summary-card" aria-live="polite">
+                  <div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div></div>
+                  <p class="context-summary-empty">H4 liquidity context unavailable.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelH1" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabH1" data-timeframe-panel="h1" hidden>
+                <section id="h1TimingContextPanel" class="h1-timing-context-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>1H Timing Context</h3>
+                      <p>Display-only timing refinement against the current 4H Reaction Context.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">1H timing context is loading.</p>
+                </section>
+              </div>
+            </div>
+          </section>
+          <details id="h4LiquidityDiagnosticsPanel" class="h4-liquidity-diagnostics-panel" hidden>
+            <summary id="h4LiquidityDiagnosticsSummary" class="h4-liquidity-diagnostics-summary">
+              <span>H4 Liquidity Diagnostics</span>
+              <small>Read-only diagnostics. Not an entry signal.</small>
+            </summary>
+            <div id="h4LiquidityDiagnosticsBody" class="h4-liquidity-diagnostics-body">
+              <p class="h4-liquidity-diagnostics-empty">H4 liquidity diagnostics unavailable.</p>
+            </div>
+          </details>
+          <section id="keyMarketZonesPanel" class="key-market-zones-panel" aria-label="Market Zones">
+            <section id="keyMarketZonesSummaryPanel" class="context-summary-card key-market-zones-summary" aria-live="polite" hidden></section>
+            <section id="marketPreparationMapDetails" class="market-map-details key-market-zones-details">
+              <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
+              <div class="panel-header compact-header">
+                <div>
+                  <h3>Market Zones</h3>
+                  <p>Planning context only · upside, current price, and downside zones.</p>
+                </div>
+                <button id="exportPdfBtn" class="refresh-btn secondary chart-tool-btn" type="button">Export PDF</button>
+              </div>
+              <div class="prep-map-group">
+                <p class="prep-map-title">Upside Zones</p>
+                <div id="prepUpsideRows" class="prep-map-rows">
+                  <p class="prep-map-empty">No upside watch levels available.</p>
+                </div>
+              </div>
+              <div class="prep-map-group prep-map-current">
+                <p class="prep-map-title">Current Price</p>
+                <div id="prepCurrentRow" class="prep-map-current-row">● Price unavailable</div>
+                <button id="prepCurrentDetailToggle" class="refresh-btn secondary chart-tool-btn" type="button">Details</button>
+                <div id="prepCurrentDetail" class="prep-current-detail" hidden>
+                  <div id="prepCurrentDetailContent" class="prep-current-detail-grid"></div>
+                </div>
+              </div>
+              <div class="prep-map-group">
+                <p class="prep-map-title">Downside Zones</p>
+                <div id="prepDownsideRows" class="prep-map-rows">
+                  <p class="prep-map-empty">No downside watch levels available.</p>
+                </div>
+              </div>
+              </section>
+            </section>
+          </section>
+          <section id="multiScenarioPlanningPanel" class="scenario-planning-card" aria-live="polite">
+            <div class="scenario-planning-header">
+              <div>
+                <h3>Multi-Scenario Planning</h3>
+                <p>Read-only planning context · not financial advice or a direct trading signal.</p>
+              </div>
+            </div>
+            <p class="scenario-planning-empty">No multi-scenario planning context available yet.</p>
+          </section>
+          <section id="ifvgContextPanel" class="ifvg-context-card" aria-live="polite">
+            <div class="ifvg-context-header">
+              <div>
+                <h3>IFVG Context</h3>
+                <p class="ifvg-context-subtitle">Context only · not a trading signal</p>
+              </div>
+            </div>
+            <p class="ifvg-context-note">No recent IFVG context detected.</p>
+          </section>
+        </section>
+
+        <section class="panel macro-card weekly-analysis-card">
+          <div class="macro-card-header">
+            <h2>Weekly Analysis</h2>
+            <p>Weekly bias and momentum context</p>
+          </div>
+          <div class="hidden-metrics" aria-hidden="true">
+            <span id="rsiCurrent">—</span>
+            <span id="rsiStatus">Loading...</span>
+            <span id="rsiRegime">Regime: —</span>
+            <span id="rsiChangeLines">4W: — · 12W: —</span>
+            <span id="rsiRefs">W0: — | W-4: — | W-12: —</span>
+            <span id="rsiSlope">RSI Slope: — / week</span>
+            <span id="direction">—</span>
+            <span id="momentumPhase">—</span>
+            <span id="leftRsiValue">—</span>
+            <span id="leftRsiRegime">—</span>
+            <span id="leftDistance50">—</span>
+            <span id="leftSlopes">—</span>
+            <span id="leftDirection">—</span>
+            <span id="leftPhase">—</span>
+            <span id="leftChanges">—</span>
+            <span id="rightBiasTop">Top Bias: —</span>
+            <span id="rightBiasMeta">Confidence: —</span>
+            <span id="rightDivergence">—</span>
+            <span id="rightDivergenceMeta">—</span>
+            <span id="right4hFvgType">—</span>
+            <span id="right4hFvgZone">Zone: —</span>
+            <span id="right4hFvgRelation">Relation: —</span>
+            <span id="right4hFvgDistance">Distance: —</span>
+            <span id="right4hFvgStatus">—</span>
+            <button id="biasViewDetailsBtn" type="button">View Details</button>
+          </div>
+          <div class="weekly-grid chart-evidence-grid">
+
+            <div class="weekly-center-col">
+              <div class="weekly-chart-stack">
+                <section class="panel weekly-chart-card weekly-candle-card">
+                  <div class="panel-header"><h2>BTC Weekly Candlestick</h2><p>Main weekly divergence monitoring section</p><div class="chart-header-actions"><div class="chart-tools"><button id="weeklyAddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add by Price</button><button id="weeklyDrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Click to Place</button><button id="weeklyDrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="weeklyManageBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage</button></div><div class="layer-control"><button id="weeklyLayerToggleBtn" class="refresh-btn secondary chart-tool-btn layer-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="weeklyLayerMenu">Layers ▾</button><div id="weeklyLayerMenu" class="layer-menu" hidden><label class="layer-row"><input type="checkbox" data-chart-key="weekly" data-layer-key="fvg" checked> FVG</label><label class="layer-row"><input type="checkbox" data-chart-key="weekly" data-layer-key="sr" checked> Support / Resistance</label><label class="layer-row"><input type="checkbox" data-chart-key="weekly" data-layer-key="manualLines" checked> Manual Lines</label><label class="layer-row"><input type="checkbox" data-chart-key="weekly" data-layer-key="trendlines" checked> Trendlines</label><label class="layer-row"><input type="checkbox" data-chart-key="weekly" data-layer-key="rsiPanel" checked> RSI Panel</label><button class="refresh-btn secondary chart-tool-btn layer-reset-btn" type="button" data-layer-reset="weekly">Reset Weekly Layers</button></div></div></div></div>
+                  <div class="dual-metrics" id="divergenceStatus">Divergence Status: —</div>
+                  <div class="dual-metrics" id="priceMetrics">12W Price Change: — | 12W RSI Change: —</div>
+                  <div class="interpretation-box" id="divergenceText">Loading divergence context...</div>
+                  <div class="chart-wrap compact" id="weeklyPriceChartWrapper"><div id="priceChart" role="img"></div><div id="weeklyTrendlineOverlay" class="trendline-overlay-layer"></div><div id="priceChartError" class="chart-error" hidden>Price chart unavailable.</div></div>
+                </section>
+                <section id="weeklyRsiCard" class="panel weekly-chart-card weekly-rsi-card">
+                  <div class="panel-header"><h2>Weekly RSI</h2></div>
+                  <div class="chart-wrap compact"><div id="rsiChart" role="img"></div><div id="rsiChartError" class="chart-error" hidden>RSI chart unavailable.</div></div>
+                  <div id="analyticsStrip" class="analytics-strip">RSI Slope: — / week · Consistency: — · Distance to 50: — · Regime: —</div>
+                </section>
+              </div>
+            </div>
+
+            <div class="weekly-right-col internal-data-panel">
+              <section class="panel mini-panel">
+                <h3 title="FVG = Fair Value Gap (imbalance zone)">Active Weekly FVG Summary</h3>
+                <p class="mini-line" id="rightFvgCount">Active FVG: —</p>
+                <p class="mini-line" id="rightNearestFvg">Nearest: —</p>
+                <p class="mini-line" id="rightFvgStatus">Status: —</p>
+                <button id="fvgViewDetailsBtn" class="refresh-btn ltf-toggle detail-link" type="button">View Details</button>
+              </section>
+              
+              <section class="panel mini-panel weekly-sr-card">
+                <h3>Weekly Support &amp; Resistance</h3>
+                <div class="weekly-sr-block">
+                  <p class="mini-line weekly-sr-label">Resistance</p>
+                  <p class="mini-line weekly-sr-zone" id="weeklySrResistanceZone">Resistance: —</p>
+                  <p class="mini-line weekly-sr-meta" id="weeklySrResistanceMeta">—</p>
+                </div>
+                <div class="weekly-sr-block">
+                  <p class="mini-line weekly-sr-label">Support</p>
+                  <p class="mini-line weekly-sr-zone" id="weeklySrSupportZone">Support: —</p>
+                  <p class="mini-line weekly-sr-meta" id="weeklySrSupportMeta">—</p>
+                </div>
+                <p class="mini-line weekly-sr-meaning" id="weeklySrMeaning">Meaning: —</p>
+              </section>
+              <section class="panel mini-panel weekly-candle-character-card">
+                <h3>Weekly Candle Character</h3>
+                <p class="mini-line" id="weeklyCandleW1">W-1: —</p>
+                <p class="mini-line" id="weeklyCandleW2">W-2: —</p>
+                <p class="mini-line" id="weeklyCandleW3">W-3: —</p>
+                <p class="mini-line" id="weeklyCandleReading">3W Reading: —</p>
+                <p class="mini-line" id="weeklyCandleCondition">Condition: —</p>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel macro-card ltf-analysis-card visual-evidence" id="ltfPanel">
+          <div class="macro-card-header">
+            <h2>Lower Timeframe Analysis</h2>
+            <p>4H and 1H reaction detail</p>
+          </div>
+
+          <section class="panel ltf-combined-card">
+            <div class="panel-header compact-header"><h3>Lower TF Combined Analysis</h3></div>
+            <div class="ltf-combined-grid">
+              <article id="dailyContextSummary" class="ltf-context-card daily-context-card">
+                <h4>Daily Context</h4>
+                <p>Daily context unavailable.</p>
+              </article>
+              <p id="lowerTfReactionSummary" class="mini-line lower-fvg-summary">Lower TF Stack: loading</p>
+              <p class="mini-line lower-fvg-summary lower-tf-cap-note">Daily/4H: 3M context · 1H: latest 336 candles timing</p>
+              <p class="mini-line lower-fvg-summary">4H Reaction: see 4H card explanation</p>
+              <p class="mini-line lower-fvg-summary">1H Timing: see 1H card explanation</p>
+            </div>
+          </section>
+
+          <section class="panel ltf-control-card">
+            <div class="panel-header compact-header"><h2>Lower Timeframe Detail</h2><button id="ltfToggleBtn" class="refresh-btn ltf-toggle" type="button">Show</button></div>
+            <div id="ltfContent" hidden>
+              <div class="ltf-control-inline">
+                <div class="ltf-inline-group">
+                  <span class="ltf-control-label">Intraday Range:</span>
+                  <div class="ltf-presets ltf-control-group" id="ltfPresets">
+                    <button id="ltfPreset1w" class="refresh-btn ltf-preset" type="button">1W</button>
+                    <button id="ltfPreset2w" class="refresh-btn ltf-preset" type="button">2W</button>
+                    <button id="ltfPreset1m" class="refresh-btn ltf-preset" type="button">1M</button>
+                    <button id="ltfPreset3m" class="refresh-btn ltf-preset active" type="button">3M</button>
+                    <button id="ltfPresetCustom" class="refresh-btn ltf-preset" type="button">Custom</button>
+                  </div>
+                </div>
+                <div class="ltf-inline-group">
+                  <span class="ltf-control-label">Range:</span>
+                  <div class="ltf-controls" id="ltfDateControls" hidden>
+                    <label>Start Date <input id="ltfStartDate" type="date" /></label>
+                    <label>End Date <input id="ltfEndDate" type="date" /></label>
+                    <button id="ltfApplyBtn" class="refresh-btn" type="button">Apply</button>
+                  </div>
+                  <div class="ltf-controls ltf-control-actions">
+                    <button id="ltfResetBtn" class="refresh-btn secondary" type="button">Reset</button>
+                  </div>
+                </div>
+              </div>
+
+              <section class="panel ltf-chart-card">
+                <div class="panel-header compact-header"><div><h3 id="lowerDailyTitle">Daily Candlestick</h3><p id="lowerDailyMeta" class="meta">Visual confirmation layer</p><p id="lowerDailyPatternSummary" class="meta">Daily Pattern · waiting</p></div><div class="chart-header-actions"><div class="ltf-presets ltf-control-group" id="dailyRangePresets" aria-label="Daily Range"><span class="ltf-control-label">Daily Range:</span><button id="dailyPreset3m" class="refresh-btn ltf-preset active" type="button">3M</button><button id="dailyPreset6m" class="refresh-btn ltf-preset" type="button">6M</button><button id="dailyPreset1y" class="refresh-btn ltf-preset" type="button">1Y</button></div><div class="layer-control"><button id="dailyLayerToggleBtn" class="refresh-btn secondary chart-tool-btn layer-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="dailyLayerMenu">Layers ▾</button><div id="dailyLayerMenu" class="layer-menu" hidden><label class="layer-row"><input type="checkbox" data-chart-key="daily" data-layer-key="fvg" checked> FVG</label><label class="layer-row"><input type="checkbox" data-chart-key="daily" data-layer-key="sr" checked> Support / Resistance</label><label class="layer-row"><input type="checkbox" data-chart-key="daily" data-layer-key="patternLines" checked> Pattern Lines</label><label class="layer-row"><input type="checkbox" data-chart-key="daily" data-layer-key="patternSummary" checked> Pattern Summary</label><button class="refresh-btn secondary chart-tool-btn layer-reset-btn" type="button" data-layer-reset="daily">Reset Daily Layers</button></div></div></div></div>
+                <div class="ltf-chart-card-grid">
+                  <div class="ltf-chart-main">
+                    <div class="chart-wrap compact lower-chart-wrapper" id="lowerDailyChartWrapper"><div id="lowerDailyChart" class="lower-chart" role="img"></div><div id="lowerDailyFvgOverlay" class="fvg-overlay-layer daily-fvg-overlay-layer"></div><div id="lowerDailySrOverlay" class="ltf-sr-overlay-layer daily-sr-overlay-layer"></div><div id="lowerDailyPatternOverlay" class="daily-pattern-overlay-layer"></div><div id="lowerDailyError" class="chart-error" hidden>Daily chart unavailable.</div></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel ltf-chart-card">
+                <div class="panel-header compact-header"><div><h3>4H Candlestick</h3><p id="lower4hMeta" class="meta">4H Reaction: waiting</p></div><div class="chart-header-actions"><div class="chart-tools"><button id="h4AddLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Add by Price</button><button id="h4DrawLineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Click to Place</button><button id="h4DrawTrendlineBtn" class="refresh-btn secondary chart-tool-btn" type="button">Draw Trendline</button><button id="h4ManageBtn" class="refresh-btn secondary chart-tool-btn" type="button">Manage</button></div><div class="layer-control"><button id="h4LayerToggleBtn" class="refresh-btn secondary chart-tool-btn layer-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="h4LayerMenu">Layers ▾</button><div id="h4LayerMenu" class="layer-menu" hidden><label class="layer-row"><input type="checkbox" data-chart-key="h4" data-layer-key="fvg" checked> FVG</label><label class="layer-row"><input type="checkbox" data-chart-key="h4" data-layer-key="sr" checked> Support / Resistance</label><label class="layer-row"><input type="checkbox" data-chart-key="h4" data-layer-key="manualLines" checked> Manual Lines</label><label class="layer-row"><input type="checkbox" data-chart-key="h4" data-layer-key="trendlines" checked> Trendlines</label><button class="refresh-btn secondary chart-tool-btn layer-reset-btn" type="button" data-layer-reset="h4">Reset 4H Layers</button></div></div></div></div>
+                <div class="ltf-chart-card-grid">
+                  <div class="ltf-chart-main">
+                    <div class="chart-wrap compact lower-chart-wrapper" id="lower4hChartWrapper"><div id="lower4hChart" class="lower-chart" role="img"></div><div id="lower4hFvgOverlay" class="fvg-overlay-layer"></div><div id="lower4hSrOverlay" class="ltf-sr-overlay-layer"></div><div id="h4TrendlineOverlay" class="trendline-overlay-layer"></div><div id="lower4hError" class="chart-error" hidden>4H chart unavailable.</div></div>
+                  </div>
+                  <div class="ltf-chart-explanation internal-data-panel">
+                    <section class="panel mini-panel ltf-mini-card ltf-analysis-card-compact"><h3>4H Analysis</h3><p class="mini-line ltf-analysis-row"><strong>Reaction:</strong></p><p class="mini-line lower-fvg-summary" id="lower4hReaction">4H Reaction: loading</p><p class="mini-line ltf-analysis-row"><strong>FVG:</strong></p><p id="lower4hFvgSummary" class="mini-line lower-fvg-summary">4H FVG: loading</p><p class="mini-line ltf-analysis-row"><strong>Structure:</strong></p><p id="lower4hStructure" class="mini-line lower-fvg-summary" title="CHoCH = Change of Character, BOS = Break of Structure">4H Structure: loading</p><p class="mini-line ltf-analysis-row"><strong>Weekly Relation:</strong></p><p class="mini-line lower-fvg-summary" id="lower4hVsWeekly">4H vs Weekly FVG: see right panel summary</p><p class="mini-line ltf-analysis-row"><strong>4H Local Support &amp; Resistance:</strong></p><p class="mini-line lower-fvg-summary" id="lower4hSrNearestResistance">Nearest Resistance: loading</p><p class="mini-line lower-fvg-summary" id="lower4hSrStrongestResistance">Strongest Resistance: loading</p><p class="mini-line lower-fvg-summary" id="lower4hSrNearestSupport">Nearest Support: loading</p><p class="mini-line lower-fvg-summary" id="lower4hSrStrongestSupport">Strongest Support: loading</p><p class="mini-line lower-fvg-summary" id="lower4hSrState">4H S/R: loading</p></section>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel ltf-chart-card">
+                <div class="panel-header compact-header"><div><h3>1H Candlestick</h3><p id="lower1hMeta" class="meta">1H Timing: waiting</p></div><div class="layer-control"><button id="h1LayerToggleBtn" class="refresh-btn secondary chart-tool-btn layer-toggle-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="h1LayerMenu">Layers ▾</button><div id="h1LayerMenu" class="layer-menu" hidden><label class="layer-row"><input type="checkbox" data-chart-key="h1" data-layer-key="sweepMarkers" checked> Sweep Markers</label><label class="layer-row"><input type="checkbox" data-chart-key="h1" data-layer-key="structureMarkers" checked> Structure Markers</label><label class="layer-row"><input type="checkbox" data-chart-key="h1" data-layer-key="stochasticText" checked> Stochastic Text</label><button class="refresh-btn secondary chart-tool-btn layer-reset-btn" type="button" data-layer-reset="h1">Reset 1H Layers</button></div></div></div>
+                <div class="ltf-chart-card-grid">
+                  <div class="ltf-chart-main">
+                    <div class="chart-wrap compact" id="lower1hChartWrapper"><div id="lower1hChart" class="lower-chart" role="img"></div><div id="lower1hError" class="chart-error" hidden>1H chart unavailable.</div></div>
+                  </div>
+                  <div class="ltf-chart-explanation internal-data-panel">
+                    <section class="panel mini-panel ltf-mini-card ltf-analysis-card-compact"><h3>1H Analysis</h3><p class="mini-line ltf-analysis-row"><strong>Timing:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hTiming">1H Timing: use sweep + structure context</p><p class="mini-line ltf-analysis-row"><strong>Liquidity Sweep:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hSweepSummary" title="Liquidity Sweep = price takes liquidity above/below swing then returns">1H Liquidity Sweep: loading</p><p class="mini-line ltf-analysis-row"><strong>Structure:</strong></p><p class="mini-line lower-fvg-summary" id="lower1hStructureSummary" title="CHoCH = Change of Character, BOS = Break of Structure">1H Structure: loading</p></section>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+    <div id="engineMapModal" class="engine-map-modal" hidden role="dialog" aria-modal="true" aria-labelledby="engineMapModalTitle">
+      <div id="engineMapBackdrop" class="engine-map-modal-backdrop"></div>
+      <div class="engine-map-modal-dialog">
+        <div class="engine-map-modal-header">
+          <div>
+            <h2 id="engineMapModalTitle">Pulse Lab Engine Map</h2>
+            <p>Read-only overview of the analysis engines powering the dashboard.</p>
+          </div>
+          <button id="engineMapCloseBtn" class="refresh-btn secondary engine-map-close-btn" type="button" aria-label="Close Engine Map">Close</button>
+        </div>
+        <section id="pulseLabEngineMapPanel" class="engine-map-card engine-map-modal-content" aria-live="polite">
+          <div class="engine-map-header">
+            <div>
+              <h3>Pulse Lab Engine Map</h3>
+              <p>Read-only overview of the analysis engines powering the dashboard.</p>
+            </div>
+          </div>
+          <p class="engine-map-empty">Engine context is loading.</p>
+        </section>
+      </div>
+    </div>
+    <div id="timeframeRoleModal" class="engine-map-modal timeframe-role-modal" hidden role="dialog" aria-modal="true" aria-labelledby="timeframeRoleModalTitle">
+      <div id="timeframeRoleBackdrop" class="engine-map-modal-backdrop"></div>
+      <div class="engine-map-modal-dialog">
+        <div class="engine-map-modal-header">
+          <div>
+            <h2 id="timeframeRoleModalTitle">Timeframe Role Alignment</h2>
+            <p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p>
+          </div>
+          <button id="timeframeRoleCloseBtn" class="refresh-btn secondary engine-map-close-btn" type="button" aria-label="Close Timeframe Role Alignment">Close</button>
+        </div>
+        <section id="timeframeRoleAlignmentPanel" class="timeframe-role-card engine-map-modal-content" aria-live="polite">
+          <div class="engine-map-header">
+            <div>
+              <h3>Timeframe Role Alignment</h3>
+              <p>How Pulse Lab separates higher-timeframe context, structure validation, reaction, and timing.</p>
+            </div>
+          </div>
+          <p class="engine-map-empty">Timeframe role context is loading.</p>
+        </section>
+      </div>
+    </div>
+    <div id="drawingManagerModal" class="drawing-manager-modal" hidden>
+      <div class="drawing-manager-backdrop"></div>
+      <div class="drawing-manager-panel">
+        <h3 id="drawingManagerTitle">Manage Chart Drawings</h3>
+        <div class="drawing-manager-section">
+          <h4>Horizontal Lines</h4>
+          <div id="drawingManagerLinesList"></div>
+        </div>
+        <div class="drawing-manager-section">
+          <h4>Trendlines</h4>
+          <div id="drawingManagerTrendlinesList"></div>
+        </div>
+        <div class="drawing-manager-actions">
+          <button id="drawingManagerClearAllBtn" class="refresh-btn secondary btn-danger" type="button">Clear All</button>
+          <button id="drawingManagerCloseBtn" class="refresh-btn secondary" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+    <div id="pdfReportRoot" class="pdf-report-root" hidden></div>
+    <script src="app.js?v=patch-6b-1"></script>
+  </body>
+</html>
