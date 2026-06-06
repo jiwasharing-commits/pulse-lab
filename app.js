@@ -6501,6 +6501,144 @@ function addScenarioTimeframeScoreFactors(plans){
     scenarioTimeframeScoreFactors: buildScenarioTimeframeScoreFactors(plan).map((factor)=>({ ...factor })),
   }));
 }
+
+function capScenarioTimeframeModifier(value){
+  const modifier = Number(value);
+  if(!Number.isFinite(modifier)) return 0;
+  return Math.max(-2, Math.min(2, Math.round(modifier * 10) / 10));
+}
+function normalizeScenarioCalibratedScore(value){
+  if(value === null || value === undefined || value === "") return null;
+  const score = Number(value);
+  return Number.isFinite(score) ? Math.max(0, Math.min(10, Math.round(score * 10) / 10)) : null;
+}
+function getScenarioCalibratedScoreLabel(score){
+  const normalized = normalizeScenarioCalibratedScore(score);
+  if(normalized === null) return "Calibrated context unavailable";
+  if(normalized <= 2) return "Very weak calibrated context";
+  if(normalized <= 4) return "Weak calibrated context";
+  if(normalized <= 6) return "Developing calibrated context";
+  if(normalized <= 8) return "Strong calibrated context";
+  return "Very strong calibrated context";
+}
+function getScenarioTimeframeWeeklyDirection(context){
+  const label = normalizeScenarioTimeframeLabel(context?.weekly?.label).toLowerCase();
+  if(label.includes("bullish structure")) return "bullish";
+  if(label.includes("bearish structure")) return "bearish";
+  return null;
+}
+function createScenarioTimeframeModifierFactor(label, impact = 0, type = "neutral"){
+  const normalizedImpact = Number.isFinite(Number(impact)) ? Math.round(Number(impact) * 10) / 10 : 0;
+  const normalizedType = ["support", "caution", "neutral"].includes(type) ? type : (normalizedImpact > 0 ? "support" : normalizedImpact < 0 ? "caution" : "neutral");
+  return { label, impact: normalizedImpact, type: normalizedType, displayOnly: false };
+}
+function buildWeeklyScenarioTimeframeModifierFactor(plan, context){
+  const direction = String(plan?.direction || "neutral").toLowerCase();
+  const weeklyDirection = getScenarioTimeframeWeeklyDirection(context);
+  const weeklyLabel = normalizeScenarioTimeframeLabel(context?.weekly?.label).toLowerCase();
+  if(direction === "neutral") return createScenarioTimeframeModifierFactor("Weekly context noted for neutral planning only", 0, "neutral");
+  if(weeklyDirection && weeklyDirection === direction) return createScenarioTimeframeModifierFactor(`Weekly ${weeklyDirection} context aligns with planning direction`, 1, "support");
+  if(weeklyDirection && weeklyDirection !== direction) return createScenarioTimeframeModifierFactor(`Weekly ${weeklyDirection} context conflicts with planning direction`, -1, "caution");
+  if(weeklyLabel.includes("mixed") || weeklyLabel.includes("macro") || weeklyLabel.includes("weak")) return createScenarioTimeframeModifierFactor("Weekly context remains mixed; no numeric modifier", 0, "neutral");
+  return createScenarioTimeframeModifierFactor("Weekly context unavailable for calibration", 0, "neutral");
+}
+function buildDailyScenarioTimeframeModifierFactor(plan, context){
+  const direction = String(plan?.direction || "neutral").toLowerCase();
+  const weeklyDirection = getScenarioTimeframeWeeklyDirection(context);
+  const dailyLabel = normalizeScenarioTimeframeLabel(context?.daily?.label).toLowerCase();
+  if(direction === "neutral") return createScenarioTimeframeModifierFactor("Daily validation noted for neutral planning only", 0, "neutral");
+  if(dailyLabel.includes("aligns with weekly")){
+    if(weeklyDirection && weeklyDirection === direction) return createScenarioTimeframeModifierFactor("Daily validation aligns with matching Weekly direction", 1, "support");
+    return createScenarioTimeframeModifierFactor("Daily alignment needs matching Weekly direction", 0, "neutral");
+  }
+  if(dailyLabel.includes("conflicts with weekly")) return createScenarioTimeframeModifierFactor("Daily validation conflicts with Weekly context", -1, "caution");
+  if(dailyLabel.includes("weakens weekly")) return createScenarioTimeframeModifierFactor("Daily validation weakens Weekly context", -0.5, "caution");
+  if(dailyLabel.includes("transition") || dailyLabel.includes("mixed")) return createScenarioTimeframeModifierFactor("Daily validation remains transitional", 0, "neutral");
+  return createScenarioTimeframeModifierFactor("Daily validation unavailable for calibration", 0, "neutral");
+}
+function buildH4ScenarioTimeframeModifierFactor(context){
+  const h4Label = normalizeScenarioTimeframeLabel(context?.h4?.label).toLowerCase();
+  if(h4Label.includes("failed reaction")) return createScenarioTimeframeModifierFactor("4H reaction failed; calibration stays cautious", -1, "caution");
+  if(h4Label.includes("reaction confirmed")) return createScenarioTimeframeModifierFactor("4H reaction direction not safely inferred; no positive modifier", 0, "neutral");
+  if(h4Label.includes("reaction developing")) return createScenarioTimeframeModifierFactor("4H developing reaction needs directional match before modifier", 0, "neutral");
+  if(h4Label.includes("waiting for reaction")) return createScenarioTimeframeModifierFactor("4H is waiting for reaction", 0, "neutral");
+  if(h4Label.includes("weak reaction")) return createScenarioTimeframeModifierFactor("4H reaction is weak", 0, "neutral");
+  if(h4Label.includes("no clear reaction")) return createScenarioTimeframeModifierFactor("4H reaction is unclear", 0, "neutral");
+  return createScenarioTimeframeModifierFactor("4H reaction unavailable for calibration", 0, "neutral");
+}
+function buildH1ScenarioTimeframeModifierFactor(context){
+  const h1Label = normalizeScenarioTimeframeLabel(context?.h1?.label).toLowerCase();
+  const h4Label = normalizeScenarioTimeframeLabel(context?.h4?.label).toLowerCase();
+  const h4AllowsTiming = h4Label.includes("reaction confirmed") || h4Label.includes("reaction developing");
+  if(h1Label.includes("timing supportive")){
+    if(h4AllowsTiming) return createScenarioTimeframeModifierFactor("1H timing supportive with 4H reaction context", 0.5, "support");
+    return createScenarioTimeframeModifierFactor("1H timing cannot add without supportive 4H reaction", 0, "neutral");
+  }
+  if(h1Label.includes("timing failed")) return createScenarioTimeframeModifierFactor("1H timing failed; calibration stays cautious", -0.5, "caution");
+  if(h1Label.includes("timing developing")) return createScenarioTimeframeModifierFactor("1H timing is developing", 0, "neutral");
+  if(h1Label.includes("timing waiting")) return createScenarioTimeframeModifierFactor("1H timing is waiting", 0, "neutral");
+  if(h1Label.includes("timing weak")) return createScenarioTimeframeModifierFactor("1H timing is weak", 0, "neutral");
+  return createScenarioTimeframeModifierFactor("1H timing unavailable for calibration", 0, "neutral");
+}
+function deriveScenarioTimeframeScoreModifier(plan){
+  const context = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
+  const factors = [
+    buildWeeklyScenarioTimeframeModifierFactor(plan, context),
+    buildDailyScenarioTimeframeModifierFactor(plan, context),
+    buildH4ScenarioTimeframeModifierFactor(context),
+    buildH1ScenarioTimeframeModifierFactor(context),
+  ];
+  const rawModifier = factors.reduce((sum, factor)=>sum + (Number(factor.impact) || 0), 0);
+  const modifier = capScenarioTimeframeModifier(rawModifier);
+  const cappedFactors = modifier !== rawModifier ? [...factors, createScenarioTimeframeModifierFactor("Timeframe modifier capped for conservative planning context", modifier - rawModifier, modifier > rawModifier ? "support" : "caution")] : factors;
+  return { scenarioTimeframeModifier: modifier, scenarioTimeframeModifierFactors: cappedFactors.map((factor)=>({ ...factor })) };
+}
+function addScenarioTimeframeScoreCalibration(plans){
+  return (Array.isArray(plans) ? plans : []).map((plan)=>{
+    const baseScore = normalizeScenarioScore(plan?.scenarioScore);
+    const baseLabel = plan?.scenarioScoreLabel || getScenarioScoreLabel(baseScore);
+    const modifierResult = deriveScenarioTimeframeScoreModifier(plan);
+    const calibratedScore = baseScore === null ? null : normalizeScenarioCalibratedScore(baseScore + modifierResult.scenarioTimeframeModifier);
+    return {
+      ...plan,
+      scenarioBaseScore: baseScore,
+      scenarioBaseScoreLabel: baseLabel,
+      scenarioTimeframeModifier: modifierResult.scenarioTimeframeModifier,
+      scenarioTimeframeModifierFactors: modifierResult.scenarioTimeframeModifierFactors,
+      scenarioCalibratedScore: calibratedScore,
+      scenarioCalibratedScoreLabel: getScenarioCalibratedScoreLabel(calibratedScore),
+    };
+  });
+}
+function formatScenarioScoreValue(score){
+  const normalized = normalizeScenarioCalibratedScore(score);
+  if(normalized === null) return "—";
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(1);
+}
+function formatScenarioTimeframeModifierValue(value){
+  const modifier = capScenarioTimeframeModifier(value);
+  return `${modifier > 0 ? "+" : ""}${Number.isInteger(modifier) ? modifier.toFixed(0) : modifier.toFixed(1)}`;
+}
+function formatScenarioCalibratedScoreBlock(plan){
+  const baseScore = plan?.scenarioBaseScore ?? normalizeScenarioScore(plan?.scenarioScore);
+  const baseLabel = plan?.scenarioBaseScoreLabel || plan?.scenarioScoreLabel || getScenarioScoreLabel(baseScore);
+  const modifier = capScenarioTimeframeModifier(plan?.scenarioTimeframeModifier);
+  const calibratedScore = plan?.scenarioCalibratedScore ?? (baseScore === null ? null : normalizeScenarioCalibratedScore(baseScore + modifier));
+  const calibratedLabel = plan?.scenarioCalibratedScoreLabel || getScenarioCalibratedScoreLabel(calibratedScore);
+  const factors = Array.isArray(plan?.scenarioTimeframeModifierFactors) ? plan.scenarioTimeframeModifierFactors.slice(0, 5) : [];
+  return `
+    <div class="scenario-planning-block scenario-timeframe-calibration">
+      <span>Timeframe Calibration</span>
+      <div class="scenario-timeframe-calibration-grid">
+        <div><small>Base score</small><strong>${escapeHtml(formatScenarioScoreValue(baseScore))} / 10</strong><em>${escapeHtml(baseLabel)}</em></div>
+        <div><small>Timeframe modifier</small><strong>${escapeHtml(formatScenarioTimeframeModifierValue(modifier))}</strong><em>Capped −2 to +2</em></div>
+        <div><small>Calibrated context</small><strong>${escapeHtml(formatScenarioScoreValue(calibratedScore))} / 10</strong><em>${escapeHtml(calibratedLabel)}</em></div>
+      </div>
+      ${factors.length ? `<ul class="scenario-timeframe-calibration-factors">${factors.map((factor)=>`<li class="scenario-timeframe-calibration-${escapeHtml(factor.type || "neutral")}"><strong>${escapeHtml(formatScenarioTimeframeModifierValue(factor.impact))}</strong>${escapeHtml(factor.label || "Timeframe calibration context")}</li>`).join("")}</ul>` : ""}
+      <p class="scenario-timeframe-calibration-note">Planning context only · does not affect Primary Scenario or Confirmation Status</p>
+    </div>
+  `;
+}
 function formatScenarioTimeframeScoreFactors(plan){
   const factors = Array.isArray(plan?.scenarioTimeframeScoreFactors) && plan.scenarioTimeframeScoreFactors.length ? plan.scenarioTimeframeScoreFactors.slice(0, 4) : buildScenarioTimeframeScoreFactors(plan).slice(0, 4);
   return `
@@ -6544,6 +6682,7 @@ function formatScenarioPlanningCard(plan){
       <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
       ${formatScenarioScoreBlock(plan)}
       ${formatScenarioTimeframeScoreFactors(plan)}
+      ${formatScenarioCalibratedScoreBlock(plan)}
       ${formatScenarioTimeframeContextBlock(plan)}
       <div class="scenario-planning-grid">
         <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
@@ -6580,7 +6719,8 @@ function renderMultiScenarioPlanningSection(mapData){
   const plansWithScore = addDerivedScenarioScore(plansWithPrimary, snapshot);
   const timeframeContext = buildScenarioTimeframeContextSnapshot();
   const plansWithTimeframeContext = addScenarioTimeframeContext(plansWithScore, timeframeContext);
-  const plans = addScenarioTimeframeScoreFactors(plansWithTimeframeContext);
+  const plansWithTimeframeFactors = addScenarioTimeframeScoreFactors(plansWithTimeframeContext);
+  const plans = addScenarioTimeframeScoreCalibration(plansWithTimeframeFactors);
   els.multiScenarioPlanningPanel.innerHTML = formatMultiScenarioPlanningSection(plans);
 }
 
@@ -6609,6 +6749,111 @@ function buildScenarioTimeframeFixtureSnapshot(){
   };
 }
 
+
+function runScenarioTimeframeCalibrationFixtureTests(){
+  const makePlan = (direction, contexts, score = 5)=>({
+    direction,
+    scenarioScore: score,
+    scenarioScoreLabel: getScenarioScoreLabel(score),
+    scenarioScoreFactors: [{ label: "Fixture base factor", impact: score }],
+    timeframeContext: buildScenarioTimeframeContextSnapshot(contexts),
+  });
+  const calibrateOne = (plan)=>addScenarioTimeframeScoreCalibration([plan])[0];
+  const weeklyAligned = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: null, h4: null, h1: null }));
+  const weeklyConflict = calibrateOne(makePlan("bearish", { weekly: { status: "Bullish Structure" }, daily: null, h4: null, h1: null }));
+  const dailyAligned = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: null, h1: null }));
+  const dailyMismatched = calibrateOne(makePlan("bullish", { weekly: { status: "Bearish Structure" }, daily: { status: "Aligns With Weekly" }, h4: null, h1: null }));
+  const dailyConflict = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: { status: "Conflicts With Weekly" }, h4: null, h1: null }));
+  const dailyTransition = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: { status: "Transition / Mixed" }, h4: null, h1: null }));
+  const h4Failed = calibrateOne(makePlan("bullish", { weekly: null, daily: null, h4: { status: "Failed Reaction" }, h1: { status: "Timing Supportive" } }));
+  const h4BlockingStatuses = ["Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable", "Waiting for Reaction"];
+  const h1Blocked = h4BlockingStatuses.map((status)=>calibrateOne(makePlan("bullish", { weekly: null, daily: null, h4: { status }, h1: { status: "Timing Supportive" } })));
+  const h1Supported = ["Reaction Confirmed", "Reaction Developing"].map((status)=>calibrateOne(makePlan("bullish", { weekly: null, daily: null, h4: { status }, h1: { status: "Timing Supportive" } })));
+  const positiveCap = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Developing" }, h1: { status: "Timing Supportive" } }, 5));
+  const negativeCap = calibrateOne(makePlan("bullish", { weekly: { status: "Bearish Structure" }, daily: { status: "Conflicts With Weekly" }, h4: { status: "Failed Reaction" }, h1: { status: "Timing Failed" } }, 5));
+  const clampedHigh = calibrateOne(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: { status: "Aligns With Weekly" }, h4: { status: "Reaction Developing" }, h1: { status: "Timing Supportive" } }, 9));
+  const clampedLow = calibrateOne(makePlan("bullish", { weekly: { status: "Bearish Structure" }, daily: { status: "Conflicts With Weekly" }, h4: { status: "Failed Reaction" }, h1: { status: "Timing Failed" } }, 1));
+  const unsafeHtml = formatScenarioCalibratedScoreBlock(positiveCap);
+  const forbidden = /buy score|sell score|entry score|signal score|best trade|guaranteed|high probability trade|must enter|must exit/i;
+  const getImpact = (plan, startsWith)=>plan.scenarioTimeframeModifierFactors.find((factor)=>String(factor.label || "").startsWith(startsWith))?.impact;
+  const cases = [
+    { name: "base score remains equal to existing scenarioScore", passed: weeklyAligned.scenarioBaseScore === weeklyAligned.scenarioScore && weeklyAligned.scenarioBaseScoreLabel === weeklyAligned.scenarioScoreLabel },
+    { name: "Weekly aligned context adds no more than +1", passed: getImpact(weeklyAligned, "Weekly bullish") === 1 },
+    { name: "Weekly conflict subtracts no more than -1", passed: getImpact(weeklyConflict, "Weekly bullish") === -1 },
+    { name: "Daily Aligns adds only when Weekly direction matches scenario", passed: getImpact(dailyAligned, "Daily validation aligns") === 1 && getImpact(dailyMismatched, "Daily alignment") === 0 },
+    { name: "Daily Conflicts subtracts no more than -1", passed: getImpact(dailyConflict, "Daily validation conflicts") === -1 },
+    { name: "Daily Transition / Mixed adds zero", passed: getImpact(dailyTransition, "Daily validation remains transitional") === 0 },
+    { name: "4H Failed Reaction subtracts and blocks 1H optimism", passed: getImpact(h4Failed, "4H reaction failed") === -1 && getImpact(h4Failed, "1H timing cannot") === 0 },
+    { name: "1H Timing Supportive adds zero if 4H is not supportive", passed: h1Blocked.every((plan)=>getImpact(plan, "1H timing cannot") === 0) },
+    { name: "1H Timing Supportive adds at most +0.5 with supportive 4H", passed: h1Supported.every((plan)=>getImpact(plan, "1H timing supportive") === 0.5) },
+    { name: "total positive timeframe modifier is capped at +2", passed: positiveCap.scenarioTimeframeModifier === 2 },
+    { name: "total negative timeframe modifier is capped at -2", passed: negativeCap.scenarioTimeframeModifier === -2 },
+    { name: "calibrated score remains clamped zero to ten", passed: clampedHigh.scenarioCalibratedScore === 10 && clampedLow.scenarioCalibratedScore === 0 },
+    { name: "calibrated score is stored separately from scenarioScore", passed: positiveCap.scenarioCalibratedScore !== positiveCap.scenarioScore && positiveCap.scenarioScore === 5 },
+    { name: "no unsafe wording appears", passed: !forbidden.test(JSON.stringify(positiveCap.scenarioTimeframeModifierFactors) + unsafeHtml) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runScenarioTimeframeCalibrationNoImpactFixtureTests(){
+  const snapshot = buildScenarioTimeframeFixtureSnapshot();
+  const rowsBefore = JSON.stringify({ upsideRows: snapshot.upsideRows, downsideRows: snapshot.downsideRows });
+  const basePlans = buildMultiScenarioPlansFromSnapshot(snapshot).map((plan)=>addDerivedScenarioConfirmation(plan, snapshot));
+  const withPrimary = addDerivedPrimaryScenarioFlags(basePlans, snapshot);
+  const withScore = addDerivedScenarioScore(withPrimary, snapshot);
+  const timeframeContext = buildScenarioTimeframeContextSnapshot({
+    weekly: { status: "Bullish Structure" },
+    daily: { status: "Aligns With Weekly" },
+    h4: { status: "Reaction Developing" },
+    h1: { status: "Timing Supportive" },
+  });
+  const contextBefore = JSON.stringify(timeframeContext);
+  const plansBefore = JSON.stringify(withScore);
+  const projection = (plans)=>plans.map((plan)=>({
+    scenarioId: plan.scenarioId,
+    isPrimaryScenario: !!plan.isPrimaryScenario,
+    primaryScenarioLabel: plan.primaryScenarioLabel || null,
+    confirmationStatus: plan.confirmationStatus || null,
+    confirmationStatusLabel: plan.confirmationStatusLabel || null,
+    scenarioScore: plan.scenarioScore,
+    scenarioScoreLabel: plan.scenarioScoreLabel,
+    scenarioScoreFactors: plan.scenarioScoreFactors,
+    scenarioZone: plan.scenarioZone,
+    invalidationReference: plan.invalidationReference,
+    tp1: plan.tp1,
+    tp2: plan.tp2,
+    tp3: plan.tp3,
+    confirmationRequirements: plan.confirmationRequirements,
+    riskNotes: plan.riskNotes,
+  }));
+  const beforeProjection = JSON.stringify(projection(withScore));
+  const withContext = addScenarioTimeframeContext(withScore, timeframeContext);
+  const withFactors = addScenarioTimeframeScoreFactors(withContext);
+  const withCalibration = addScenarioTimeframeScoreCalibration(withFactors);
+  const afterProjection = JSON.stringify(projection(withCalibration));
+  const primaryBefore = withScore.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const primaryAfter = withCalibration.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|");
+  const cases = [
+    { name: "existing scenarioScore remains unchanged", passed: withScore.every((plan, index)=>plan.scenarioScore === withCalibration[index].scenarioScore) },
+    { name: "existing scenarioScoreLabel remains unchanged", passed: withScore.every((plan, index)=>plan.scenarioScoreLabel === withCalibration[index].scenarioScoreLabel) },
+    { name: "existing scenarioScoreFactors remain unchanged", passed: withScore.every((plan, index)=>JSON.stringify(plan.scenarioScoreFactors) === JSON.stringify(withCalibration[index].scenarioScoreFactors)) },
+    { name: "Primary Scenario selection remains unchanged", passed: primaryBefore === primaryAfter },
+    { name: "Confirmation Status remains unchanged", passed: withScore.every((plan, index)=>plan.confirmationStatus === withCalibration[index].confirmationStatus && plan.confirmationStatusLabel === withCalibration[index].confirmationStatusLabel) },
+    { name: "Scenario order remains unchanged", passed: withScore.map((plan)=>plan.scenarioId).join("|") === withCalibration.map((plan)=>plan.scenarioId).join("|") },
+    { name: "Scenario Zone and references remain unchanged", passed: beforeProjection === afterProjection },
+    { name: "Market Map rows are unchanged", passed: rowsBefore === JSON.stringify({ upsideRows: snapshot.upsideRows, downsideRows: snapshot.downsideRows }) },
+    { name: "source contexts are not mutated", passed: contextBefore === JSON.stringify(timeframeContext) },
+    { name: "source scenario plans are not mutated", passed: plansBefore === JSON.stringify(withScore) && withScore.every((plan)=>!plan.timeframeContext && !plan.scenarioTimeframeModifierFactors && plan.scenarioCalibratedScore === undefined) },
+    { name: "calibration fields are separate", passed: withCalibration.every((plan)=>plan.scenarioBaseScore === plan.scenarioScore && plan.scenarioCalibratedScore !== undefined) },
+    { name: "calibrated score does not alter projection", passed: beforeProjection === afterProjection },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runScenarioTimeframeCalibrationFixtureTests = runScenarioTimeframeCalibrationFixtureTests;
+  window.runScenarioTimeframeCalibrationNoImpactFixtureTests = runScenarioTimeframeCalibrationNoImpactFixtureTests;
+}
 function runScenarioTimeframeScoreFactorsFixtureTests(){
   const makePlan = (direction, contexts)=>({ direction, timeframeContext: buildScenarioTimeframeContextSnapshot(contexts) });
   const weeklyAligned = buildScenarioTimeframeScoreFactors(makePlan("bullish", { weekly: { status: "Bullish Structure" }, daily: null, h4: null, h1: null }))[0];
