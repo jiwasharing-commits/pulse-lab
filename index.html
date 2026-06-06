@@ -113,6 +113,10 @@
                   </div>
                   <p class="engine-map-empty">4H reaction context is loading.</p>
                 </section>
+                <section id="h4LiquiditySummaryPanel" class="context-summary-card" aria-live="polite">
+                  <div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div></div>
+                  <p class="context-summary-empty">H4 liquidity context unavailable.</p>
+                </section>
               </div>
               <div id="timeframeContextPanelH1" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabH1" data-timeframe-panel="h1" hidden>
                 <section id="h1TimingContextPanel" class="h1-timing-context-card" aria-live="polite">
@@ -127,11 +131,7 @@
               </div>
             </div>
           </section>
-          <section id="h4LiquiditySummaryPanel" class="context-summary-card" aria-live="polite">
-            <div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div></div>
-            <p class="context-summary-empty">H4 liquidity context unavailable.</p>
-          </section>
-          <details id="h4LiquidityDiagnosticsPanel" class="h4-liquidity-diagnostics-panel">
+          <details id="h4LiquidityDiagnosticsPanel" class="h4-liquidity-diagnostics-panel" hidden>
             <summary id="h4LiquidityDiagnosticsSummary" class="h4-liquidity-diagnostics-summary">
               <span>H4 Liquidity Diagnostics</span>
               <small>Read-only diagnostics. Not an entry signal.</small>

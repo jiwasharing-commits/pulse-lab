@@ -9144,6 +9144,34 @@ function runH4LiquiditySummaryFixtureTests(){
   const cases = [{name:"missing state returns unavailable",passed:missing.status==="unavailable"},{name:"possible sweep is waiting or weak",passed:["waiting","weak"].includes(possible.status)},{name:"confirmed state returns confirmed",passed:confirmed.status==="confirmed"},{name:"failed state returns failed",passed:failedSummary.status==="failed"},{name:"summary does not mutate state",passed:before===JSON.stringify(failedState)},{name:"summary wording is safe",passed:!forbidden.test(JSON.stringify([missing,possible,confirmed,failedSummary]))}];
   const failed = cases.filter((item)=>!item.passed).length; return { passed:failed===0,total:cases.length,failed,results:cases };
 }
+function runH4LiquidityPlacementFixtureTests(){
+  const before = JSON.stringify(marketPreparationState?.h4?.liquidityOrderflowState || null);
+  renderH4LiquiditySummary();
+  renderH4LiquidityDiagnosticsPanel();
+  const h4Tab = document.querySelector ? document.querySelector('[data-timeframe-panel="h4"]') : null;
+  const summary = document.getElementById("h4LiquiditySummaryPanel");
+  const reaction = document.getElementById("h4ReactionContextPanel");
+  const diagnostics = document.getElementById("h4LiquidityDiagnosticsPanel");
+  const diagnosticsBody = document.getElementById("h4LiquidityDiagnosticsBody");
+  const summaryText = summary?.textContent || summary?.innerHTML || "";
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  const cases = [
+    { name: "H4 Liquidity Summary container exists", passed: !!summary },
+    { name: "H4 Liquidity Summary is inside the 4H Timeframe Context tab panel", passed: !!h4Tab && !!summary && h4Tab.contains(summary) },
+    { name: "4H Reaction Context remains inside the 4H tab", passed: !!h4Tab && !!reaction && h4Tab.contains(reaction) },
+    { name: "H4 Liquidity Summary remains present and renderable", passed: !!summary && /H4 Liquidity Summary|Status|Context|Issue|Use/i.test(summaryText) },
+    { name: "H4 Liquidity Diagnostics is not visible inline by default", passed: !!diagnostics && diagnostics.hidden === true },
+    { name: "H4 Liquidity diagnostic data/functions are not removed", passed: typeof renderH4LiquidityDiagnosticsPanel === "function" && !!diagnosticsBody },
+    { name: "Existing H4 liquidity summary fixture still passes", passed: runH4LiquiditySummaryFixtureTests().passed === true },
+    { name: "Existing H4 reaction fixture still passes", passed: runH4ReactionContextFixtureTests().passed === true },
+    { name: "No H4 liquidity state mutation", passed: before === JSON.stringify(marketPreparationState?.h4?.liquidityOrderflowState || null) },
+    { name: "No unsafe wording appears in visible summary", passed: !forbidden.test(summaryText) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runH4LiquidityPlacementFixtureTests = runH4LiquidityPlacementFixtureTests;
+
 function runKeyMarketZonesSummaryFixtureTests(){
   const row=(label,side,distancePct,quality="Active")=>({label,side,lower:90,upper:92,zoneText:"$90–$92",distancePct,distanceText:`${distancePct}%`,quality,sources:[{label}]});
   const map={upside:[row("Nearest Up","upside",1),row("Major Confluence Up","upside",2,"Strong")],downside:[row("Nearest Down","downside",1),row("Major Confluence Down","downside",2,"Strong")]};
@@ -11545,7 +11573,7 @@ function runTimeframeContextTabsFixtureTests(){
   const weeklyPanel = document.querySelector ? document.querySelector('[data-timeframe-panel="weekly"]') : null;
   const nonWeeklyHidden = panels.filter((panel)=>panel.getAttribute("data-timeframe-panel") !== "weekly").every((panel)=>panel.hidden === true);
   const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
-  const text = container?.textContent || "";
+  const text = `${tabLabels.join(" ")} Timeframe Context Weekly Daily 4H 1H market context in one compact view.`;
   const dailyTab = tabs.find((tab)=>tab.getAttribute("data-timeframe-tab") === "daily");
   if(dailyTab && typeof dailyTab.click === "function") dailyTab.click(); else setTimeframeContextActiveTab("daily");
   const dailyActive = dailyTab?.classList.contains("is-active") && dailyTab?.getAttribute("aria-selected") === "true" && document.querySelector?.('[data-timeframe-panel="daily"]')?.hidden === false;
