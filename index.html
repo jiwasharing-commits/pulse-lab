@@ -67,41 +67,65 @@
               <p class="mini-line" id="mtf1hTiming">1H Timing: waiting</p>
             </article>
           </div>
-          <section id="weeklyMajorStructurePanel" class="weekly-major-structure-card" aria-live="polite">
-            <div class="engine-map-header">
+          <section id="timeframeContextTabs" class="timeframe-context-tabs" aria-label="Timeframe Context">
+            <div class="timeframe-context-tabs-header">
               <div>
-                <h3>Weekly Major Structure</h3>
-                <p>Major Context only · structure planning reference.</p>
+                <h3>Timeframe Context</h3>
+                <p>Weekly, Daily, 4H, and 1H market context in one compact view.</p>
               </div>
             </div>
-            <p class="engine-map-empty">Weekly major structure context is loading.</p>
-          </section>
-          <section id="dailyValidationFoundationPanel" class="daily-validation-foundation-card" aria-live="polite">
-            <div class="engine-map-header">
-              <div>
-                <h3>Daily Validation Alignment</h3>
-                <p>Display-only validation of Daily structure against Weekly Major Structure.</p>
+            <div class="timeframe-context-tab-list" role="tablist" aria-label="Timeframe Context Tabs">
+              <button id="timeframeContextTabWeekly" class="timeframe-context-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="timeframeContextPanelWeekly" data-timeframe-tab="weekly">Weekly</button>
+              <button id="timeframeContextTabDaily" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelDaily" data-timeframe-tab="daily">Daily</button>
+              <button id="timeframeContextTabH4" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelH4" data-timeframe-tab="h4">4H</button>
+              <button id="timeframeContextTabH1" class="timeframe-context-tab" type="button" role="tab" aria-selected="false" aria-controls="timeframeContextPanelH1" data-timeframe-tab="h1">1H</button>
+            </div>
+            <div class="timeframe-context-tab-panels">
+              <div id="timeframeContextPanelWeekly" class="timeframe-context-tab-panel is-active" role="tabpanel" aria-labelledby="timeframeContextTabWeekly" data-timeframe-panel="weekly">
+                <section id="weeklyMajorStructurePanel" class="weekly-major-structure-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>Weekly Major Structure</h3>
+                      <p>Major Context only · structure planning reference.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">Weekly major structure context is loading.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelDaily" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabDaily" data-timeframe-panel="daily" hidden>
+                <section id="dailyValidationFoundationPanel" class="daily-validation-foundation-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>Daily Validation Alignment</h3>
+                      <p>Display-only validation of Daily structure against Weekly Major Structure.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">Daily validation foundation is loading.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelH4" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabH4" data-timeframe-panel="h4" hidden>
+                <section id="h4ReactionContextPanel" class="h4-reaction-context-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>4H Reaction Context</h3>
+                      <p>Display-only reaction context against higher-timeframe and Market Map zones.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">4H reaction context is loading.</p>
+                </section>
+              </div>
+              <div id="timeframeContextPanelH1" class="timeframe-context-tab-panel" role="tabpanel" aria-labelledby="timeframeContextTabH1" data-timeframe-panel="h1" hidden>
+                <section id="h1TimingContextPanel" class="h1-timing-context-card" aria-live="polite">
+                  <div class="engine-map-header">
+                    <div>
+                      <h3>1H Timing Context</h3>
+                      <p>Display-only timing refinement against the current 4H Reaction Context.</p>
+                    </div>
+                  </div>
+                  <p class="engine-map-empty">1H timing context is loading.</p>
+                </section>
               </div>
             </div>
-            <p class="engine-map-empty">Daily validation foundation is loading.</p>
-          </section>
-          <section id="h4ReactionContextPanel" class="h4-reaction-context-card" aria-live="polite">
-            <div class="engine-map-header">
-              <div>
-                <h3>4H Reaction Context</h3>
-                <p>Display-only reaction context against higher-timeframe and Market Map zones.</p>
-              </div>
-            </div>
-            <p class="engine-map-empty">4H reaction context is loading.</p>
-          </section>
-          <section id="h1TimingContextPanel" class="h1-timing-context-card" aria-live="polite">
-            <div class="engine-map-header">
-              <div>
-                <h3>1H Timing Context</h3>
-                <p>Display-only timing refinement against the current 4H Reaction Context.</p>
-              </div>
-            </div>
-            <p class="engine-map-empty">1H timing context is loading.</p>
           </section>
           <section id="h4LiquiditySummaryPanel" class="context-summary-card" aria-live="polite">
             <div class="context-summary-header"><div><h3>H4 Liquidity Summary</h3><p>Read-only confirmation and diagnostic context.</p></div></div>

@@ -11504,9 +11504,82 @@ function runTimeframeRoleModalFixtureTests(){
 }
 if(typeof window !== "undefined") window.runTimeframeRoleModalFixtureTests = runTimeframeRoleModalFixtureTests;
 
+const TIMEFRAME_CONTEXT_TAB_KEYS = ["weekly", "daily", "h4", "h1"];
+function getTimeframeContextTabsElements(){
+  const container = document.getElementById("timeframeContextTabs");
+  const tabs = Array.from(document.querySelectorAll ? document.querySelectorAll("[data-timeframe-tab]") : []);
+  const panels = Array.from(document.querySelectorAll ? document.querySelectorAll("[data-timeframe-panel]") : []);
+  return { container, tabs, panels };
+}
+function setTimeframeContextActiveTab(key = "weekly"){
+  const normalized = TIMEFRAME_CONTEXT_TAB_KEYS.includes(key) ? key : "weekly";
+  const { tabs, panels } = getTimeframeContextTabsElements();
+  tabs.forEach((tab)=>{
+    const active = tab.getAttribute("data-timeframe-tab") === normalized;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  panels.forEach((panel)=>{
+    const active = panel.getAttribute("data-timeframe-panel") === normalized;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+}
+function bindTimeframeContextTabs(){
+  const { tabs } = getTimeframeContextTabsElements();
+  tabs.forEach((tab)=>{
+    tab.addEventListener("click", ()=>setTimeframeContextActiveTab(tab.getAttribute("data-timeframe-tab") || "weekly"));
+  });
+  setTimeframeContextActiveTab("weekly");
+}
+function runTimeframeContextTabsFixtureTests(){
+  const before = JSON.stringify({
+    weekly: latestWeeklyMajorStructureContext,
+    daily: latestDailyValidationContext,
+    h4: latestH4ReactionContext,
+    h1: latestH1TimingContext,
+  });
+  const { container, tabs, panels } = getTimeframeContextTabsElements();
+  const tabLabels = tabs.map((tab)=>String(tab.textContent || "").trim());
+  const panelIdsPresent = ["weeklyMajorStructurePanel", "dailyValidationFoundationPanel", "h4ReactionContextPanel", "h1TimingContextPanel"].every((id)=>!!document.getElementById(id));
+  const weeklyPanel = document.querySelector ? document.querySelector('[data-timeframe-panel="weekly"]') : null;
+  const nonWeeklyHidden = panels.filter((panel)=>panel.getAttribute("data-timeframe-panel") !== "weekly").every((panel)=>panel.hidden === true);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|best trade|must enter|must exit|best setup/i;
+  const text = container?.textContent || "";
+  const dailyTab = tabs.find((tab)=>tab.getAttribute("data-timeframe-tab") === "daily");
+  if(dailyTab && typeof dailyTab.click === "function") dailyTab.click(); else setTimeframeContextActiveTab("daily");
+  const dailyActive = dailyTab?.classList.contains("is-active") && dailyTab?.getAttribute("aria-selected") === "true" && document.querySelector?.('[data-timeframe-panel="daily"]')?.hidden === false;
+  setTimeframeContextActiveTab("weekly");
+  const weeklyActive = document.getElementById("timeframeContextTabWeekly")?.classList.contains("is-active") && weeklyPanel?.hidden === false;
+  const after = JSON.stringify({
+    weekly: latestWeeklyMajorStructureContext,
+    daily: latestDailyValidationContext,
+    h4: latestH4ReactionContext,
+    h1: latestH1TimingContext,
+  });
+  const cases = [
+    { name: "Timeframe Context tab container renders", passed: !!container },
+    { name: "Weekly, Daily, 4H, and 1H tab buttons render", passed: ["Weekly", "Daily", "4H", "1H"].every((label)=>tabLabels.includes(label)) },
+    { name: "Weekly tab is active by default", passed: !!weeklyActive },
+    { name: "Weekly Major Structure container remains present", passed: !!document.getElementById("weeklyMajorStructurePanel") },
+    { name: "Daily Validation container remains present", passed: !!document.getElementById("dailyValidationFoundationPanel") },
+    { name: "4H Reaction container remains present", passed: !!document.getElementById("h4ReactionContextPanel") },
+    { name: "1H Timing container remains present", passed: !!document.getElementById("h1TimingContextPanel") },
+    { name: "Non-active panels are hidden by default", passed: nonWeeklyHidden },
+    { name: "Clicking tab changes active state", passed: !!dailyActive },
+    { name: "Existing context render containers are preserved", passed: panelIdsPresent },
+    { name: "No unsafe wording appears", passed: !forbidden.test(text) },
+    { name: "Context data is not mutated", passed: before === after },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runTimeframeContextTabsFixtureTests = runTimeframeContextTabsFixtureTests;
+
 function setupCollapsibleSections(){
   bindEngineMapModalEvents();
   bindTimeframeRoleModalControls();
+  bindTimeframeContextTabs();
   els.ltfToggleBtn?.addEventListener('click', async ()=>{ setToggleState('ltf', !ltfVisible); if(ltfVisible){ requestAnimationFrame(()=>{ if(!lowerTimeframeLoaded){ setDailyPresetUI(dailyPreset || '3m'); setLtfPresetUI('3m'); renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode('3M'); } else { const m={ '1w':'1W','2w':'2W','1m':'1M','3m':'3M' }; renderDailyRangeMode(activeDailyRange); renderLowerTimeframeMode(m[ltfPreset] || '3M'); } }); } else destroyLtfCharts(); });
   els.fvgToggleBtn?.addEventListener('click', ()=>setToggleState('fvg', !fvgOpen));
   els.biasToggleBtn?.addEventListener('click', ()=>setToggleState('bias', !biasOpen));
