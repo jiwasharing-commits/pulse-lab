@@ -140,42 +140,44 @@
               <p class="h4-liquidity-diagnostics-empty">H4 liquidity diagnostics unavailable.</p>
             </div>
           </details>
-          <section id="keyMarketZonesSummaryPanel" class="context-summary-card key-market-zones-summary" aria-live="polite">
-            <div class="context-summary-header"><div><h3>Key Market Zones Summary</h3><p>Market Map reference zones · for review only.</p></div></div>
-            <p class="context-summary-empty">Key market zone context unavailable.</p>
-          </section>
-          <details id="marketPreparationMapDetails" class="market-map-details">
-            <summary>Market Preparation Map Details <small>Show Full Market Map · zone database and planning references</small></summary>
-            <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
-            <div class="panel-header compact-header">
-              <div>
-                <h3>Market Preparation Map</h3>
-                <p>Weekly + 4H + 1H preparation ladder</p>
-              </div>
-              <button id="exportPdfBtn" class="refresh-btn secondary chart-tool-btn" type="button">Export PDF</button>
-            </div>
-            <div class="prep-map-group">
-              <p class="prep-map-title">Upside Watch</p>
-              <div id="prepUpsideRows" class="prep-map-rows">
-                <p class="prep-map-empty">No upside watch levels available.</p>
-              </div>
-            </div>
-            <div class="prep-map-group prep-map-current">
-              <p class="prep-map-title">Current Price</p>
-              <div id="prepCurrentRow" class="prep-map-current-row">● Price unavailable</div>
-              <button id="prepCurrentDetailToggle" class="refresh-btn secondary chart-tool-btn" type="button">Details</button>
-              <div id="prepCurrentDetail" class="prep-current-detail" hidden>
-                <div id="prepCurrentDetailContent" class="prep-current-detail-grid"></div>
-              </div>
-            </div>
-            <div class="prep-map-group">
-              <p class="prep-map-title">Downside Watch</p>
-              <div id="prepDownsideRows" class="prep-map-rows">
-                <p class="prep-map-empty">No downside watch levels available.</p>
-              </div>
-            </div>
+          <section id="keyMarketZonesPanel" class="key-market-zones-panel" aria-label="Key Market Zones">
+            <section id="keyMarketZonesSummaryPanel" class="context-summary-card key-market-zones-summary" aria-live="polite">
+              <div class="context-summary-header"><div><h3>Key Market Zones</h3><p>Market Map reference zones · for review only.</p></div></div>
+              <p class="context-summary-empty">Key market zone context unavailable.</p>
             </section>
-          </details>
+            <details id="marketPreparationMapDetails" class="market-map-details key-market-zones-details">
+              <summary>View Full Market Map <small>Market Preparation Map · zone database and planning references</small></summary>
+              <section class="panel mini-panel prep-map-card" id="marketPreparationMapCard">
+              <div class="panel-header compact-header">
+                <div>
+                  <h3>Market Preparation Map</h3>
+                  <p>Weekly + 4H + 1H preparation ladder</p>
+                </div>
+                <button id="exportPdfBtn" class="refresh-btn secondary chart-tool-btn" type="button">Export PDF</button>
+              </div>
+              <div class="prep-map-group">
+                <p class="prep-map-title">Upside Watch</p>
+                <div id="prepUpsideRows" class="prep-map-rows">
+                  <p class="prep-map-empty">No upside watch levels available.</p>
+                </div>
+              </div>
+              <div class="prep-map-group prep-map-current">
+                <p class="prep-map-title">Current Price</p>
+                <div id="prepCurrentRow" class="prep-map-current-row">● Price unavailable</div>
+                <button id="prepCurrentDetailToggle" class="refresh-btn secondary chart-tool-btn" type="button">Details</button>
+                <div id="prepCurrentDetail" class="prep-current-detail" hidden>
+                  <div id="prepCurrentDetailContent" class="prep-current-detail-grid"></div>
+                </div>
+              </div>
+              <div class="prep-map-group">
+                <p class="prep-map-title">Downside Watch</p>
+                <div id="prepDownsideRows" class="prep-map-rows">
+                  <p class="prep-map-empty">No downside watch levels available.</p>
+                </div>
+              </div>
+              </section>
+            </details>
+          </section>
           <section id="multiScenarioPlanningPanel" class="scenario-planning-card" aria-live="polite">
             <div class="scenario-planning-header">
               <div>
