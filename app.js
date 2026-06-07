@@ -4075,11 +4075,160 @@ function calibrateWeeklyStructureStatus(context){
     riskNotes: [...buildWeeklyStructureConflictRiskNotes(context), ...(context.riskNotes || [])],
   };
 }
-function buildWeeklyMajorFvgContext(weeklyState = marketPreparationState.weekly){
+function normalizeWeeklyFvgContextStatus(detail){
+  const ifvgState = detail?.ifvg?.state;
+  if(ifvgState && ifvgState !== IFVG_STATE.NONE) return "IFVG / Inversion context";
+  const text = String(detail?.detailStatus || detail?.status || detail?.baseStatus || "").trim();
+  if(/broken/i.test(text)) return "Broken";
+  if(/filled/i.test(text)) return "Filled";
+  if(/partial|mitigated|50%|touched/i.test(text)) return "Partial";
+  if(/fresh|active/i.test(text)) return "Active";
+  return text || "Active";
+}
+function isWeeklyFvgActiveContextDetail(detail){
+  const status = normalizeWeeklyFvgContextStatus(detail);
+  return !["Broken", "Filled"].includes(status);
+}
+function getWeeklyFvgContextRange(detail){
+  const zone = getFvgDetailZone(detail);
+  return zone ? { lower: Number(zone.lower), upper: Number(zone.upper) } : null;
+}
+function doWeeklyFvgRangesOverlap(a, b){
+  if(!a || !b) return false;
+  return a.lower <= b.upper && a.upper >= b.lower;
+}
+function getWeeklyFvgContextDetails(state, timeframe){
+  const frame = timeframe === "Daily" ? state?.daily : state?.h4;
+  const active = Array.isArray(frame?.fvgDetails) ? frame.fvgDetails : [];
+  return active.filter((detail)=>getWeeklyFvgContextRange(detail) && isWeeklyFvgActiveContextDetail(detail));
+}
+function buildWeeklyFvgOverlapContext(detail, dailyDetails, h4Details){
+  const range = getWeeklyFvgContextRange(detail);
+  const dailyMatches = dailyDetails.filter((item)=>doWeeklyFvgRangesOverlap(range, getWeeklyFvgContextRange(item)));
+  const h4Matches = h4Details.filter((item)=>doWeeklyFvgRangesOverlap(range, getWeeklyFvgContextRange(item)));
+  const dailyOverlapCount = dailyMatches.length;
+  const h4OverlapCount = h4Matches.length;
+  const alignmentSources = [dailyOverlapCount ? "Daily" : null, h4OverlapCount ? "4H" : null].filter(Boolean);
+  const alignmentLabel = dailyOverlapCount && h4OverlapCount ? "Strong MTF FVG" : (dailyOverlapCount || h4OverlapCount ? "Valid MTF FVG" : "Weekly-only FVG");
+  const overlapLabel = dailyOverlapCount && h4OverlapCount ? "Daily + 4H overlap" : (dailyOverlapCount ? "Daily overlap" : (h4OverlapCount ? "4H overlap" : "Weekly-only"));
+  return { dailyOverlapCount, h4OverlapCount, alignmentSources, alignmentLabel, alignmentStatus: alignmentLabel, overlapLabel };
+}
+function formatWeeklyFvgRange(detail){
+  const range = getWeeklyFvgContextRange(detail);
+  return range ? `${usd(range.lower)}–${usd(range.upper)}` : "Range unavailable";
+}
+function formatWeeklyFvgDistance(detail, currentPrice){
+  const distance = getFvgDistancePctFromPrice(getWeeklyFvgContextRange(detail), Number(currentPrice));
+  if(distance === null || distance === undefined) return "Distance unavailable";
+  return distance === 0 ? "Inside range" : `Distance ${distance.toFixed(1)}%`;
+}
+function formatWeeklyFvgContextRowTitle(detail){
+  const label = getFvgDetailLabel(detail).replace(/^Weekly\s+/i, "");
+  return `${label} ${formatWeeklyFvgRange(detail)}`;
+}
+function buildWeeklyFvgContextRows(details, dailyDetails, h4Details, currentPrice){
+  return (details || []).filter((detail)=>getWeeklyFvgContextRange(detail)).map((detail)=>{
+    const overlap = buildWeeklyFvgOverlapContext(detail, dailyDetails, h4Details);
+    const distancePct = getFvgDistancePctFromPrice(getWeeklyFvgContextRange(detail), Number(currentPrice));
+    return {
+      key: detail.key || `${detail.timeframe || "Weekly"}-${formatWeeklyFvgRange(detail)}`,
+      title: formatWeeklyFvgContextRowTitle(detail),
+      status: normalizeWeeklyFvgContextStatus(detail),
+      distance: formatWeeklyFvgDistance(detail, currentPrice),
+      distancePct,
+      overlap: overlap.overlapLabel,
+      alignmentLabel: overlap.alignmentLabel,
+      dailyOverlapCount: overlap.dailyOverlapCount,
+      h4OverlapCount: overlap.h4OverlapCount,
+      note: overlap.alignmentLabel === "Weekly-only FVG" ? "Weekly-only FVG" : overlap.alignmentLabel,
+    };
+  });
+}
+function collectWeeklyIfvgContextRows(activeDetails, brokenDetails, currentPrice){
+  const seen = new Set();
+  return [...(brokenDetails || []), ...(activeDetails || [])]
+    .filter((detail)=>detail?.ifvg?.state && detail.ifvg.state !== IFVG_STATE.NONE)
+    .filter((detail)=>{
+      const key = detail.key || detail.ifvg?.originalFvgId || formatWeeklyFvgRange(detail);
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((detail)=>{
+      const ifvgState = detail.ifvg?.state || IFVG_STATE.POSSIBLE;
+      const stateLabel = ifvgState === IFVG_STATE.CONFIRMED ? "Confirmed" : (ifvgState === IFVG_STATE.VALID ? "Valid" : (ifvgState === IFVG_STATE.FAILED ? "Failed" : "Possible"));
+      return {
+        key: detail.key || detail.ifvg?.originalFvgId || `${detail.timeframe || "Weekly"}-${formatWeeklyFvgRange(detail)}`,
+        title: formatWeeklyFvgContextRowTitle(detail),
+        status: "IFVG / Inversion context",
+        distance: formatWeeklyFvgDistance(detail, currentPrice),
+        overlap: `${stateLabel} IFVG`,
+        note: stateLabel === "Possible" ? "Waiting retest/rejection" : "Flip-zone context",
+      };
+    });
+}
+function summarizeWeeklyFvgContextNearest(row){
+  return row ? `Nearest: ${row.title}` : "Nearest: unavailable";
+}
+function buildWeeklyMajorFvgContext(weeklyState = marketPreparationState.weekly, state = marketPreparationState){
   const details = Array.isArray(weeklyState?.fvgDetails) ? weeklyState.fvgDetails : [];
   const broken = Array.isArray(weeklyState?.recentBrokenFvgDetails?.all) ? weeklyState.recentBrokenFvgDetails.all : [];
-  if(!details.length && !broken.length) return null;
-  return { activeCount: details.length, recentBrokenCount: broken.length, source: "Weekly FVG / IFVG context" };
+  const dailyDetails = getWeeklyFvgContextDetails(state, "Daily");
+  const h4Details = getWeeklyFvgContextDetails(state, "4H");
+  const currentPrice = Number(state?.currentPrice);
+  const activeDetails = details.filter((detail)=>getWeeklyFvgContextRange(detail) && isWeeklyFvgActiveContextDetail(detail));
+  if(!activeDetails.length && !broken.length){
+    return {
+      available: false,
+      activeCount: 0,
+      recentBrokenCount: 0,
+      ifvgCount: 0,
+      dailyOverlapCount: 0,
+      h4OverlapCount: 0,
+      alignmentLabel: "Unavailable",
+      alignmentSources: [],
+      alignmentStatus: "Unavailable",
+      nearest: null,
+      activeRows: [],
+      ifvgRows: [],
+      summaryValue: "Unavailable",
+      summaryNote: "Weekly FVG context not available yet.",
+      source: "Weekly FVG / IFVG context unavailable",
+    };
+  }
+  const activeRows = buildWeeklyFvgContextRows(activeDetails, dailyDetails, h4Details, currentPrice);
+  const ifvgRows = collectWeeklyIfvgContextRows(details, broken, currentPrice);
+  const dailyOverlapCount = activeRows.filter((row)=>row.dailyOverlapCount > 0).length;
+  const h4OverlapCount = activeRows.filter((row)=>row.h4OverlapCount > 0).length;
+  const nearest = [...activeRows].sort((a,b)=>(a.distancePct ?? 999) - (b.distancePct ?? 999))[0] || null;
+  const alignmentLabel = dailyOverlapCount && h4OverlapCount ? "Strong MTF FVG" : (dailyOverlapCount || h4OverlapCount ? "Valid MTF FVG" : "Weekly-only FVG");
+  const summaryValue = `${activeRows.length} Active · ${ifvgRows.length || broken.length} IFVG`;
+  const summaryNote = `${dailyOverlapCount} Daily overlap · ${h4OverlapCount} 4H overlap · ${summarizeWeeklyFvgContextNearest(nearest)}`;
+  return {
+    available: true,
+    activeCount: activeRows.length,
+    recentBrokenCount: broken.length,
+    ifvgCount: ifvgRows.length || broken.length,
+    dailyOverlapCount,
+    h4OverlapCount,
+    alignmentLabel,
+    alignmentSources: [dailyOverlapCount ? "Daily" : null, h4OverlapCount ? "4H" : null].filter(Boolean),
+    alignmentStatus: alignmentLabel,
+    nearest,
+    activeRows,
+    ifvgRows,
+    summaryValue,
+    summaryNote,
+    source: "Weekly FVG / IFVG context",
+  };
+}
+function formatWeeklyFvgContextDetailsHtml(context){
+  if(!context || context.available === false){
+    return `<details class="weekly-fvg-context-details"><summary>Details</summary><p class="weekly-fvg-context-empty">Weekly FVG context not available yet.</p></details>`;
+  }
+  const activeRows = (context.activeRows || []).slice(0, 6).map((row)=>`<li><strong>${escapeHtml(row.title)}</strong><span>${escapeHtml(row.status)} · ${escapeHtml(row.distance)} · ${escapeHtml(row.overlap)}</span><small>${escapeHtml(row.note || row.alignmentLabel || "Planning context only")}</small></li>`).join("");
+  const ifvgRows = (context.ifvgRows || []).slice(0, 4).map((row)=>`<li><strong>${escapeHtml(row.title)}</strong><span>${escapeHtml(row.status)} · ${escapeHtml(row.overlap)}</span><small>${escapeHtml(row.note || "IFVG Context")}</small></li>`).join("");
+  return `<details class="weekly-fvg-context-details"><summary>Details</summary><div class="weekly-fvg-context-detail-block"><span>Active Weekly FVG</span><ul>${activeRows || `<li><em>No active Weekly FVG rows available.</em></li>`}</ul></div><div class="weekly-fvg-context-detail-block"><span>IFVG Context</span><ul>${ifvgRows || `<li><em>No IFVG context available.</em></li>`}</ul></div></details>`;
 }
 function normalizeWeeklyStructureRangeKey(key){
   const text = String(key || "").trim().toLowerCase();
@@ -4208,14 +4357,14 @@ function summarizeContextText(value, fallback = "Unavailable"){
   if(value && typeof value === "object") return value.label || value.status || value.name || value.summary || value.reason || fallback;
   return value === null || value === undefined || value === "" ? fallback : String(value);
 }
-function formatTimeframeContextInfoCard(label, value, note = ""){
+function formatTimeframeContextInfoCard(label, value, note = "", detailsHtml = ""){
   const safeValue = summarizeContextText(value);
   const noteHtml = note ? `<p>${escapeHtml(summarizeContextText(note, ""))}</p>` : "";
-  return `<article class="timeframe-context-info-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(safeValue)}</strong>${noteHtml}</article>`;
+  return `<article class="timeframe-context-info-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(safeValue)}</strong>${noteHtml}${detailsHtml || ""}</article>`;
 }
 function formatTimeframeContextCardGrid(cards){
   const safeCards = Array.isArray(cards) && cards.length ? cards : [{ label: "Context", value: "Unavailable", note: "Context not available yet." }];
-  return `<div class="timeframe-context-card-grid timeframe-context-card-grid-4">${safeCards.map((card)=>formatTimeframeContextInfoCard(card.label, card.value, card.note)).join("")}</div>`;
+  return `<div class="timeframe-context-card-grid timeframe-context-card-grid-4">${safeCards.map((card)=>formatTimeframeContextInfoCard(card.label, card.value, card.note, card.detailsHtml)).join("")}</div>`;
 }
 function getWeeklyContextMeaning(status){
   if(status === "Bullish Structure") return "Weekly structure leans bullish.";
@@ -4278,7 +4427,8 @@ function formatWeeklyRsiCard(dataset = weeklyDatasetCache){
 }
 function getWeeklyContextCards(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
-  const fvg = safe.majorFvgContext ? `${safe.majorFvgContext.activeCount || 0} active · ${safe.majorFvgContext.recentBrokenCount || 0} IFVG` : "FVG context unavailable";
+  const fvgContext = safe.majorFvgContext || buildWeeklyMajorFvgContext();
+  const fvg = fvgContext?.summaryValue || "Unavailable";
   const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Daily / 4H validation needed."];
   const swingStructure = safe.structureEngine?.swingStructure || safe.normalizedSwingStructure || safe.swingSequence || { status: "Unavailable", note: "Structure unavailable" };
   return [
@@ -4287,7 +4437,7 @@ function getWeeklyContextCards(context){
     { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
     { label: "Swing Structure", value: swingStructure.status || "Unavailable", note: `${swingStructure.note || getWeeklySwingStructureNote(swingStructure.status)} · ${formatWeeklyStructureRangeNote(safe)}` },
     formatWeeklyRsiCard(),
-    { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
+    { label: "FVG Context", value: fvg, note: fvgContext?.summaryNote || "Weekly FVG context not available yet.", detailsHtml: formatWeeklyFvgContextDetailsHtml(fvgContext) },
     { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
     { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
   ];
@@ -4601,6 +4751,91 @@ function runWeeklyStructureRangeSelectorFixtureTests(){
 }
 if(typeof window !== "undefined") window.runWeeklyStructureRangeSelectorFixtureTests = runWeeklyStructureRangeSelectorFixtureTests;
 
+function createWeeklyFvgContextFixtureDetail(key, direction, lower, upper, status = "Fresh", extra = {}){
+  return {
+    key,
+    timeframe: extra.timeframe || "Weekly",
+    direction,
+    baseStatus: "Active",
+    detailStatus: status,
+    cePrice: (lower + upper) / 2,
+    fillPct: status === "Partially Mitigated" ? 40 : 0,
+    sourceZone: { type: `${extra.timeframe || "Weekly"} ${direction === "bullish" ? "Bullish" : "Bearish"} FVG`, lower, upper, status: "Active" },
+    ...extra,
+  };
+}
+function createWeeklyFvgContextFixtureState(){
+  const weeklyDetails = [
+    createWeeklyFvgContextFixtureDetail("w-overlap", "bearish", 100, 110, "Fresh"),
+    createWeeklyFvgContextFixtureDetail("w-weekly-only", "bullish", 80, 90, "Partially Mitigated"),
+  ];
+  const ifvgDetail = createWeeklyFvgContextFixtureDetail("w-ifvg", "bullish", 60, 70, "Broken", { ifvg: { state: IFVG_STATE.POSSIBLE, originalFvgId: "w-ifvg" } });
+  const state = {
+    currentPrice: 95,
+    weekly: { fvgDetails: weeklyDetails, recentBrokenFvgDetails: { all: [ifvgDetail] } },
+    daily: { fvgDetails: [createWeeklyFvgContextFixtureDetail("d-overlap", "bearish", 108, 118, "Fresh", { timeframe: "Daily" })] },
+    h4: { fvgDetails: [createWeeklyFvgContextFixtureDetail("h4-overlap", "bearish", 96, 102, "Fresh", { timeframe: "4H" })] },
+    map: { upside: [{ id:"up", lower:120, upper:125 }], downside: [] },
+    tradePlanScenario: { scenarios: [{ id:"scenario-a", label:"Planning context" }] },
+  };
+  return { weeklyDetails, ifvgDetail, state };
+}
+function runWeeklyFvgContextDetailsFixtureTests(){
+  const { weeklyDetails, state } = createWeeklyFvgContextFixtureState();
+  const beforeWeekly = JSON.stringify(state.weekly.fvgDetails);
+  const beforeDaily = JSON.stringify(state.daily.fvgDetails);
+  const beforeH4 = JSON.stringify(state.h4.fvgDetails);
+  const context = buildWeeklyMajorFvgContext(state.weekly, state);
+  const card = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: context }).find((item)=>item.label === "FVG Context");
+  const html = formatWeeklyFvgContextDetailsHtml(context);
+  const fallback = buildWeeklyMajorFvgContext({ fvgDetails: [], recentBrokenFvgDetails: { all: [] } }, { currentPrice: 95, daily: { fvgDetails: [] }, h4: { fvgDetails: [] } });
+  const fallbackCard = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: fallback }).find((item)=>item.label === "FVG Context");
+  const weeklyOnlyRow = context.activeRows.find((row)=>row.key === "w-weekly-only");
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const generatedText = `${card.value} ${card.note} ${html} ${fallbackCard.value} ${fallbackCard.note}`;
+  const cases = [
+    { name:"Main FVG card renders summary", passed: /Active/.test(card.value) && /IFVG/.test(card.value) },
+    { name:"Details expand markup exists", passed: /<details/.test(html) && /<summary>Details<\/summary>/.test(html) },
+    { name:"Active Weekly FVG detail rows render", passed: /Active Weekly FVG/.test(html) && /Bearish FVG/.test(html) },
+    { name:"IFVG context detail rows render when available", passed: /IFVG Context/.test(html) && /Waiting retest\/rejection/.test(html) },
+    { name:"Daily overlap count is calculated", passed: context.dailyOverlapCount === 1 },
+    { name:"4H overlap count is calculated", passed: context.h4OverlapCount === 1 },
+    { name:"Weekly plus Daily plus 4H overlap returns Strong MTF FVG", passed: context.alignmentLabel === "Strong MTF FVG" && context.activeRows[0].alignmentLabel === "Strong MTF FVG" },
+    { name:"Weekly-only FVG returns Weekly-only FVG", passed: weeklyOnlyRow?.alignmentLabel === "Weekly-only FVG" && weeklyOnlyRow?.overlap === "Weekly-only" },
+    { name:"Missing data renders safe fallback", passed: fallback.available === false && fallbackCard.value === "Unavailable" && /not available/i.test(fallbackCard.note) },
+    { name:"No source FVG arrays are mutated", passed: JSON.stringify(state.weekly.fvgDetails) === beforeWeekly && JSON.stringify(state.daily.fvgDetails) === beforeDaily && JSON.stringify(state.h4.fvgDetails) === beforeH4 && Array.isArray(weeklyDetails) },
+    { name:"No unsafe wording appears", passed: !forbidden.test(generatedText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runWeeklyFvgContextDetailsNoImpactFixtureTests(){
+  const { state } = createWeeklyFvgContextFixtureState();
+  const beforeWeekly = JSON.stringify(state.weekly.fvgDetails);
+  const beforeDaily = JSON.stringify(state.daily.fvgDetails);
+  const beforeH4 = JSON.stringify(state.h4.fvgDetails);
+  const beforeMap = JSON.stringify(state.map);
+  const beforeScenario = JSON.stringify(state.tradePlanScenario);
+  const structureBefore = JSON.stringify(latestWeeklyMajorStructureContext?.structureEngine || null);
+  const context = buildWeeklyMajorFvgContext(state.weekly, state);
+  formatWeeklyFvgContextDetailsHtml(context);
+  const structureAfter = JSON.stringify(latestWeeklyMajorStructureContext?.structureEngine || null);
+  const cases = [
+    { name:"Weekly FVG source arrays unchanged", passed: JSON.stringify(state.weekly.fvgDetails) === beforeWeekly },
+    { name:"Daily FVG source arrays unchanged", passed: JSON.stringify(state.daily.fvgDetails) === beforeDaily },
+    { name:"4H FVG source arrays unchanged", passed: JSON.stringify(state.h4.fvgDetails) === beforeH4 },
+    { name:"Market Map rows unchanged", passed: JSON.stringify(state.map) === beforeMap },
+    { name:"Scenario data unchanged", passed: JSON.stringify(state.tradePlanScenario) === beforeScenario },
+    { name:"Weekly Structure Engine data unchanged", passed: structureBefore === structureAfter },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runWeeklyFvgContextDetailsFixtureTests = runWeeklyFvgContextDetailsFixtureTests;
+  window.runWeeklyFvgContextDetailsNoImpactFixtureTests = runWeeklyFvgContextDetailsNoImpactFixtureTests;
+}
+
 function runStructureEngineDataContractAuditFixtureTests(){
   const context = buildWeeklyMajorStructureContext(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2 });
   const point = context.structureEngine?.swingPoints?.[0];
@@ -4649,6 +4884,8 @@ function runWeeklyMajorStructureFixtureTests(){
     { name:"weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
     { name:"weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
     { name:"weekly structure range selector fixture passes", passed: runWeeklyStructureRangeSelectorFixtureTests().passed === true },
+    { name:"weekly FVG context details fixture passes", passed: runWeeklyFvgContextDetailsFixtureTests().passed === true },
+    { name:"weekly FVG context details no-impact fixture passes", passed: runWeeklyFvgContextDetailsNoImpactFixtureTests().passed === true },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
     { name:"wick-only breach is warning-only", passed: wickOnly.status === "Wick Break Warning" && wickOnly.closeConfirmed === false && wickOnly.wickOnly === true },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
