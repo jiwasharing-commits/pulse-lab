@@ -4055,6 +4055,7 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
   const majorSwingLow = formatWeeklySwingReference(selectWeeklyMajorSwingLow(swings));
   if(!majorSwingHigh || !majorSwingLow) return createEmptyWeeklyMajorStructureContext("Waiting for both major Weekly swing high and swing low references.");
   const swingSequence = classifyWeeklySwingSequence(swings, closedCandles, config);
+  const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config);
   const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config);
   const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow, bosChochStatus });
   const macroRangeStatus = deriveWeeklyMacroRangeStatus(closedCandles, swings, config);
