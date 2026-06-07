@@ -4487,10 +4487,12 @@ function getDailyContextCards(context){
   const status = normalizeDailyValidationAlignmentStatus(safe.status);
   const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Watch Daily structure validation."];
   const keyZone = summarizeContextText(safe.dailySrContext?.nearestSupport || safe.dailySrContext?.nearestResistance || safe.dailyFvgContext?.nearest || safe.dailyFvgContext?.summary, "Daily key zone unavailable");
+  const dailyStructureEngine = safe.dailyStructureEngine || marketPreparationState.daily?.dailyStructureEngine || marketPreparationState.daily?.structureEngine || createDailyStructureEngineDataContract(safe.selectedRange || activeDailyRange || "3M");
   return [
     { label: "Status", value: status, note: getDailyContextMeaning(status) },
     { label: "Against Weekly", value: safe.weeklyReference || safe.alignmentWithWeekly?.weeklyReference || "Weekly context unavailable", note: safe.alignmentWithWeekly?.status || "Validation context." },
     { label: "Selected Range", value: safe.selectedRange || "Unavailable", note: safe.structureMode || "Daily range context." },
+    { label: "Daily Structure", value: dailyStructureEngine.swingStructure?.status || "Unavailable", note: formatDailyStructureCardNote(dailyStructureEngine) },
     { label: "Daily Pattern", value: safe.dailyPattern || "Daily pattern context unavailable", note: safe.channelStatus || safe.rangeStatus || safe.brokenChannelStatus || "Pattern context." },
     { label: "Meaning", value: getDailyContextMeaning(status), note: "Display-only validation." },
     { label: "Need Confirmation", value: "Watch Daily structure validation.", note: "Wait for clear range reaction." },
@@ -5084,6 +5086,7 @@ function buildDailyValidationFoundationContext(dailySnapshot = buildDailyContext
     dailyFvgContext: dailySnapshot?.fvg || null,
     dailySrContext: dailySnapshot?.sr || null,
     dailyPattern: dailySnapshot?.pattern?.name && dailySnapshot.pattern.name !== "unavailable" ? `${dailySnapshot.pattern.name} · ${dailySnapshot.pattern.status || "context"}` : "Daily pattern context unavailable",
+    dailyStructureEngine: dailySnapshot?.dailyStructureEngine || null,
     weeklyReference: weeklyReference || "Weekly structure context unavailable",
     riskNotes,
     use: "Structure Validation only",
@@ -5148,6 +5151,143 @@ function createDailyStructureEngineDataContract(rangeKey = "3m"){
     chartLabels: [],
     use: "Daily validation context only",
   };
+}
+function getDailyStructureRangeLabel(rangeKey = activeDailyRange || "3M"){
+  return DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.rangeLabels[normalizeDailyStructureContractRangeKey(rangeKey)] || "3M";
+}
+function getDailyStructureRangeLimit(rangeKey = activeDailyRange || "3M"){
+  return DAILY_PRESET_LIMITS[normalizeDailyStructureContractRangeKey(rangeKey)] || DAILY_PRESET_LIMITS["3m"] || 92;
+}
+function getDailyStructureSwingWindow(rangeKey = activeDailyRange || "3M"){
+  const key = normalizeDailyStructureContractRangeKey(rangeKey);
+  if(key === "1y") return { left: 4, right: 4 };
+  if(key === "6m") return { left: 3, right: 3 };
+  return { left: 2, right: 2 };
+}
+function getClosedDailyStructureCandles(candles){
+  const now = Date.now();
+  return (Array.isArray(candles) ? candles : []).filter((candle)=>{
+    if(!candle || candle.closed === false || candle.isClosed === false || candle.isFinal === false) return false;
+    const closeTime = Number(candle.closeTime ?? candle.close_time ?? candle.closeTimestamp);
+    return !Number.isFinite(closeTime) || closeTime <= now;
+  });
+}
+function getDailyStructureCandlesForRange(candles, rangeKey = activeDailyRange || "3M"){
+  const closed = getClosedDailyStructureCandles(candles);
+  return closed.slice(-getDailyStructureRangeLimit(rangeKey));
+}
+function classifyDailySwingPointLabel(type, price, previousPrice, tolerancePct = 0.003){
+  return classifyWeeklySwingPointLabel(type, price, previousPrice, tolerancePct);
+}
+function detectDailyStructureSwingPoints(candles, options = {}){
+  const rangeKey = normalizeDailyStructureContractRangeKey(options.rangeKey || activeDailyRange || "3m");
+  const window = getDailyStructureSwingWindow(rangeKey);
+  const left = Math.max(1, Number(options.left ?? window.left) || window.left);
+  const right = Math.max(1, Number(options.right ?? window.right) || window.right);
+  const closedCandles = getClosedDailyStructureCandles(candles);
+  if(closedCandles.length < left + right + 1) return [];
+  const swings = detectSwingPoints(closedCandles, left, right);
+  const allSwings = [
+    ...(Array.isArray(swings.highs) ? swings.highs.map((point)=>({ ...point, type:"high" })) : []),
+    ...(Array.isArray(swings.lows) ? swings.lows.map((point)=>({ ...point, type:"low" })) : []),
+  ].sort((a,b)=>(Number(a.index)||0) - (Number(b.index)||0));
+  const tolerancePct = Number.isFinite(Number(options.equalSwingTolerancePct)) ? Number(options.equalSwingTolerancePct) : 0.003;
+  let previousHigh = null;
+  let previousLow = null;
+  return allSwings.map((swing)=>{
+    const previous = swing.type === "high" ? previousHigh : previousLow;
+    const label = previous ? classifyDailySwingPointLabel(swing.type, swing.price, previous.price, tolerancePct) : "Unclassified";
+    const point = {
+      id: `daily-swing-${rangeKey}-${swing.type}-${timeKey(swing.time) || swing.index}`,
+      time: swing.time,
+      index: swing.index,
+      price: Number(swing.price),
+      type: swing.type === "low" ? "low" : "high",
+      label,
+      comparisonPrice: previous ? Number(previous.price) : null,
+      comparisonTime: previous ? previous.time ?? null : null,
+      strength: options.strength === "minor" ? "minor" : "major",
+      confidence: ["strong", "weak"].includes(options.confidence) ? options.confidence : "moderate",
+      source: "closed_candle_swing",
+    };
+    if(point.type === "high") previousHigh = point;
+    else previousLow = point;
+    return point;
+  });
+}
+function getLatestMeaningfulDailySwingPoint(swingPoints, type){
+  return (Array.isArray(swingPoints) ? swingPoints : [])
+    .filter((point)=>point?.type === type && point.label && point.label !== "Unclassified")
+    .slice(-1)[0] || null;
+}
+function getDailySwingStructureNote(status){
+  if(status === "HH/HL") return "Higher high + higher low";
+  if(status === "LH/LL") return "Lower high + lower low";
+  if(status === "HH/LL") return "Expansion / volatile range";
+  if(status === "LH/HL") return "Compression / tightening range";
+  if(status === "Range") return "Equal high / equal low range";
+  if(status === "Unavailable") return "Structure unavailable";
+  return "Mixed Daily structure context";
+}
+function deriveDailySwingStructure(swingPoints){
+  const latestHigh = getLatestMeaningfulDailySwingPoint(swingPoints, "high");
+  const latestLow = getLatestMeaningfulDailySwingPoint(swingPoints, "low");
+  if(!latestHigh || !latestLow) return { status:"Unavailable", label:"Unavailable", note:getDailySwingStructureNote("Unavailable"), latestHigh: latestHigh || null, latestLow: latestLow || null };
+  const highLabel = latestHigh.label;
+  const lowLabel = latestLow.label;
+  let status = "Mixed";
+  if(highLabel === "HH" && lowLabel === "HL") status = "HH/HL";
+  else if(highLabel === "LH" && lowLabel === "LL") status = "LH/LL";
+  else if(highLabel === "HH" && lowLabel === "LL") status = "HH/LL";
+  else if(highLabel === "LH" && lowLabel === "HL") status = "LH/HL";
+  else if(highLabel === "EH" && lowLabel === "EL") status = "Range";
+  else if(highLabel === "EH" || lowLabel === "EL") status = "Range";
+  return { status, label: status, note: getDailySwingStructureNote(status), latestHigh, latestLow };
+}
+function deriveDailyStructureRangeStatus(swingStructure){
+  const status = swingStructure?.status || "Unavailable";
+  const high = Number(swingStructure?.latestHigh?.price);
+  const low = Number(swingStructure?.latestLow?.price);
+  const base = { high: Number.isFinite(high) ? high : null, low: Number.isFinite(low) ? low : null };
+  if(status === "HH/LL") return { status:"Expansion", ...base, note:"Higher high + lower low" };
+  if(status === "LH/HL") return { status:"Compression", ...base, note:"Lower high + higher low" };
+  if(status === "Range") return { status:"Active Range", ...base, note:"Equal high / equal low context" };
+  if(status === "Mixed") return { status:"Mixed", ...base, note:"Mixed range context" };
+  if(status === "Unavailable") return { status:"Unavailable", ...base, note:"Range context unavailable" };
+  return { status:"No Clear Range", ...base, note:"Trend-like Daily structure context" };
+}
+function buildDailyStructureEngineContext(candles, rangeKey = activeDailyRange || "3M", options = {}){
+  const key = normalizeDailyStructureContractRangeKey(rangeKey);
+  const closedCandles = getDailyStructureCandlesForRange(candles, key);
+  const contract = createDailyStructureEngineDataContract(key);
+  if(closedCandles.length < Math.max(10, (getDailyStructureSwingWindow(key).left + getDailyStructureSwingWindow(key).right + 3))){
+    return { ...contract, closedCandlesUsed: closedCandles.length, rangeKey: key, rangeLabel: getDailyStructureRangeLabel(key), riskNotes: ["Daily structure unavailable from current closed candle sample."] };
+  }
+  const swingPoints = detectDailyStructureSwingPoints(closedCandles, { ...options, rangeKey: key });
+  const swingStructure = deriveDailySwingStructure(swingPoints);
+  const rangeStatus = deriveDailyStructureRangeStatus(swingStructure);
+  const latestSwingHigh = swingStructure.latestHigh || getLatestMeaningfulDailySwingPoint(swingPoints, "high");
+  const latestSwingLow = swingStructure.latestLow || getLatestMeaningfulDailySwingPoint(swingPoints, "low");
+  return {
+    ...contract,
+    available: swingStructure.status !== "Unavailable",
+    closedCandlesUsed: closedCandles.length,
+    swingPoints,
+    latestSwingHigh,
+    latestSwingLow,
+    majorSwingHigh: latestSwingHigh || null,
+    majorSwingLow: latestSwingLow || null,
+    swingStructure,
+    rangeStatus,
+    confidence: swingStructure.status === "Unavailable" ? "unavailable" : "moderate",
+    riskNotes: swingStructure.status === "Unavailable" ? ["Daily structure unavailable from closed candles."] : ["Daily structure is display-only validation context."],
+  };
+}
+function formatDailyStructureCardNote(engine){
+  const safe = engine || createDailyStructureEngineDataContract();
+  const label = safe.rangeLabel || getDailyStructureRangeLabel(safe.rangeKey);
+  const role = safe.rangeKey === "1y" ? "macro structure" : safe.rangeKey === "6m" ? "intermediate structure" : "active structure";
+  return `${label} ${role} · ${safe.swingStructure?.note || getDailySwingStructureNote(safe.swingStructure?.status)}`;
 }
 function getDailyStructureEngineAudit(){
   return {
@@ -5266,6 +5406,7 @@ function runDailyStructureDataContractAuditFixtureTests(){
     { name:"Contract includes validationAgainstWeekly", passed: !!contract.validationAgainstWeekly && DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.validationStatuses.includes(contract.validationAgainstWeekly.status) },
     { name:"Contract includes confidence", passed: DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.confidence.includes(contract.confidence) },
     { name:"Contract includes chartLabels", passed: Array.isArray(contract.chartLabels) },
+    { name:"Daily swing classification helper is contract-compatible", passed: buildDailyStructureEngineContext(createDailySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), "3m").timeframe === "daily" },
     { name:"Contract use is Daily validation context only", passed: contract.use === "Daily validation context only" },
     { name:"No unsafe wording appears", passed: !forbidden.test(text) },
     { name:"No scenario data mutation", passed: scenarioBefore === JSON.stringify(marketPreparationState.tradePlanScenario || null) },
@@ -5280,6 +5421,66 @@ if(typeof window !== "undefined"){
   window.getDailyStructureEngineAudit = getDailyStructureEngineAudit;
   window.runDailyStructureDataContractAuditFixtureTests = runDailyStructureDataContractAuditFixtureTests;
 }
+function createDailySwingClassificationFixtureCandles(highPrices = [110, 120, 130], lowPrices = [80, 90, 95], options = {}){
+  const left = Number(options.left) || 2;
+  const gap = Math.max(6, left * 3);
+  const highIndexes = [left + 1, left + 1 + gap, left + 1 + gap * 2];
+  const lowIndexes = [left + 1 + Math.floor(gap / 2), left + 1 + gap + Math.floor(gap / 2), left + 1 + gap * 2 + Math.floor(gap / 2)];
+  const length = lowIndexes[2] + left + 4;
+  return Array.from({ length }, (_, index)=>{
+    const highSlot = highIndexes.indexOf(index);
+    const lowSlot = lowIndexes.indexOf(index);
+    const high = highSlot >= 0 ? highPrices[highSlot] : 101;
+    const low = lowSlot >= 0 ? lowPrices[lowSlot] : 96;
+    return { time:index, open:98, high, low, close:99, closeTime:index, closed:true };
+  });
+}
+function createDailyRangeFixtureCandles(length){
+  return Array.from({ length }, (_, index)=>({ time:index, open:100 + index * 0.01, high:102 + index * 0.01, low:98 + index * 0.01, close:100 + index * 0.01, closeTime:index, closed:true }));
+}
+function runDailySwingClassificationFixtureTests(){
+  const classify = (candles, rangeKey = "3m", options = {})=>buildDailyStructureEngineContext(candles, rangeKey, { equalSwingTolerancePct:0.003, ...options });
+  const hhHlCandles = createDailySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlCandles = createDailySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const hhLlCandles = createDailySwingClassificationFixtureCandles([110, 120, 130], [95, 90, 80]);
+  const lhHlCandles = createDailySwingClassificationFixtureCandles([130, 120, 110], [80, 90, 95]);
+  const ehElCandles = createDailySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const activeCandle = { time:999, open:99, high:1000, low:1, close:500, closeTime:Date.now() + 86400000, closed:false };
+  const beforeActive = classify(hhHlCandles);
+  const afterActive = classify([...hhHlCandles, activeCandle]);
+  const range3m = classify([...createDailyRangeFixtureCandles(120), activeCandle], "3m");
+  const range6m = classify([...createDailyRangeFixtureCandles(220), activeCandle], "6m");
+  const range1y = classify([...createDailyRangeFixtureCandles(400), activeCandle], "1y");
+  const hhHl = classify(hhHlCandles);
+  const lhLl = classify(lhLlCandles);
+  const hhLl = classify(hhLlCandles);
+  const lhHl = classify(lhHlCandles);
+  const ehEl = classify(ehElCandles);
+  const insufficient = classify(hhHlCandles.slice(0, 4));
+  const mutationInput = createDailySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const dailyStateBefore = JSON.stringify(marketPreparationState.daily || null);
+  const inputBefore = JSON.stringify(mutationInput);
+  classify(mutationInput);
+  const safeText = JSON.stringify([hhHl.swingStructure, lhLl.swingStructure, hhLl.swingStructure, lhHl.swingStructure, ehEl.swingStructure, formatDailyStructureCardNote(hhHl)]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Closed Daily candles only", passed: beforeActive.swingStructure.status === afterActive.swingStructure.status && JSON.stringify(beforeActive.swingPoints) === JSON.stringify(afterActive.swingPoints) },
+    { name:"3M range uses selected closed candle slice", passed: range3m.rangeKey === "3m" && range3m.closedCandlesUsed === 92 },
+    { name:"6M range uses selected closed candle slice", passed: range6m.rangeKey === "6m" && range6m.closedCandlesUsed === 183 },
+    { name:"1Y range uses selected closed candle slice", passed: range1y.rangeKey === "1y" && range1y.closedCandlesUsed === 365 },
+    { name:"HH/HL case", passed: hhHl.swingStructure.status === "HH/HL" && hhHl.swingPoints.some((point)=>point.label === "HH") && hhHl.swingPoints.some((point)=>point.label === "HL") },
+    { name:"LH/LL case", passed: lhLl.swingStructure.status === "LH/LL" },
+    { name:"HH/LL case", passed: hhLl.swingStructure.status === "HH/LL" && /Expansion/.test(hhLl.swingStructure.note) },
+    { name:"LH/HL case", passed: lhHl.swingStructure.status === "LH/HL" && /Compression/.test(lhHl.swingStructure.note) },
+    { name:"EH/EL case", passed: ehEl.swingStructure.status === "Range" && ehEl.swingPoints.some((point)=>point.label === "EH") && ehEl.swingPoints.some((point)=>point.label === "EL") },
+    { name:"Insufficient data returns Unavailable", passed: insufficient.swingStructure.status === "Unavailable" && insufficient.available === false },
+    { name:"No mutation of input candles or Daily state", passed: JSON.stringify(mutationInput) === inputBefore && JSON.stringify(marketPreparationState.daily || null) === dailyStateBefore },
+    { name:"Safe wording", passed: !forbidden.test(safeText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runDailySwingClassificationFixtureTests = runDailySwingClassificationFixtureTests;
 
 const H4_REACTION_STATUS_LABELS = ["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction", "Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable"];
 const H4_REACTION_TYPE_LABELS = ["Rejection", "Reclaim", "Retest", "Sweep", "Failed Reclaim", "Fakeout Risk", "No Clear Reaction"];
@@ -9334,7 +9535,8 @@ function buildDailyContextSnapshot(dailyState = marketPreparationState.daily, cu
   const sr = buildDailyContextSrSummary(state, currentPrice, skipped);
   const pattern = buildDailyContextPatternSummary(state, skipped);
   const contextBias = deriveDailyContextBias({ available, fvg, ifvg, sr, pattern });
-  return { available, rangeMode, candleCount, fvg, ifvg, sr, pattern, contextBias, warnings: [...new Set(warnings)], skipped: [...new Set(skipped)] };
+  const dailyStructureEngine = state.dailyStructureEngine || state.structureEngine || null;
+  return { available, rangeMode, candleCount, fvg, ifvg, sr, pattern, dailyStructureEngine, contextBias, warnings: [...new Set(warnings)], skipped: [...new Set(skipped)] };
 }
 function formatDailyContextForMarketPreparation(snapshot){
   if(!snapshot || snapshot.available !== true) return "Daily: context unavailable";
@@ -13426,7 +13628,7 @@ function runTimeframeContextCardGridFixtureTests(){
     { name: "4H tab renders card grid", passed: /timeframe-context-card-grid/.test(h4Html) },
     { name: "1H tab renders card grid", passed: /timeframe-context-card-grid/.test(h1Html) },
     { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Structure, Weekly RSI, and FVG / IFVG Context", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Structure", "Weekly RSI", "FVG / IFVG Context"].every((label)=>weeklyHtml.includes(label)) && !weeklyHtml.includes("Swing Sequence") },
-    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Pattern, and Daily IFVG", passed: ["Status", "Against Weekly", "Selected Range", "Daily Pattern", "Daily IFVG"].every((label)=>dailyHtml.includes(label)) },
+    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Structure, Daily Pattern, and Daily IFVG", passed: ["Status", "Against Weekly", "Selected Range", "Daily Structure", "Daily Pattern", "Daily IFVG"].every((label)=>dailyHtml.includes(label)) },
     { name: "4H cards include Status, Related Zone, Reaction, Liquidity, and 4H IFVG", passed: ["Status", "Related Zone", "Reaction", "Liquidity", "4H IFVG"].every((label)=>h4Html.includes(label)) },
     { name: "1H cards include Status, Sweep, Mini Structure, Stochastic and no IFVG", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) && !h1Html.includes("IFVG") },
     { name: "Card grid supports 4-card layout class", passed: /timeframe-context-card-grid-4/.test(combined) },
@@ -13825,7 +14027,8 @@ function updateDailyMarketContext(candles, mode){
       setDailyPatternSummary(pattern);
       clearDailyFvgOverlay();
       clearDailySrOverlay();
-      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
+      const dailyStructureEngine = buildDailyStructureEngineContext([], mode);
+      updateMarketPreparationState({ daily: { candles: [], fvgZones: [], fvgDetails: [], recentFvgReaction: createEmptyRecentFvgReactionMemory(), recentBrokenFvgDetails: createEmptyRecentBrokenFvgDetails("Daily"), srSummary: null, pattern, structureEngine: dailyStructureEngine, dailyStructureEngine, meta: { rangeMode: mode, preset: dailyPreset, candleCount: 0, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: false } } });
       refreshFvgMtfContext();
       renderDailyContextSummary();
       renderMarketPreparationMap(buildMarketPreparationMap());
@@ -13845,8 +14048,9 @@ function updateDailyMarketContext(candles, mode){
     const recentFvgReaction = buildRecentFvgReactionMemory(allDailyFvgDetails, current, "Daily");
     const srSummary = scanDailySupportResistance(candles);
     const pattern = detectDailyPattern(candles, mode);
+    const dailyStructureEngine = buildDailyStructureEngineContext(candles, mode);
     setDailyPatternSummary(pattern);
-    updateMarketPreparationState({ daily: { candles, fvgZones, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, pattern, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
+    updateMarketPreparationState({ daily: { candles, fvgZones, fvgDetails, recentFvgReaction, recentBrokenFvgDetails, srSummary, pattern, structureEngine: dailyStructureEngine, dailyStructureEngine, meta: { rangeMode: mode, preset: dailyPreset, candleCount: candles.length, updatedAt: Date.now() } }, meta: { sourcesReady: { daily: true } } });
     refreshFvgMtfContext();
     renderDailyContextSummary();
     scheduleDailyFvgOverlayRedraw();
