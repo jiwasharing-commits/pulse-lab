@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-07 01:05";
+const APP_LAST_UPDATED = "2026-06-07 08:09";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -4493,6 +4493,7 @@ function getDailyContextCards(context){
     { label: "Against Weekly", value: safe.weeklyReference || safe.alignmentWithWeekly?.weeklyReference || "Weekly context unavailable", note: safe.alignmentWithWeekly?.status || "Validation context." },
     { label: "Selected Range", value: safe.selectedRange || "Unavailable", note: safe.structureMode || "Daily range context." },
     { label: "Daily Structure", value: dailyStructureEngine.swingStructure?.status || "Unavailable", note: formatDailyStructureCardNote(dailyStructureEngine) },
+    { label: "Structure Shift", value: dailyStructureEngine.structureShift?.status || "Unavailable", note: dailyStructureEngine.structureShift?.note || "Daily structure shift unavailable" },
     { label: "Daily Pattern", value: safe.dailyPattern || "Daily pattern context unavailable", note: safe.channelStatus || safe.rangeStatus || safe.brokenChannelStatus || "Pattern context." },
     { label: "Meaning", value: getDailyContextMeaning(status), note: "Display-only validation." },
     { label: "Need Confirmation", value: "Watch Daily structure validation.", note: "Wait for clear range reaction." },
@@ -5256,19 +5257,103 @@ function deriveDailyStructureRangeStatus(swingStructure){
   if(status === "Unavailable") return { status:"Unavailable", ...base, note:"Range context unavailable" };
   return { status:"No Clear Range", ...base, note:"Trend-like Daily structure context" };
 }
+function formatDailyStructureShiftStatus(status, overrides = {}){
+  return {
+    status,
+    closeConfirmed: overrides.closeConfirmed === true,
+    wickOnly: overrides.wickOnly === true,
+    referenceLevel: Number.isFinite(Number(overrides.referenceLevel)) ? Number(overrides.referenceLevel) : null,
+    referenceSwingId: overrides.referenceSwingId || null,
+    note: overrides.note || "Daily structure shift unavailable",
+  };
+}
+function getLatestDailyStructureShiftReference(engine, type){
+  return getLatestMeaningfulDailySwingPoint(engine?.swingPoints, type);
+}
+function classifyDailyCloseBreakStatus(direction, swingStructureStatus){
+  if(direction === "up"){
+    if(swingStructureStatus === "HH/HL") return "BOS Up";
+    if(swingStructureStatus === "LH/LL") return "CHOCH Up";
+    if(swingStructureStatus === "Range") return "Range Break";
+    if(swingStructureStatus === "LH/HL") return "Range Break";
+    if(swingStructureStatus === "HH/LL" || swingStructureStatus === "Mixed") return "Structure Break";
+    return "Structure Break";
+  }
+  if(direction === "down"){
+    if(swingStructureStatus === "LH/LL") return "BOS Down";
+    if(swingStructureStatus === "HH/HL") return "CHOCH Down";
+    if(swingStructureStatus === "Range") return "Range Break";
+    if(swingStructureStatus === "LH/HL") return "Range Break";
+    if(swingStructureStatus === "HH/LL" || swingStructureStatus === "Mixed") return "Structure Break";
+    return "Structure Break";
+  }
+  return "None";
+}
+function getDailyCloseBreakNote(status, direction){
+  if(status === "BOS Up") return "Close-confirmed break above swing high";
+  if(status === "BOS Down") return "Close-confirmed break below swing low";
+  if(status === "CHOCH Up") return "Close-confirmed change above swing high";
+  if(status === "CHOCH Down") return "Close-confirmed change below swing low";
+  if(status === "Range Break") return "Close broke Daily range boundary context";
+  if(status === "Structure Break") return direction === "up" ? "Close-confirmed structure break above swing high" : "Close-confirmed structure break below swing low";
+  return "No close-confirmed Daily structure break";
+}
+function deriveDailyStructureShift(candles, engine){
+  const key = normalizeDailyStructureContractRangeKey(engine?.rangeKey || activeDailyRange || "3m");
+  const closedCandles = getDailyStructureCandlesForRange(candles, key);
+  const latest = closedCandles.slice(-1)[0];
+  const highRef = getLatestDailyStructureShiftReference(engine, "high");
+  const lowRef = getLatestDailyStructureShiftReference(engine, "low");
+  if(!latest || !highRef || !lowRef){
+    return formatDailyStructureShiftStatus("Unavailable", { note:"Reference swing unavailable" });
+  }
+  const close = Number(latest.close);
+  const high = Number(latest.high);
+  const low = Number(latest.low);
+  const highLevel = Number(highRef.price);
+  const lowLevel = Number(lowRef.price);
+  if(![close, high, low, highLevel, lowLevel].every(Number.isFinite)){
+    return formatDailyStructureShiftStatus("Unavailable", { note:"Reference swing unavailable" });
+  }
+  const closeAboveHigh = close > highLevel;
+  const closeBelowLow = close < lowLevel;
+  const wickAboveHigh = high > highLevel && !closeAboveHigh;
+  const wickBelowLow = low < lowLevel && !closeBelowLow;
+  if(wickAboveHigh || wickBelowLow){
+    const ref = wickAboveHigh ? highRef : lowRef;
+    return formatDailyStructureShiftStatus("Wick Break Warning", {
+      wickOnly:true,
+      referenceLevel: ref.price,
+      referenceSwingId: ref.id,
+      note: wickAboveHigh ? "Wick breached swing high, close did not confirm" : "Wick breached swing low, close did not confirm",
+    });
+  }
+  if(closeAboveHigh || closeBelowLow){
+    const direction = closeAboveHigh ? "up" : "down";
+    const ref = closeAboveHigh ? highRef : lowRef;
+    const status = classifyDailyCloseBreakStatus(direction, engine?.swingStructure?.status || "Unavailable");
+    return formatDailyStructureShiftStatus(status, {
+      closeConfirmed:true,
+      referenceLevel: ref.price,
+      referenceSwingId: ref.id,
+      note: getDailyCloseBreakNote(status, direction),
+    });
+  }
+  return formatDailyStructureShiftStatus("None", { note:"No close-confirmed Daily structure break" });
+}
 function buildDailyStructureEngineContext(candles, rangeKey = activeDailyRange || "3M", options = {}){
   const key = normalizeDailyStructureContractRangeKey(rangeKey);
   const closedCandles = getDailyStructureCandlesForRange(candles, key);
   const contract = createDailyStructureEngineDataContract(key);
   if(closedCandles.length < Math.max(10, (getDailyStructureSwingWindow(key).left + getDailyStructureSwingWindow(key).right + 3))){
-    return { ...contract, closedCandlesUsed: closedCandles.length, rangeKey: key, rangeLabel: getDailyStructureRangeLabel(key), riskNotes: ["Daily structure unavailable from current closed candle sample."] };
+    return { ...contract, closedCandlesUsed: closedCandles.length, rangeKey: key, rangeLabel: getDailyStructureRangeLabel(key), structureShift: formatDailyStructureShiftStatus("Unavailable", { note:"Reference swing unavailable" }), riskNotes: ["Daily structure unavailable from current closed candle sample."] };
   }
   const swingPoints = detectDailyStructureSwingPoints(closedCandles, { ...options, rangeKey: key });
   const swingStructure = deriveDailySwingStructure(swingPoints);
   const rangeStatus = deriveDailyStructureRangeStatus(swingStructure);
   const latestSwingHigh = swingStructure.latestHigh || getLatestMeaningfulDailySwingPoint(swingPoints, "high");
   const latestSwingLow = swingStructure.latestLow || getLatestMeaningfulDailySwingPoint(swingPoints, "low");
-  return {
+  const engineBase = {
     ...contract,
     available: swingStructure.status !== "Unavailable",
     closedCandlesUsed: closedCandles.length,
@@ -5282,6 +5367,7 @@ function buildDailyStructureEngineContext(candles, rangeKey = activeDailyRange |
     confidence: swingStructure.status === "Unavailable" ? "unavailable" : "moderate",
     riskNotes: swingStructure.status === "Unavailable" ? ["Daily structure unavailable from closed candles."] : ["Daily structure is display-only validation context."],
   };
+  return { ...engineBase, structureShift: deriveDailyStructureShift(closedCandles, engineBase) };
 }
 function formatDailyStructureCardNote(engine){
   const safe = engine || createDailyStructureEngineDataContract();
@@ -5320,16 +5406,16 @@ function getDailyStructureEngineAudit(){
     gapStatus: [
       { item: "dailyStructureEngine contract", status: "Partially exists", note: "Patch 11A defines the read-only contract; runtime engine output is not implemented." },
       { item: "Daily rangeKey: 3m / 6m / 1y", status: "Already exists", note: "Daily UI and fetch presets already use 3M, 6M, and 1Y." },
-      { item: "closed Daily candles only", status: "Partially exists", note: "Daily candles are stored, but no Daily structure-specific closed-candle helper exists yet." },
-      { item: "swingPoints[]", status: "Missing", note: "Future Patch 11B should add normalized Daily swing points." },
-      { item: "HH / HL / LH / LL classification", status: "Missing", note: "Future Patch 11B should add display-only labels." },
-      { item: "EH / EL classification", status: "Missing", note: "Future Patch 11B should add equal high/low labels." },
-      { item: "swingStructure", status: "Missing", note: "Future Patch 11B should derive HH/HL, LH/LL, HH/LL, LH/HL, Range, Mixed, or Unavailable." },
-      { item: "structureShift", status: "Missing", note: "Future Patch 11C should add close-confirmed shift context." },
-      { item: "BOS / CHOCH close-confirmed", status: "Missing", note: "Future Patch 11C should require Daily close confirmation." },
-      { item: "wick-only warning", status: "Missing", note: "Future Patch 11C should classify wick-only breaches as warning context." },
-      { item: "rangeStatus", status: "Partially exists", note: "Daily pattern has range context; structure-engine range status is not implemented." },
-      { item: "compression / expansion", status: "Missing", note: "Future structure derivation should map LH/HL to compression and HH/LL to expansion." },
+      { item: "closed Daily candles only", status: "Already exists", note: "Daily structure helpers use closed candles only for swing labels and structure shift." },
+      { item: "swingPoints[]", status: "Already exists", note: "Daily structure engine exposes normalized closed-candle swing points." },
+      { item: "HH / HL / LH / LL classification", status: "Already exists", note: "Daily swing highs/lows are classified display-only from prior comparable swings." },
+      { item: "EH / EL classification", status: "Already exists", note: "Daily equal high/equal low labels use simple display-only tolerance." },
+      { item: "swingStructure", status: "Already exists", note: "Daily structure derives HH/HL, LH/LL, HH/LL, LH/HL, Range, Mixed, or Unavailable." },
+      { item: "structureShift", status: "Partially exists", note: "Patch 11C adds display-only close-confirmed Daily structure shift context." },
+      { item: "BOS / CHOCH close-confirmed", status: "Partially exists", note: "Daily structure shift requires a Daily close beyond the reference swing." },
+      { item: "wick-only warning", status: "Partially exists", note: "Daily wick-only breaches are warning context, not confirmed BOS/CHOCH." },
+      { item: "rangeStatus", status: "Already exists", note: "Daily structure engine maps range status from normalized swing structure." },
+      { item: "compression / expansion", status: "Already exists", note: "Daily LH/HL maps to compression and HH/LL maps to expansion." },
       { item: "major vs minor swing", status: "Missing", note: "Future Daily engine should classify swing quality conservatively." },
       { item: "confidence", status: "Missing", note: "Future Daily engine should produce display-only confidence." },
       { item: "dailyPatternRelation", status: "Missing", note: "Future Daily engine should compare structure against existing Daily pattern output." },
@@ -5481,6 +5567,55 @@ function runDailySwingClassificationFixtureTests(){
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
 if(typeof window !== "undefined") window.runDailySwingClassificationFixtureTests = runDailySwingClassificationFixtureTests;
+function appendDailyStructureShiftTestCandle(candles, candle){
+  const lastTime = Number(candles.slice(-1)[0]?.time) || candles.length;
+  return [...candles, { time:lastTime + 1, open:100, high:110, low:90, close:100, closeTime:lastTime + 1, closed:true, ...candle }];
+}
+function runDailyBosChochRefinementFixtureTests(){
+  const classify = (candles, rangeKey = "3m", options = {})=>buildDailyStructureEngineContext(candles, rangeKey, { equalSwingTolerancePct:0.003, ...options });
+  const hhHlCandles = createDailySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlCandles = createDailySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const hhLlCandles = createDailySwingClassificationFixtureCandles([110, 120, 130], [95, 90, 80]);
+  const lhHlCandles = createDailySwingClassificationFixtureCandles([130, 120, 110], [80, 90, 95]);
+  const ehElCandles = createDailySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const bosUp = classify(appendDailyStructureShiftTestCandle(hhHlCandles, { high:140, low:100, close:135 }));
+  const chochDown = classify(appendDailyStructureShiftTestCandle(hhHlCandles, { high:110, low:80, close:90 }));
+  const bosDown = classify(appendDailyStructureShiftTestCandle(lhLlCandles, { high:100, low:70, close:75 }));
+  const chochUp = classify(appendDailyStructureShiftTestCandle(lhLlCandles, { high:125, low:90, close:120 }));
+  const wickUp = classify(appendDailyStructureShiftTestCandle(hhHlCandles, { high:140, low:100, close:125 }));
+  const wickDown = classify(appendDailyStructureShiftTestCandle(hhHlCandles, { high:115, low:80, close:100 }));
+  const rangeBreak = classify(appendDailyStructureShiftTestCandle(ehElCandles, { high:130, low:100, close:125 }));
+  const compressionBreak = classify(appendDailyStructureShiftTestCandle(lhHlCandles, { high:120, low:100, close:115 }));
+  const expansionBreak = classify(appendDailyStructureShiftTestCandle(hhLlCandles, { high:100, low:70, close:75 }));
+  const insufficient = classify(hhHlCandles.slice(0, 4));
+  const activeOnly = classify([...hhHlCandles, { time:999, open:100, high:140, low:80, close:135, closeTime:Date.now() + 86400000, closed:false }]);
+  const beforeActive = classify(hhHlCandles);
+  const mutationInput = createDailySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const engineBefore = classify(mutationInput);
+  const swingBefore = JSON.stringify(engineBefore.swingPoints);
+  const inputBefore = JSON.stringify(mutationInput);
+  const dailyStateBefore = JSON.stringify(marketPreparationState.daily || null);
+  classify(appendDailyStructureShiftTestCandle(mutationInput, { high:140, low:100, close:135 }));
+  const safeText = JSON.stringify([bosUp.structureShift, chochDown.structureShift, bosDown.structureShift, chochUp.structureShift, wickUp.structureShift, wickDown.structureShift, rangeBreak.structureShift, compressionBreak.structureShift, expansionBreak.structureShift]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Close above Daily swing high in HH/HL context returns BOS Up", passed: bosUp.structureShift.status === "BOS Up" && bosUp.structureShift.closeConfirmed === true },
+    { name:"Close below Daily swing low in HH/HL context returns CHOCH Down", passed: chochDown.structureShift.status === "CHOCH Down" && chochDown.structureShift.closeConfirmed === true },
+    { name:"Close below Daily swing low in LH/LL context returns BOS Down", passed: bosDown.structureShift.status === "BOS Down" && bosDown.structureShift.closeConfirmed === true },
+    { name:"Close above Daily swing high in LH/LL context returns CHOCH Up", passed: chochUp.structureShift.status === "CHOCH Up" && chochUp.structureShift.closeConfirmed === true },
+    { name:"Wick above swing high but close below returns Wick Break Warning", passed: wickUp.structureShift.status === "Wick Break Warning" && wickUp.structureShift.wickOnly === true && !/BOS Up/.test(wickUp.structureShift.status) },
+    { name:"Wick below swing low but close above returns Wick Break Warning", passed: wickDown.structureShift.status === "Wick Break Warning" && wickDown.structureShift.wickOnly === true && !/CHOCH|BOS Down/.test(wickDown.structureShift.status) },
+    { name:"Range context close break is not forced CHOCH", passed: rangeBreak.swingStructure.status === "Range" && rangeBreak.structureShift.status === "Range Break" },
+    { name:"Compression and expansion do not force CHOCH", passed: compressionBreak.swingStructure.status === "LH/HL" && compressionBreak.structureShift.status === "Range Break" && expansionBreak.swingStructure.status === "HH/LL" && expansionBreak.structureShift.status === "Structure Break" },
+    { name:"Insufficient reference swing returns Unavailable safely", passed: insufficient.structureShift.status === "Unavailable" && /Reference swing unavailable/.test(insufficient.structureShift.note) },
+    { name:"Active Daily candle does not confirm BOS/CHOCH", passed: activeOnly.structureShift.status === beforeActive.structureShift.status && activeOnly.structureShift.closeConfirmed === beforeActive.structureShift.closeConfirmed },
+    { name:"No mutation of input candles, swingPoints, or Daily state", passed: JSON.stringify(mutationInput) === inputBefore && JSON.stringify(engineBefore.swingPoints) === swingBefore && JSON.stringify(marketPreparationState.daily || null) === dailyStateBefore },
+    { name:"Safe wording", passed: !forbidden.test(safeText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runDailyBosChochRefinementFixtureTests = runDailyBosChochRefinementFixtureTests;
 
 const H4_REACTION_STATUS_LABELS = ["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction", "Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable"];
 const H4_REACTION_TYPE_LABELS = ["Rejection", "Reclaim", "Retest", "Sweep", "Failed Reclaim", "Fakeout Risk", "No Clear Reaction"];
@@ -13628,7 +13763,7 @@ function runTimeframeContextCardGridFixtureTests(){
     { name: "4H tab renders card grid", passed: /timeframe-context-card-grid/.test(h4Html) },
     { name: "1H tab renders card grid", passed: /timeframe-context-card-grid/.test(h1Html) },
     { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Structure, Weekly RSI, and FVG / IFVG Context", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Structure", "Weekly RSI", "FVG / IFVG Context"].every((label)=>weeklyHtml.includes(label)) && !weeklyHtml.includes("Swing Sequence") },
-    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Structure, Daily Pattern, and Daily IFVG", passed: ["Status", "Against Weekly", "Selected Range", "Daily Structure", "Daily Pattern", "Daily IFVG"].every((label)=>dailyHtml.includes(label)) },
+    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Structure, Structure Shift, Daily Pattern, and Daily IFVG", passed: ["Status", "Against Weekly", "Selected Range", "Daily Structure", "Structure Shift", "Daily Pattern", "Daily IFVG"].every((label)=>dailyHtml.includes(label)) },
     { name: "4H cards include Status, Related Zone, Reaction, Liquidity, and 4H IFVG", passed: ["Status", "Related Zone", "Reaction", "Liquidity", "4H IFVG"].every((label)=>h4Html.includes(label)) },
     { name: "1H cards include Status, Sweep, Mini Structure, Stochastic and no IFVG", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) && !h1Html.includes("IFVG") },
     { name: "Card grid supports 4-card layout class", passed: /timeframe-context-card-grid-4/.test(combined) },
