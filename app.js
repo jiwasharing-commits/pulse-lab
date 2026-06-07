@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-06 00:00";
+const APP_LAST_UPDATED = "2026-06-07 00:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -3726,7 +3726,7 @@ function createEmptyWeeklyMajorStructureContext(reason = "Not enough closed week
     majorSwingHigh: null,
     majorSwingLow: null,
     swingSequence: { status: "Unavailable", recentSwings: [] },
-    structureEngine: { swingPoints: [], swingStructure: { status: "Unavailable", note: reason, latestHigh: null, latestLow: null } },
+    structureEngine: { swingPoints: [], swingStructure: { status: "Unavailable", note: reason, latestHigh: null, latestLow: null }, confidence: "unavailable", rangeStatus: { status: "Unavailable", note: reason }, chartLabels: [] },
     normalizedSwingPoints: [],
     normalizedSwingStructure: { status: "Unavailable", note: reason, latestHigh: null, latestLow: null },
     bosChochStatus: { status: "None", closeConfirmed: false, referenceLevel: null, note: reason },
@@ -3883,10 +3883,73 @@ function deriveWeeklyNormalizedSwingStructure(swingPoints){
   else if(highLabel === "EH" || lowLabel === "EL") status = "Range";
   return { status, note: getWeeklySwingStructureNote(status), latestHigh, latestLow };
 }
-function buildWeeklyStructureEngineContext(candles, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
-  const swingPoints = detectWeeklyStructureSwingPoints(candles, config);
+function isSameWeeklySwingReference(point, reference){
+  if(!point || !reference) return false;
+  const pointPrice = Number(point.price);
+  const referencePrice = Number(reference.price);
+  const samePrice = Number.isFinite(pointPrice) && Number.isFinite(referencePrice) && pointPrice === referencePrice;
+  const sameTime = point.time !== undefined && reference.time !== undefined && point.time === reference.time;
+  return samePrice && (sameTime || reference.time === null || reference.time === undefined);
+}
+function enrichWeeklySwingPointQuality(swingPoints, swingStructure = {}, majorSwingHigh = null, majorSwingLow = null){
+  const latestHighId = swingStructure?.latestHigh?.id || null;
+  const latestLowId = swingStructure?.latestLow?.id || null;
+  return (Array.isArray(swingPoints) ? swingPoints : []).map((point)=>{
+    const isLatestStructurePoint = point.id === latestHighId || point.id === latestLowId;
+    const isMajorReference = isSameWeeklySwingReference(point, majorSwingHigh) || isSameWeeklySwingReference(point, majorSwingLow);
+    const classified = point.label && point.label !== "Unclassified";
+    const strength = isLatestStructurePoint || isMajorReference ? "major" : "minor";
+    const confidence = !classified ? "weak" : strength === "major" ? "moderate" : "weak";
+    return { ...point, strength, confidence };
+  });
+}
+function deriveWeeklyStructureConfidence(swingStructure, swingPoints, bosChochStatus = null){
+  const status = swingStructure?.status || "Unavailable";
+  if(status === "Unavailable") return "unavailable";
+  const latestHighClassified = !!swingStructure?.latestHigh && swingStructure.latestHigh.label !== "Unclassified";
+  const latestLowClassified = !!swingStructure?.latestLow && swingStructure.latestLow.label !== "Unclassified";
+  if(!latestHighClassified || !latestLowClassified) return "weak";
+  const recentMeaningful = (Array.isArray(swingPoints) ? swingPoints : []).slice(-4).filter((point)=>point.label && point.label !== "Unclassified");
+  const hasConflict = hasWeeklyStructureCharacterConflict(status, bosChochStatus?.status || bosChochStatus);
+  if(status === "Mixed" || recentMeaningful.length < 2) return "weak";
+  if(status === "HH/HL" || status === "LH/LL") return hasConflict ? "moderate" : "strong";
+  if(status === "HH/LL" || status === "LH/HL" || status === "Range") return "moderate";
+  return "weak";
+}
+function deriveWeeklyRangeStatus(swingStructure){
+  const status = swingStructure?.status || "Unavailable";
+  if(status === "HH/LL") return { status: "Expansion", note: "Higher high + lower low" };
+  if(status === "LH/HL") return { status: "Compression", note: "Lower high + higher low" };
+  if(status === "Range") return { status: "Active Range", note: "Equal high / equal low context" };
+  if(status === "Mixed") return { status: "Mixed", note: "Mixed range context" };
+  if(status === "Unavailable") return { status: "Unavailable", note: "Range context unavailable" };
+  if(status === "HH/HL" || status === "LH/LL") return { status: "No Clear Range", note: "Trend-like structure context" };
+  return { status: "Mixed", note: "Mixed range context" };
+}
+function buildWeeklyStructureChartLabels(swingPoints, limit = 6){
+  const safeLimit = Math.min(6, Math.max(4, Number(limit) || 6));
+  const meaningful = (Array.isArray(swingPoints) ? swingPoints : [])
+    .filter((point)=>point && point.label && point.label !== "Unclassified" && Number.isFinite(Number(point.price)))
+    .sort((a,b)=>(Number(b.index) || 0) - (Number(a.index) || 0))
+    .slice(0, safeLimit);
+  return meaningful.map((point, order)=>({
+    time: point.time,
+    price: Number(point.price),
+    label: point.label,
+    placement: point.type === "high" ? "above" : "below",
+    priority: point.strength === "major" ? "high" : order < 2 ? "medium" : "low",
+    sourceSwingId: point.id || null,
+  }));
+}
+function buildWeeklyStructureEngineContext(candles, config = WEEKLY_MAJOR_STRUCTURE_CONFIG, context = {}){
+  const rawSwingPoints = detectWeeklyStructureSwingPoints(candles, config);
+  const rawSwingStructure = deriveWeeklyNormalizedSwingStructure(rawSwingPoints);
+  const swingPoints = enrichWeeklySwingPointQuality(rawSwingPoints, rawSwingStructure, context.majorSwingHigh, context.majorSwingLow);
   const swingStructure = deriveWeeklyNormalizedSwingStructure(swingPoints);
-  return { swingPoints, swingStructure };
+  const confidence = deriveWeeklyStructureConfidence(swingStructure, swingPoints, context.bosChochStatus);
+  const rangeStatus = deriveWeeklyRangeStatus(swingStructure);
+  const chartLabels = buildWeeklyStructureChartLabels(swingPoints, context.chartLabelLimit || 6);
+  return { swingPoints, swingStructure, confidence, rangeStatus, chartLabels };
 }
 function isWeeklyCloseBreakAbove(candle, level, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
   const close = Number(candle?.close);
@@ -3994,6 +4057,7 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
   const swingSequence = classifyWeeklySwingSequence(swings, closedCandles, config);
   const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config);
   const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config);
+  const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow, bosChochStatus });
   const macroRangeStatus = deriveWeeklyMacroRangeStatus(closedCandles, swings, config);
   const structureStatus = deriveWeeklyStructureStatus(swingSequence, bosChochStatus, macroRangeStatus);
   const context = calibrateWeeklyStructureStatus({
@@ -4123,7 +4187,7 @@ function getWeeklyContextCards(context){
     { label: "Weekly Bias", value: safe.status || safe.majorBias || "Unavailable", note: getWeeklyContextMeaning(safe.status) },
     { label: "Structure Shift", value: safe.bosChochStatus?.status || "None", note: safe.bosChochStatus?.note || "No close-confirmed Weekly shift." },
     { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
-    { label: "Swing Structure", value: swingStructure.status || "Unavailable", note: swingStructure.note || getWeeklySwingStructureNote(swingStructure.status) },
+    { label: "Swing Structure", value: swingStructure.status || "Unavailable", note: `${swingStructure.note || getWeeklySwingStructureNote(swingStructure.status)} · Confidence: ${safe.structureEngine?.confidence || "unavailable"}` },
     formatWeeklyRsiCard(),
     { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
     { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
@@ -4236,6 +4300,47 @@ function runWeeklySwingClassificationFixtureTests(){
   const failed = cases.filter((item)=>!item.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function runWeeklyStructureQualityFixtureTests(){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2, equalSwingTolerancePct: 0.003 };
+  const build = (candles)=>buildWeeklyStructureEngineContext(candles, config);
+  const hhHlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const hhLlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [95, 90, 80]);
+  const lhHlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [80, 90, 95]);
+  const ehElCandles = createWeeklySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const hhHl = build(hhHlCandles);
+  const lhLl = build(lhLlCandles);
+  const hhLl = build(hhLlCandles);
+  const lhHl = build(lhHlCandles);
+  const ehEl = build(ehElCandles);
+  const unavailable = build(hhHlCandles.slice(0, 4));
+  const mixedConfidence = deriveWeeklyStructureConfidence({ status:"Mixed", latestHigh:{ label:"HH" }, latestLow:{ label:"HL" } }, [{ label:"HH" }, { label:"HL" }]);
+  const mixedRange = deriveWeeklyRangeStatus({ status:"Mixed" });
+  const swingPointsBefore = JSON.stringify(hhHl.swingPoints);
+  const qualitySwingPoints = enrichWeeklySwingPointQuality(hhHl.swingPoints, hhHl.swingStructure, null, null);
+  const labelText = JSON.stringify([hhHl, lhLl, hhLl.rangeStatus, lhHl.rangeStatus, ehEl.rangeStatus, mixedRange]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const highLabelsAbove = hhHl.chartLabels.filter((label)=>["HH", "LH", "EH"].includes(label.label)).every((label)=>label.placement === "above");
+  const lowLabelsBelow = hhHl.chartLabels.filter((label)=>["HL", "LL", "EL"].includes(label.label)).every((label)=>label.placement === "below");
+  const cases = [
+    { name:"HH/HL returns strong or moderate confidence", passed: hhHl.swingStructure.status === "HH/HL" && ["strong", "moderate"].includes(hhHl.confidence) },
+    { name:"LH/LL returns strong or moderate confidence", passed: lhLl.swingStructure.status === "LH/LL" && ["strong", "moderate"].includes(lhLl.confidence) },
+    { name:"HH/LL returns Expansion rangeStatus", passed: hhLl.swingStructure.status === "HH/LL" && hhLl.rangeStatus.status === "Expansion" },
+    { name:"LH/HL returns Compression rangeStatus", passed: lhHl.swingStructure.status === "LH/HL" && lhHl.rangeStatus.status === "Compression" },
+    { name:"EH/EL returns Active Range status", passed: ehEl.swingStructure.status === "Range" && ehEl.rangeStatus.status === "Active Range" },
+    { name:"Mixed structure returns weak confidence or Mixed rangeStatus", passed: mixedConfidence === "weak" && mixedRange.status === "Mixed" },
+    { name:"Insufficient data returns unavailable confidence", passed: unavailable.swingStructure.status === "Unavailable" && unavailable.confidence === "unavailable" && unavailable.rangeStatus.status === "Unavailable" },
+    { name:"chartLabels exclude Unclassified", passed: hhHl.chartLabels.every((label)=>label.label !== "Unclassified") },
+    { name:"chartLabels are limited to 4–6 labels", passed: hhHl.chartLabels.length >= 4 && hhHl.chartLabels.length <= 6 },
+    { name:"chartLabels placement follows swing type", passed: highLabelsAbove && lowLabelsBelow },
+    { name:"input candles and swingPoints are not mutated", passed: JSON.stringify(hhHlCandles) === JSON.stringify(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95])) && JSON.stringify(hhHl.swingPoints) === swingPointsBefore && qualitySwingPoints !== hhHl.swingPoints },
+    { name:"safe wording only", passed: !forbidden.test(labelText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyStructureQualityFixtureTests = runWeeklyStructureQualityFixtureTests;
+
 function runStructureEngineDataContractAuditFixtureTests(){
   const context = buildWeeklyMajorStructureContext(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2 });
   const point = context.structureEngine?.swingPoints?.[0];
@@ -4246,6 +4351,8 @@ function runStructureEngineDataContractAuditFixtureTests(){
     { name:"swing point shape is stable", passed: !!point && requiredPointKeys.every((key)=>Object.prototype.hasOwnProperty.call(point, key)) },
     { name:"closed candle source is recorded", passed: context.structureEngine?.swingPoints?.every((item)=>item.source === "closed_candle_swing") === true },
     { name:"aggregate status is contract-safe", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
+    { name:"quality fields are contract-safe", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
+    { name:"chart label shape is stable", passed: !context.structureEngine.chartLabels.length || ["time", "price", "label", "placement", "priority", "sourceSwingId"].every((key)=>Object.prototype.hasOwnProperty.call(context.structureEngine.chartLabels[0], key)) },
     { name:"existing weekly fields remain", passed: !!context.majorSwingHigh && !!context.majorSwingLow && !!context.swingSequence && !!context.bosChochStatus && !!context.macroRangeStatus },
   ];
   const failed = cases.filter((item)=>!item.passed).length;
@@ -4276,6 +4383,7 @@ function runWeeklyMajorStructureFixtureTests(){
     { name:"major swing high and low detection works", passed: !!high && !!low },
     { name:"normalized weekly swing points are available", passed: Array.isArray(context.structureEngine?.swingPoints) && context.structureEngine.swingPoints.length > 0 },
     { name:"normalized weekly swing structure is available", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
+    { name:"weekly structure quality fields are available", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
     { name:"wick-only breach is unconfirmed", passed: wickOnly.status === "Unconfirmed" && wickOnly.closeConfirmed === false },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
@@ -12426,6 +12534,7 @@ function runWeeklyRsiCardFixtureTests(){
     { name: "Weekly context object is not mutated", passed: before === JSON.stringify(weeklyContext) },
     { name: "Existing Weekly Major Structure fixture still passes", passed: runWeeklyMajorStructureFixtureTests().passed === true },
     { name: "Weekly swing classification fixture passes", passed: runWeeklySwingClassificationFixtureTests().passed === true },
+    { name: "Weekly structure quality fixture passes", passed: runWeeklyStructureQualityFixtureTests().passed === true },
     { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
   ];
   const failed = cases.filter((result)=>!result.passed).length;
