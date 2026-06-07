@@ -5109,6 +5109,178 @@ function renderDailyValidationFoundation(dailySnapshot = null, weeklyContext = l
   renderMtfSummary();
 }
 
+const DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB = {
+  rangeKeys: ["3m", "6m", "1y"],
+  rangeLabels: { "3m": "3M", "6m": "6M", "1y": "1Y" },
+  swingLabels: ["HH", "HL", "LH", "LL", "EH", "EL", "Unclassified"],
+  swingStructureStatuses: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"],
+  structureShiftStatuses: ["BOS Up", "BOS Down", "CHOCH Up", "CHOCH Down", "Structure Break", "Range Break", "Wick Break Warning", "None", "Unavailable"],
+  rangeStatuses: ["Active Range", "Compression", "Expansion", "Mixed", "No Clear Range", "Unavailable"],
+  patternRelationStatuses: ["Aligned", "Caution", "Conflict", "Neutral", "Unavailable"],
+  validationStatuses: ["Supports Weekly", "Weakens Weekly", "Conflicts With Weekly", "Neutral / Mixed", "Unavailable"],
+  confidence: ["strong", "moderate", "weak", "unavailable"],
+};
+function normalizeDailyStructureContractRangeKey(key = "3m"){
+  const text = String(key || "").trim().toLowerCase();
+  return DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.rangeKeys.includes(text) ? text : "3m";
+}
+function createDailyStructureEngineDataContract(rangeKey = "3m"){
+  const key = normalizeDailyStructureContractRangeKey(rangeKey);
+  return {
+    available: false,
+    timeframe: "daily",
+    role: "validation_structure",
+    rangeKey: key,
+    rangeLabel: DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.rangeLabels[key],
+    closedCandlesUsed: 0,
+    swingPoints: [],
+    latestSwingHigh: null,
+    latestSwingLow: null,
+    majorSwingHigh: null,
+    majorSwingLow: null,
+    swingStructure: { status: "Unavailable", label: "Unavailable", note: "Daily swing structure contract only." },
+    structureShift: { status: "Unavailable", closeConfirmed: false, wickOnly: false, referenceLevel: null, referenceSwingId: null, note: "Daily structure shift contract only." },
+    rangeStatus: { status: "Unavailable", high: null, low: null, note: "Daily range status contract only." },
+    dailyPatternRelation: { status: "Unavailable", pattern: "Unavailable", note: "Future Daily structure should complement the existing pattern engine." },
+    validationAgainstWeekly: { status: "Unavailable", weeklyContext: "Unavailable", note: "Daily validation context only." },
+    confidence: "unavailable",
+    riskNotes: ["Audit contract only; Daily structure engine not implemented in Patch 11A."],
+    chartLabels: [],
+    use: "Daily validation context only",
+  };
+}
+function getDailyStructureEngineAudit(){
+  return {
+    currentFindings: {
+      dataSource: [
+        "Daily candles are stored at marketPreparationState.daily.candles after renderDailyRangeMode fetches 1d klines and updateDailyMarketContext stores the mapped candles.",
+        "Daily range mode is held in activeDailyRange with UI presets 3M, 6M, and 1Y.",
+        "Current Daily pattern/FVG/SR logic consumes the mapped Daily candle array directly; a dedicated closed-candle separation helper is not yet present for Daily structure classification.",
+      ],
+      patternChannelRange: [
+        "detectDailyPattern chooses between diagonal channel candidates and horizontal range candidates according to getStructureRangeConfig.",
+        "Existing pattern statuses cover Rising Channel, Falling Channel, Horizontal Range, broken channel support/resistance, reclaimed channel, failed breakout/breakdown, and stale broken-channel context.",
+        "1Y mode suppresses aggressive diagonal channel handling and prefers macro range support/resistance context.",
+      ],
+      validationFoundation: [
+        "buildDailyContextSnapshot summarizes Daily FVG, IFVG, S/R, pattern, range mode, and context bias.",
+        "buildDailyValidationFoundationContext classifies Daily validation against Weekly as Aligns With Weekly, Weakens Weekly, Conflicts With Weekly, Transition / Mixed, or Context Unavailable.",
+        "Daily validation remains display-only and includes an explicit no scenario scoring or primary selection impact note.",
+      ],
+      ifvgContext: [
+        "Daily IFVG reads marketPreparationState.daily.recentBrokenFvgDetails.",
+        "Daily IFVG is already mirrored into the Daily Timeframe Context card grid as display-only context.",
+      ],
+      chartOverlays: [
+        "Daily chart rendering is handled by renderDailyRangeMode and renderDailyTimeframeChart.",
+        "Daily FVG, S/R, and pattern overlays already redraw from existing overlay helpers.",
+        "Daily structure chart label rendering is not implemented; Weekly label overlay helpers can be evaluated later but must remain Daily-scoped.",
+      ],
+    },
+    gapStatus: [
+      { item: "dailyStructureEngine contract", status: "Partially exists", note: "Patch 11A defines the read-only contract; runtime engine output is not implemented." },
+      { item: "Daily rangeKey: 3m / 6m / 1y", status: "Already exists", note: "Daily UI and fetch presets already use 3M, 6M, and 1Y." },
+      { item: "closed Daily candles only", status: "Partially exists", note: "Daily candles are stored, but no Daily structure-specific closed-candle helper exists yet." },
+      { item: "swingPoints[]", status: "Missing", note: "Future Patch 11B should add normalized Daily swing points." },
+      { item: "HH / HL / LH / LL classification", status: "Missing", note: "Future Patch 11B should add display-only labels." },
+      { item: "EH / EL classification", status: "Missing", note: "Future Patch 11B should add equal high/low labels." },
+      { item: "swingStructure", status: "Missing", note: "Future Patch 11B should derive HH/HL, LH/LL, HH/LL, LH/HL, Range, Mixed, or Unavailable." },
+      { item: "structureShift", status: "Missing", note: "Future Patch 11C should add close-confirmed shift context." },
+      { item: "BOS / CHOCH close-confirmed", status: "Missing", note: "Future Patch 11C should require Daily close confirmation." },
+      { item: "wick-only warning", status: "Missing", note: "Future Patch 11C should classify wick-only breaches as warning context." },
+      { item: "rangeStatus", status: "Partially exists", note: "Daily pattern has range context; structure-engine range status is not implemented." },
+      { item: "compression / expansion", status: "Missing", note: "Future structure derivation should map LH/HL to compression and HH/LL to expansion." },
+      { item: "major vs minor swing", status: "Missing", note: "Future Daily engine should classify swing quality conservatively." },
+      { item: "confidence", status: "Missing", note: "Future Daily engine should produce display-only confidence." },
+      { item: "dailyPatternRelation", status: "Missing", note: "Future Daily engine should compare structure against existing Daily pattern output." },
+      { item: "validationAgainstWeekly", status: "Partially exists", note: "Daily validation currently compares Daily snapshot to Weekly; future engine should expose this inside the contract." },
+      { item: "chartLabels[]", status: "Missing", note: "Future optional Daily labels should be data-only before rendering." },
+      { item: "no-impact display-only guardrail", status: "Already exists", note: "Daily validation states display-only/no score impact language; Patch 11A fixture preserves this guardrail." },
+    ],
+    rangeRoles: {
+      "3m": "Default active/current Daily structure; about 60 to 90 calendar days depending available data; intended for recent structure and shift context.",
+      "6m": "Intermediate Daily structure; checks whether 3M structure is durable or noise; useful for major Daily swing context.",
+      "1y": "Macro Daily range and major levels; should not aggressively force diagonal channels; should prioritize major range high/low and key S/R context.",
+    },
+    guardrails: [
+      "Daily HH/HL/LH/LL and structure shift must use closed Daily candles only.",
+      "Running Daily candle may be developing context only.",
+      "Wick break is not BOS/CHOCH; close break is required and wick-only can become Wick Break Warning.",
+      "Daily is validation only and must not alter Scenario Score, Primary Scenario, Confirmation Status, or Market Map.",
+      "HH/LL maps to expansion, LH/HL maps to compression, EH/EL maps to Active Range, and Mixed must not be forced directional.",
+      "Initial equal high/low tolerance should be a simple percent tolerance around 0.2% to 0.5%, or an ATR helper if already safe.",
+      "Major/minor swing quality should consider spacing, minimum movement, recency, close/body support, and possible S/R or FVG context.",
+      "Wick-heavy swings can be weak confidence and should not automatically become major structure references.",
+    ],
+    patternRelations: [
+      "Daily HH/HL plus Rising Channel equals Aligned.",
+      "Daily LH/LL plus Falling Channel equals Aligned.",
+      "Daily LH/HL plus Horizontal Range equals Compression / Range.",
+      "Daily Mixed plus Rising Channel equals Caution.",
+      "Broken Channel Support plus LH/LL equals downside validation context.",
+      "Reclaimed Broken Channel plus HH/HL equals recovery validation context.",
+      "Stale pattern plus unclear structure equals weak / caution context.",
+    ],
+    validationAgainstWeeklyPlan: [
+      "Weekly bullish plus Daily HH/HL equals Supports Weekly.",
+      "Weekly bullish plus Daily LH/LL equals Conflicts With Weekly.",
+      "Weekly bearish plus Daily LH/LL equals Supports Weekly.",
+      "Weekly bearish plus Daily HH/HL equals Conflicts With Weekly.",
+      "Weekly mixed plus clear Daily structure remains validation-only with neutral or weakens wording.",
+      "Weekly range plus Daily compression equals Neutral / Mixed.",
+      "Weekly CHOCH Down plus Daily HH/HL equals conflict / recovery attempt.",
+      "Weekly Wick Break Warning plus clear Daily structure is watch validation, not confirmation.",
+    ],
+    uiTargetCards: ["Daily Structure", "Structure Shift", "Against Weekly", "Range Status", "Daily Pattern", "Daily IFVG", "Need Confirmation", "Risk Notes"],
+    recommendedPatchSequence: [
+      { patch: "11B", title: "Daily Swing HH/HL/LH/LL Engine", scope: "Implement Daily swingPoints and labels with default 3M output, display-only." },
+      { patch: "11C", title: "Daily BOS/CHOCH Refinement", scope: "Close-confirmed BOS/CHOCH, wick-only warning, and mixed/range safety." },
+      { patch: "11D", title: "Daily Validation Against Weekly", scope: "Supports/weakens/conflicts/neutral output with no score impact." },
+      { patch: "11E", title: "Daily Chart Labels", scope: "Optional max 6 to 8 Daily labels, major/medium priority only." },
+    ],
+  };
+}
+function runDailyStructureDataContractAuditFixtureTests(){
+  const contract = createDailyStructureEngineDataContract("3m");
+  const audit = getDailyStructureEngineAudit();
+  const scenarioBefore = JSON.stringify(marketPreparationState.tradePlanScenario || null);
+  const mapBefore = JSON.stringify(marketPreparationState.map || null);
+  const pattern = { ok:true, type:"Rising Channel", status:"Valid", currentPosition:"Near lower channel", supportTouches:2, resistanceTouches:2, totalTouches:4 };
+  const patternBefore = formatDailyPatternSummary(pattern);
+  createDailyStructureEngineDataContract("6m");
+  createDailyStructureEngineDataContract("1y");
+  getDailyStructureEngineAudit();
+  const patternAfter = formatDailyPatternSummary(pattern);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const text = JSON.stringify({ contract, audit });
+  const samplePointKeys = ["id", "time", "index", "price", "type", "label", "comparisonPrice", "comparisonTime", "strength", "confidence", "source"];
+  const cases = [
+    { name:"Contract includes timeframe daily", passed: contract.timeframe === "daily" },
+    { name:"Contract includes role validation_structure", passed: contract.role === "validation_structure" },
+    { name:"Contract includes rangeKey 3m / 6m / 1y vocabulary", passed: ["3m", "6m", "1y"].every((key)=>DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.rangeKeys.includes(key)) && createDailyStructureEngineDataContract("6m").rangeLabel === "6M" && createDailyStructureEngineDataContract("1y").rangeLabel === "1Y" },
+    { name:"Contract includes swingPoints", passed: Array.isArray(contract.swingPoints) },
+    { name:"Contract includes HH/HL/LH/LL/EH/EL vocabulary", passed: ["HH", "HL", "LH", "LL", "EH", "EL", "Unclassified"].every((label)=>DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.swingLabels.includes(label)) && samplePointKeys.includes("source") },
+    { name:"Contract includes structureShift", passed: !!contract.structureShift && DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.structureShiftStatuses.includes(contract.structureShift.status) },
+    { name:"Contract includes rangeStatus", passed: !!contract.rangeStatus && DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.rangeStatuses.includes(contract.rangeStatus.status) },
+    { name:"Contract includes dailyPatternRelation", passed: !!contract.dailyPatternRelation && DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.patternRelationStatuses.includes(contract.dailyPatternRelation.status) },
+    { name:"Contract includes validationAgainstWeekly", passed: !!contract.validationAgainstWeekly && DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.validationStatuses.includes(contract.validationAgainstWeekly.status) },
+    { name:"Contract includes confidence", passed: DAILY_STRUCTURE_ENGINE_CONTRACT_VOCAB.confidence.includes(contract.confidence) },
+    { name:"Contract includes chartLabels", passed: Array.isArray(contract.chartLabels) },
+    { name:"Contract use is Daily validation context only", passed: contract.use === "Daily validation context only" },
+    { name:"No unsafe wording appears", passed: !forbidden.test(text) },
+    { name:"No scenario data mutation", passed: scenarioBefore === JSON.stringify(marketPreparationState.tradePlanScenario || null) },
+    { name:"No Market Map data mutation", passed: mapBefore === JSON.stringify(marketPreparationState.map || null) },
+    { name:"Existing Daily Pattern logic remains unchanged", passed: patternBefore === patternAfter && /Rising Channel/.test(patternAfter) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.createDailyStructureEngineDataContract = createDailyStructureEngineDataContract;
+  window.getDailyStructureEngineAudit = getDailyStructureEngineAudit;
+  window.runDailyStructureDataContractAuditFixtureTests = runDailyStructureDataContractAuditFixtureTests;
+}
+
 const H4_REACTION_STATUS_LABELS = ["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction", "Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable"];
 const H4_REACTION_TYPE_LABELS = ["Rejection", "Reclaim", "Retest", "Sweep", "Failed Reclaim", "Fakeout Risk", "No Clear Reaction"];
 function createEmptyH4ReactionContext(reason = "Required 4H reaction context is unavailable."){
