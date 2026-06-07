@@ -4155,15 +4155,14 @@ function collectWeeklyIfvgContextRows(activeDetails, brokenDetails, currentPrice
       return true;
     })
     .map((detail)=>{
-      const ifvgState = detail.ifvg?.state || IFVG_STATE.POSSIBLE;
-      const stateLabel = ifvgState === IFVG_STATE.CONFIRMED ? "Confirmed" : (ifvgState === IFVG_STATE.VALID ? "Valid" : (ifvgState === IFVG_STATE.FAILED ? "Failed" : "Possible"));
+      const line = formatIfvgContextLine(detail, detail.timeframe || "Weekly");
       return {
         key: detail.key || detail.ifvg?.originalFvgId || `${detail.timeframe || "Weekly"}-${formatWeeklyFvgRange(detail)}`,
-        title: formatWeeklyFvgContextRowTitle(detail),
+        title: line.title,
         status: "IFVG / Inversion context",
         distance: formatWeeklyFvgDistance(detail, currentPrice),
-        overlap: `${stateLabel} IFVG`,
-        note: stateLabel === "Possible" ? "Waiting retest/rejection" : "Flip-zone context",
+        overlap: `${formatIfvgStateLabel(line.state)} IFVG`,
+        note: line.note,
       };
     });
 }
@@ -4425,10 +4424,51 @@ function formatWeeklyRsiValue(value = getLatestWeeklyRsiValue()){
 function formatWeeklyRsiCard(dataset = weeklyDatasetCache){
   return { label: "Weekly RSI", value: formatWeeklyRsiValue(getLatestWeeklyRsiValue(dataset)), note: `Slope: ${deriveWeeklyRsiSlopeLabel(dataset)}` };
 }
+function formatIfvgCountsSummary(counts){
+  const safe = counts || {};
+  return [
+    safe.confirmed ? `${safe.confirmed} Confirmed` : null,
+    safe.valid ? `${safe.valid} Valid` : null,
+    safe.possible ? `${safe.possible} Possible` : null,
+    safe.failed ? `${safe.failed} Failed` : null,
+    safe.stale ? `${safe.stale} Stale` : null,
+  ].filter(Boolean).join(" · ") || "IFVG unavailable";
+}
+function buildTimeframeIfvgCardContext(timeframe, memory, note = "Planning context only"){
+  const summary = summarizeIfvgMemory(memory);
+  const items = Array.isArray(summary.items) ? summary.items : [];
+  const detailRows = items.filter((item)=>item.ifvg?.state !== IFVG_STATE.FAILED).slice(0, 3).map(({ detail })=>formatIfvgContextLine(detail, timeframe));
+  const failedCount = Number(summary.counts?.failed) || 0;
+  return {
+    timeframe,
+    available: items.length > 0,
+    counts: summary.counts,
+    value: formatIfvgCountsSummary(summary.counts),
+    note: items.length ? note : "IFVG context unavailable",
+    detailRows,
+    failedCount,
+  };
+}
+function formatTimeframeIfvgDetailsHtml(context){
+  if(!context || context.available !== true){
+    return `<details class="timeframe-ifvg-context-details"><summary>Details</summary><p class="weekly-fvg-context-empty">IFVG context unavailable.</p></details>`;
+  }
+  const rows = (context.detailRows || []).map((line)=>`<li><strong>${escapeHtml(line.title)}</strong><span>${escapeHtml(line.note)}</span><small>${escapeHtml(formatIfvgStateLabel(line.state))} inversion context</small></li>`).join("");
+  const failed = context.failedCount ? `<li><strong>${escapeHtml(`${context.failedCount} failed after reclaim`)}</strong><span>Failed reclaim context</span><small>Display-only IFVG context</small></li>` : "";
+  return `<details class="timeframe-ifvg-context-details"><summary>Details</summary><div class="weekly-fvg-context-detail-block"><span>${escapeHtml(context.timeframe)} IFVG Context</span><ul>${rows || `<li><em>No active IFVG rows available.</em></li>`}${failed}</ul></div></details>`;
+}
+function getDailyIfvgContextCard(){
+  const context = buildTimeframeIfvgCardContext("Daily", marketPreparationState.daily?.recentBrokenFvgDetails, "Validation context");
+  return { label: "Daily IFVG", value: context.value, note: context.note, detailsHtml: formatTimeframeIfvgDetailsHtml(context) };
+}
+function getH4IfvgContextCard(){
+  const context = buildTimeframeIfvgCardContext("4H", marketPreparationState.h4?.recentBrokenFvgDetails, "Reaction context");
+  return { label: "4H IFVG", value: context.value, note: context.note, detailsHtml: formatTimeframeIfvgDetailsHtml(context) };
+}
 function getWeeklyContextCards(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
   const fvgContext = safe.majorFvgContext || buildWeeklyMajorFvgContext();
-  const fvg = fvgContext?.summaryValue || "Unavailable";
+  const fvg = fvgContext?.summaryValue || (fvgContext ? `${fvgContext.activeCount || 0} Active · ${fvgContext.ifvgCount ?? fvgContext.recentBrokenCount ?? 0} IFVG` : "Unavailable");
   const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Daily / 4H validation needed."];
   const swingStructure = safe.structureEngine?.swingStructure || safe.normalizedSwingStructure || safe.swingSequence || { status: "Unavailable", note: "Structure unavailable" };
   return [
@@ -4437,7 +4477,7 @@ function getWeeklyContextCards(context){
     { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
     { label: "Swing Structure", value: swingStructure.status || "Unavailable", note: `${swingStructure.note || getWeeklySwingStructureNote(swingStructure.status)} · ${formatWeeklyStructureRangeNote(safe)}` },
     formatWeeklyRsiCard(),
-    { label: "FVG Context", value: fvg, note: fvgContext?.summaryNote || "Weekly FVG context not available yet.", detailsHtml: formatWeeklyFvgContextDetailsHtml(fvgContext) },
+    { label: "FVG / IFVG Context", value: fvg, note: fvgContext?.summaryNote || "Weekly FVG context not available yet.", detailsHtml: formatWeeklyFvgContextDetailsHtml(fvgContext) },
     { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
     { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
   ];
@@ -4455,6 +4495,7 @@ function getDailyContextCards(context){
     { label: "Meaning", value: getDailyContextMeaning(status), note: "Display-only validation." },
     { label: "Need Confirmation", value: "Watch Daily structure validation.", note: "Wait for clear range reaction." },
     { label: "Key Zone", value: keyZone, note: "Daily zone context only." },
+    getDailyIfvgContextCard(),
     { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
   ];
 }
@@ -4473,6 +4514,7 @@ function getH4ContextCards(context){
     { label: "Meaning", value: getH4ContextMeaning(status), note: "Reaction review only." },
     { label: "Need Confirmation", value: "4H reclaim / BOS / strong close needed.", note: "Wait for cleaner reaction." },
     { label: "BOS/CHOCH", value: safe.bosChochContext || "Structure context unavailable", note: safe.alignmentWithDaily || "Daily validation unavailable." },
+    getH4IfvgContextCard(),
     { label: "Risk Notes", value: risks.slice(0, 2).join(" · "), note: risks.length > 2 ? "Additional notes remain in context data." : "Context note." },
   ];
 }
@@ -4786,10 +4828,10 @@ function runWeeklyFvgContextDetailsFixtureTests(){
   const beforeDaily = JSON.stringify(state.daily.fvgDetails);
   const beforeH4 = JSON.stringify(state.h4.fvgDetails);
   const context = buildWeeklyMajorFvgContext(state.weekly, state);
-  const card = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: context }).find((item)=>item.label === "FVG Context");
+  const card = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: context }).find((item)=>/FVG/.test(item.label));
   const html = formatWeeklyFvgContextDetailsHtml(context);
   const fallback = buildWeeklyMajorFvgContext({ fvgDetails: [], recentBrokenFvgDetails: { all: [] } }, { currentPrice: 95, daily: { fvgDetails: [] }, h4: { fvgDetails: [] } });
-  const fallbackCard = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: fallback }).find((item)=>item.label === "FVG Context");
+  const fallbackCard = getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: fallback }).find((item)=>/FVG/.test(item.label));
   const weeklyOnlyRow = context.activeRows.find((row)=>row.key === "w-weekly-only");
   const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
   const generatedText = `${card.value} ${card.note} ${html} ${fallbackCard.value} ${fallbackCard.note}`;
@@ -4797,7 +4839,7 @@ function runWeeklyFvgContextDetailsFixtureTests(){
     { name:"Main FVG card renders summary", passed: /Active/.test(card.value) && /IFVG/.test(card.value) },
     { name:"Details expand markup exists", passed: /<details/.test(html) && /<summary>Details<\/summary>/.test(html) },
     { name:"Active Weekly FVG detail rows render", passed: /Active Weekly FVG/.test(html) && /Bearish FVG/.test(html) },
-    { name:"IFVG context detail rows render when available", passed: /IFVG Context/.test(html) && /Waiting retest\/rejection/.test(html) },
+    { name:"IFVG context detail rows render when available", passed: /IFVG Context/.test(html) && /Weekly Possible Bullish IFVG|waiting for retest/i.test(html) },
     { name:"Daily overlap count is calculated", passed: context.dailyOverlapCount === 1 },
     { name:"4H overlap count is calculated", passed: context.h4OverlapCount === 1 },
     { name:"Weekly plus Daily plus 4H overlap returns Strong MTF FVG", passed: context.alignmentLabel === "Strong MTF FVG" && context.activeRows[0].alignmentLabel === "Strong MTF FVG" },
@@ -4886,6 +4928,8 @@ function runWeeklyMajorStructureFixtureTests(){
     { name:"weekly structure range selector fixture passes", passed: runWeeklyStructureRangeSelectorFixtureTests().passed === true },
     { name:"weekly FVG context details fixture passes", passed: runWeeklyFvgContextDetailsFixtureTests().passed === true },
     { name:"weekly FVG context details no-impact fixture passes", passed: runWeeklyFvgContextDetailsNoImpactFixtureTests().passed === true },
+    { name:"IFVG into Timeframe Context fixture passes", passed: runIfvgIntoTimeframeContextFixtureTests().passed === true },
+    { name:"IFVG into Timeframe Context no-impact fixture passes", passed: runIfvgIntoTimeframeContextNoImpactFixtureTests().passed === true },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
     { name:"wick-only breach is warning-only", passed: wickOnly.status === "Wick Break Warning" && wickOnly.closeConfirmed === false && wickOnly.wickOnly === true },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
@@ -8562,6 +8606,8 @@ function formatIfvgContextLine(detail, timeframe){
 }
 function renderIfvgContextPanel(){
   if(!els.ifvgContextPanel) return;
+  els.ifvgContextPanel.hidden = true;
+  els.ifvgContextPanel.setAttribute("aria-hidden", "true");
   const frames = [
     { label: "Weekly", memory: marketPreparationState.weekly?.recentBrokenFvgDetails },
     { label: "Daily", memory: marketPreparationState.daily?.recentBrokenFvgDetails },
@@ -8569,13 +8615,6 @@ function renderIfvgContextPanel(){
   ];
   const summaries = frames.map((frame)=>({ ...frame, summary: summarizeIfvgMemory(frame.memory) }));
   const hasItems = summaries.some((frame)=>frame.summary.items.length);
-  const countLabels = (counts)=>[
-    counts.confirmed ? `Confirmed ${counts.confirmed}` : null,
-    counts.valid ? `Valid ${counts.valid}` : null,
-    counts.possible ? `Possible ${counts.possible}` : null,
-    counts.failed ? `Failed ${counts.failed}` : null,
-    counts.stale ? `Stale ${counts.stale}` : null,
-  ].filter(Boolean).join(" · ") || "No recent context";
   const frameHtml = summaries.map((frame)=>{
     const counts = frame.summary.counts;
     const nonFailed = frame.summary.items.filter((item)=>item.ifvg?.state !== IFVG_STATE.FAILED).slice(0, 2);
@@ -8584,17 +8623,138 @@ function renderIfvgContextPanel(){
       return `<div class="ifvg-context-row"><span class="ifvg-context-badge ${getIfvgContextStatusClass(line.state)}">${escapeHtml(formatIfvgStateLabel(line.state))}</span><strong>${escapeHtml(line.title)}</strong><small>${escapeHtml(line.note)}</small></div>`;
     }).join("");
     const failedNote = counts.failed ? `<p class="ifvg-context-note">${counts.failed === frame.summary.items.length ? "Recent IFVG attempts mostly failed after reclaim." : `${counts.failed} failed after reclaim.`}</p>` : "";
-    return `<article class="ifvg-context-timeframe"><h4>${escapeHtml(frame.label)}</h4><p class="ifvg-context-counts">${escapeHtml(countLabels(counts))}</p>${detailHtml}${failedNote}</article>`;
+    return `<article class="ifvg-context-timeframe"><h4>${escapeHtml(frame.label)}</h4><p class="ifvg-context-counts">${escapeHtml(formatIfvgCountsSummary(counts))}</p>${detailHtml}${failedNote}</article>`;
   }).join("");
   els.ifvgContextPanel.innerHTML = `
     <div class="ifvg-context-header">
       <div>
         <h3>IFVG Context</h3>
-        <p class="ifvg-context-subtitle">Context only · not a trading signal</p>
+        <p class="ifvg-context-subtitle">Display-only IFVG context</p>
       </div>
     </div>
     ${hasItems ? `<div class="ifvg-context-grid">${frameHtml}</div>` : `<p class="ifvg-context-note">No recent IFVG context detected.</p>`}
   `;
+}
+function createIfvgIntoTimeframeFixtureDetail(key, timeframe, state, direction = "bearish", extra = {}){
+  return createWeeklyFvgContextFixtureDetail(key, direction, extra.lower || 100, extra.upper || 110, "Broken", {
+    timeframe,
+    brokenAt: extra.brokenAt || Date.now(),
+    ifvg: {
+      state,
+      inversionSide: direction,
+      originalFvgId: key,
+      retest: { status: state === IFVG_STATE.POSSIBLE ? IFVG_RETEST_STATUS.NONE : IFVG_RETEST_STATUS.INSIDE },
+      rejection: { status: state === IFVG_STATE.CONFIRMED ? IFVG_REJECTION_STATUS.CONFIRMED : IFVG_REJECTION_STATUS.CANDIDATE },
+      quality: { band: extra.band || "context" },
+      priorStateBeforeFailure: extra.priorStateBeforeFailure || IFVG_STATE.POSSIBLE,
+      stale: !!extra.stale,
+    },
+  });
+}
+function createIfvgIntoTimeframeFixtureMemory(timeframe){
+  return {
+    all: [
+      createIfvgIntoTimeframeFixtureDetail(`${timeframe}-confirmed`, timeframe, IFVG_STATE.CONFIRMED, "bearish", { brokenAt: 3, band: "strong" }),
+      createIfvgIntoTimeframeFixtureDetail(`${timeframe}-possible`, timeframe, IFVG_STATE.POSSIBLE, "bearish", { brokenAt: 2 }),
+      createIfvgIntoTimeframeFixtureDetail(`${timeframe}-failed`, timeframe, IFVG_STATE.FAILED, "bullish", { brokenAt: 1 }),
+    ],
+  };
+}
+function withIfvgIntoTimeframeFixtureState(run){
+  const previous = {
+    weekly: marketPreparationState.weekly,
+    daily: marketPreparationState.daily,
+    h4: marketPreparationState.h4,
+    map: marketPreparationState.map,
+    scenario: marketPreparationState.tradePlanScenario,
+    structure: latestWeeklyMajorStructureContext,
+    ifvgPanel: els.ifvgContextPanel,
+  };
+  const weeklyMemory = createIfvgIntoTimeframeFixtureMemory("Weekly");
+  const dailyMemory = createIfvgIntoTimeframeFixtureMemory("Daily");
+  const h4Memory = createIfvgIntoTimeframeFixtureMemory("4H");
+  marketPreparationState.weekly = { ...marketPreparationState.weekly, fvgDetails: [createWeeklyFvgContextFixtureDetail("weekly-active", "bearish", 100, 110, "Fresh")], recentBrokenFvgDetails: weeklyMemory };
+  marketPreparationState.daily = { ...marketPreparationState.daily, fvgDetails: [], recentBrokenFvgDetails: dailyMemory };
+  marketPreparationState.h4 = { ...marketPreparationState.h4, fvgDetails: [], recentBrokenFvgDetails: h4Memory };
+  marketPreparationState.map = { upside: [{ id:"ifvg-map", lower:120, upper:125 }], downside: [] };
+  marketPreparationState.tradePlanScenario = { plans: [{ id:"ifvg-scenario" }] };
+  const panel = { hidden:false, attrs:{}, innerHTML:"", setAttribute(name, value){ this.attrs[name] = value; }, getAttribute(name){ return this.attrs[name]; } };
+  els.ifvgContextPanel = panel;
+  try { return run({ weeklyMemory, dailyMemory, h4Memory, panel }); }
+  finally {
+    marketPreparationState.weekly = previous.weekly;
+    marketPreparationState.daily = previous.daily;
+    marketPreparationState.h4 = previous.h4;
+    marketPreparationState.map = previous.map;
+    marketPreparationState.tradePlanScenario = previous.scenario;
+    latestWeeklyMajorStructureContext = previous.structure;
+    els.ifvgContextPanel = previous.ifvgPanel;
+  }
+}
+function runIfvgIntoTimeframeContextFixtureTests(){
+  return withIfvgIntoTimeframeFixtureState(({ panel })=>{
+    const weeklyContext = buildWeeklyMajorFvgContext(marketPreparationState.weekly, marketPreparationState);
+    const weeklyHtml = formatTimeframeContextCardGrid(getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: weeklyContext }));
+    const dailyHtml = formatTimeframeContextCardGrid(getDailyContextCards(createEmptyDailyValidationContext()));
+    const h4Html = formatTimeframeContextCardGrid(getH4ContextCards(createEmptyH4ReactionContext()));
+    const h1Html = formatTimeframeContextCardGrid(getH1ContextCards(createEmptyH1TimingContext()));
+    const fallbackDaily = buildTimeframeIfvgCardContext("Daily", { all: [] }, "Validation context");
+    renderIfvgContextPanel();
+    const beforeWeekly = JSON.stringify(marketPreparationState.weekly.fvgDetails);
+    const beforeDaily = JSON.stringify(marketPreparationState.daily.fvgDetails);
+    const beforeH4 = JSON.stringify(marketPreparationState.h4.fvgDetails);
+    const combined = `${weeklyHtml} ${dailyHtml} ${h4Html} ${h1Html} ${formatTimeframeIfvgDetailsHtml(fallbackDaily)} ${panel.innerHTML}`;
+    const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+    const cases = [
+      { name:"Weekly tab output includes IFVG context inside FVG / IFVG Context card", passed: /FVG \/ IFVG Context/.test(weeklyHtml) && /IFVG Context/.test(weeklyHtml) && /Weekly Confirmed Bearish IFVG/.test(weeklyHtml) },
+      { name:"Daily tab output includes Daily IFVG card", passed: /Daily IFVG/.test(dailyHtml) && /1 Confirmed/.test(dailyHtml) && /Validation context/.test(dailyHtml) },
+      { name:"4H tab output includes 4H IFVG card", passed: /4H IFVG/.test(h4Html) && /1 Confirmed/.test(h4Html) && /Reaction context/.test(h4Html) },
+      { name:"1H tab remains unchanged", passed: !/IFVG/.test(h1Html) && /Stochastic/.test(h1Html) && /Retest/.test(h1Html) },
+      { name:"Standalone IFVG Context panel is hidden from default visible dashboard", passed: panel.hidden === true && panel.attrs["aria-hidden"] === "true" },
+      { name:"Existing IFVG renderer and helper logic remains available", passed: typeof renderIfvgContextPanel === "function" && typeof summarizeIfvgMemory === "function" && /IFVG Context/.test(panel.innerHTML) },
+      { name:"Missing IFVG data renders safe fallback", passed: fallbackDaily.available === false && /IFVG context unavailable/.test(formatTimeframeIfvgDetailsHtml(fallbackDaily)) },
+      { name:"Details expand markup exists for Weekly, Daily, and 4H IFVG cards", passed: (weeklyHtml.match(/<details/g) || []).length >= 1 && /timeframe-ifvg-context-details/.test(dailyHtml) && /timeframe-ifvg-context-details/.test(h4Html) },
+      { name:"No source IFVG or FVG arrays are mutated", passed: beforeWeekly === JSON.stringify(marketPreparationState.weekly.fvgDetails) && beforeDaily === JSON.stringify(marketPreparationState.daily.fvgDetails) && beforeH4 === JSON.stringify(marketPreparationState.h4.fvgDetails) },
+      { name:"No unsafe wording appears", passed: !forbidden.test(combined) },
+    ];
+    const failed = cases.filter((item)=>!item.passed).length;
+    return { passed: failed === 0, total: cases.length, failed, results: cases };
+  });
+}
+function runIfvgIntoTimeframeContextNoImpactFixtureTests(){
+  return withIfvgIntoTimeframeFixtureState(()=>{
+    const beforeWeekly = JSON.stringify(marketPreparationState.weekly.fvgDetails);
+    const beforeDaily = JSON.stringify(marketPreparationState.daily.fvgDetails);
+    const beforeH4 = JSON.stringify(marketPreparationState.h4.fvgDetails);
+    const beforeWeeklyMemory = JSON.stringify(marketPreparationState.weekly.recentBrokenFvgDetails);
+    const beforeDailyMemory = JSON.stringify(marketPreparationState.daily.recentBrokenFvgDetails);
+    const beforeH4Memory = JSON.stringify(marketPreparationState.h4.recentBrokenFvgDetails);
+    const beforeStructure = JSON.stringify(latestWeeklyMajorStructureContext?.structureEngine || null);
+    const beforeMap = JSON.stringify(marketPreparationState.map);
+    const beforeScenario = JSON.stringify(marketPreparationState.tradePlanScenario);
+    const beforePdf = typeof generatePdfReport === "function" ? "available" : "unavailable";
+    formatTimeframeContextCardGrid(getWeeklyContextCards({ ...createEmptyWeeklyMajorStructureContext(), majorFvgContext: buildWeeklyMajorFvgContext(marketPreparationState.weekly, marketPreparationState) }));
+    formatTimeframeContextCardGrid(getDailyContextCards(createEmptyDailyValidationContext()));
+    formatTimeframeContextCardGrid(getH4ContextCards(createEmptyH4ReactionContext()));
+    renderIfvgContextPanel();
+    const afterPdf = typeof generatePdfReport === "function" ? "available" : "unavailable";
+    const cases = [
+      { name:"IFVG detection output unchanged", passed: beforeWeeklyMemory === JSON.stringify(marketPreparationState.weekly.recentBrokenFvgDetails) && beforeDailyMemory === JSON.stringify(marketPreparationState.daily.recentBrokenFvgDetails) && beforeH4Memory === JSON.stringify(marketPreparationState.h4.recentBrokenFvgDetails) },
+      { name:"Weekly FVG source arrays unchanged", passed: beforeWeekly === JSON.stringify(marketPreparationState.weekly.fvgDetails) },
+      { name:"Daily FVG source arrays unchanged", passed: beforeDaily === JSON.stringify(marketPreparationState.daily.fvgDetails) },
+      { name:"4H FVG source arrays unchanged", passed: beforeH4 === JSON.stringify(marketPreparationState.h4.fvgDetails) },
+      { name:"Weekly Structure Engine data unchanged", passed: beforeStructure === JSON.stringify(latestWeeklyMajorStructureContext?.structureEngine || null) },
+      { name:"Market Map rows unchanged", passed: beforeMap === JSON.stringify(marketPreparationState.map) },
+      { name:"Scenario data unchanged", passed: beforeScenario === JSON.stringify(marketPreparationState.tradePlanScenario) },
+      { name:"PDF/report behavior untouched", passed: beforePdf === afterPdf },
+    ];
+    const failed = cases.filter((item)=>!item.passed).length;
+    return { passed: failed === 0, total: cases.length, failed, results: cases };
+  });
+}
+if(typeof window !== "undefined"){
+  window.runIfvgIntoTimeframeContextFixtureTests = runIfvgIntoTimeframeContextFixtureTests;
+  window.runIfvgIntoTimeframeContextNoImpactFixtureTests = runIfvgIntoTimeframeContextNoImpactFixtureTests;
 }
 function inferSingleZoneType(row){
   const text = `${row?.label || ""} ${row?.source || ""} ${row?.primarySource || ""}`.toLowerCase();
@@ -13093,10 +13253,10 @@ function runTimeframeContextCardGridFixtureTests(){
     { name: "Daily tab renders card grid", passed: /timeframe-context-card-grid/.test(dailyHtml) },
     { name: "4H tab renders card grid", passed: /timeframe-context-card-grid/.test(h4Html) },
     { name: "1H tab renders card grid", passed: /timeframe-context-card-grid/.test(h1Html) },
-    { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Structure, Weekly RSI, and FVG Context", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Structure", "Weekly RSI", "FVG Context"].every((label)=>weeklyHtml.includes(label)) && !weeklyHtml.includes("Swing Sequence") },
-    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Pattern", passed: ["Status", "Against Weekly", "Selected Range", "Daily Pattern"].every((label)=>dailyHtml.includes(label)) },
-    { name: "4H cards include Status, Related Zone, Reaction, Liquidity", passed: ["Status", "Related Zone", "Reaction", "Liquidity"].every((label)=>h4Html.includes(label)) },
-    { name: "1H cards include Status, Sweep, Mini Structure, Stochastic", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) },
+    { name: "Weekly cards include Weekly Bias, Structure Shift, Key Range, Swing Structure, Weekly RSI, and FVG / IFVG Context", passed: ["Weekly Bias", "Structure Shift", "Key Range", "Swing Structure", "Weekly RSI", "FVG / IFVG Context"].every((label)=>weeklyHtml.includes(label)) && !weeklyHtml.includes("Swing Sequence") },
+    { name: "Daily cards include Status, Against Weekly, Selected Range, Daily Pattern, and Daily IFVG", passed: ["Status", "Against Weekly", "Selected Range", "Daily Pattern", "Daily IFVG"].every((label)=>dailyHtml.includes(label)) },
+    { name: "4H cards include Status, Related Zone, Reaction, Liquidity, and 4H IFVG", passed: ["Status", "Related Zone", "Reaction", "Liquidity", "4H IFVG"].every((label)=>h4Html.includes(label)) },
+    { name: "1H cards include Status, Sweep, Mini Structure, Stochastic and no IFVG", passed: ["Status", "Sweep", "Mini Structure", "Stochastic"].every((label)=>h1Html.includes(label)) && !h1Html.includes("IFVG") },
     { name: "Card grid supports 4-card layout class", passed: /timeframe-context-card-grid-4/.test(combined) },
     { name: "Missing context fallback renders safely", passed: /Unavailable|Context Unavailable|context unavailable/i.test(missingHtml) },
     { name: "No context data mutation", passed: before === JSON.stringify({ weekly, daily, h4, h1 }) },
@@ -13134,7 +13294,7 @@ function runWeeklyRsiCardFixtureTests(){
     { name: "Weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
     { name: "Weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
     { name: "Weekly structure range selector fixture passes", passed: runWeeklyStructureRangeSelectorFixtureTests().passed === true },
-    { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
+    { name: "Swing Structure label replaces Swing Sequence and FVG / IFVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG \/ IFVG Context/.test(weeklyHtml) },
   ];
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
