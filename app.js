@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-07 00:00";
+const APP_LAST_UPDATED = "2026-06-07 00:40";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -43,6 +43,7 @@ let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
+let weeklyStructureLabelsLayer = null;
 let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
@@ -4290,6 +4291,7 @@ function renderWeeklyMajorStructure(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context is loading.");
   latestWeeklyMajorStructureContext = safe;
   if(els.weeklyMajorStructurePanel) els.weeklyMajorStructurePanel.innerHTML = formatWeeklyMajorStructurePanel(safe);
+  renderWeeklyStructureLabelsOverlay(safe);
   renderDailyValidationFoundation();
 }
 function createWeeklySwingClassificationFixtureCandles(highPrices = [110, 120, 130], lowPrices = [80, 90, 95]){
@@ -4429,6 +4431,52 @@ function runWeeklyBosChochRefinementFixtureTests(){
 }
 if(typeof window !== "undefined") window.runWeeklyBosChochRefinementFixtureTests = runWeeklyBosChochRefinementFixtureTests;
 
+function runWeeklyStructureChartLabelsFixtureTests(){
+  const makeRoot = ()=>({ clientWidth:360, clientHeight:220, children:[], appendChild(child){ this.children.push(child); return child; }, getBoundingClientRect(){ return { width:360, height:220 }; } });
+  const makeChart = (missingTime = null)=>({ timeScale(){ return { timeToCoordinate(time){ return time === missingTime ? null : Number(time) * 30 + 30; } }; } });
+  const makeSeries = (missingPrice = null)=>({ priceToCoordinate(price){ return price === missingPrice ? null : 200 - Number(price); } });
+  const labels = [
+    { time:1, price:120, label:"HH", placement:"above", priority:"high", sourceSwingId:"h1" },
+    { time:2, price:90, label:"HL", placement:"below", priority:"high", sourceSwingId:"l1" },
+    { time:3, price:115, label:"LH", placement:"above", priority:"medium", sourceSwingId:"h2" },
+    { time:4, price:85, label:"LL", placement:"below", priority:"medium", sourceSwingId:"l2" },
+    { time:5, price:116, label:"EH", placement:"above", priority:"low", sourceSwingId:"h3" },
+    { time:6, price:86, label:"EL", placement:"below", priority:"low", sourceSwingId:"l3" },
+    { time:7, price:100, label:"Unclassified", placement:"above", priority:"high", sourceSwingId:"x" },
+  ];
+  const context = { structureEngine:{ chartLabels:labels.map((label)=>({ ...label })) } };
+  const before = JSON.stringify(context.structureEngine.chartLabels);
+  clearWeeklyStructureLabelsOverlay();
+  const noop = renderWeeklyStructureLabelsOverlay({ structureEngine:{} }, makeChart(), makeSeries(), makeRoot());
+  const rendered = renderWeeklyStructureLabelsOverlay(context, makeChart(), makeSeries(), makeRoot());
+  const savedPriceChart = priceChart;
+  const savedCandleSeries = candleSeries;
+  priceChart = { timeScale(){ return { timeToCoordinate(){ return null; } }; } };
+  candleSeries = { priceToCoordinate(){ return null; } };
+  const missing = renderWeeklyStructureLabelsOverlay(context);
+  priceChart = savedPriceChart;
+  candleSeries = savedCandleSeries;
+  const highPlacement = rendered.filter((label)=>["HH", "LH", "EH"].includes(label.label)).every((label)=>label.placement === "above");
+  const lowPlacement = rendered.filter((label)=>["HL", "LL", "EL"].includes(label.label)).every((label)=>label.placement === "below");
+  const wording = rendered.map((label)=>getWeeklyStructureLabelTitle(label)).join(" ");
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Renderer no-ops safely when chartLabels are missing", passed: Array.isArray(noop) && noop.length === 0 },
+    { name:"Renderer uses only existing chartLabels data", passed: rendered.every((label)=>labels.some((source)=>source.sourceSwingId === label.sourceSwingId)) },
+    { name:"Labels are limited to maximum 6", passed: rendered.length <= 6 },
+    { name:"HH/LH/EH high labels use above placement", passed: highPlacement },
+    { name:"HL/LL/EL low labels use below placement", passed: lowPlacement },
+    { name:"Unclassified labels are not rendered", passed: rendered.every((label)=>label.label !== "Unclassified") },
+    { name:"Missing coordinates skip safely", passed: Array.isArray(missing) && missing.length <= rendered.length },
+    { name:"Existing Weekly FVG/SR overlay functions remain callable", passed: typeof renderFvgFilledOverlay === "function" && typeof renderWeeklySrOverlay === "function" },
+    { name:"Safe wording only", passed: !forbidden.test(wording) },
+    { name:"No mutation of structureEngine or chartLabels data", passed: JSON.stringify(context.structureEngine.chartLabels) === before },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyStructureChartLabelsFixtureTests = runWeeklyStructureChartLabelsFixtureTests;
+
 function runStructureEngineDataContractAuditFixtureTests(){
   const context = buildWeeklyMajorStructureContext(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2 });
   const point = context.structureEngine?.swingPoints?.[0];
@@ -4475,6 +4523,7 @@ function runWeeklyMajorStructureFixtureTests(){
     { name:"normalized weekly swing structure is available", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
     { name:"weekly structure quality fields are available", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
     { name:"weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
+    { name:"weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
     { name:"wick-only breach is warning-only", passed: wickOnly.status === "Wick Break Warning" && wickOnly.closeConfirmed === false && wickOnly.wickOnly === true },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
@@ -10641,6 +10690,7 @@ function renderPriceChart(dataset){
   if (priceChart) { priceChart.remove(); priceChart = null; candleSeries = null; }
   els.priceChart.innerHTML = "";
   weeklySrOverlayLayer = null;
+  weeklyStructureLabelsLayer = null;
   const candles = dataset.map(d=>({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close }));
   if(!candles.length) throw new Error("No valid OHLC candle data.");
   const priceChartWidth = Math.max(els.priceChart.clientWidth||0,320);
@@ -10653,6 +10703,7 @@ function renderPriceChart(dataset){
   applyManualLinesToWeeklyChart();
   renderTrendlinesForChart("weekly");
   priceChart.timeScale().fitContent();
+  renderWeeklyStructureLabelsOverlay();
 }
 
 function renderRsiChart(dataset){
@@ -10959,6 +11010,98 @@ function renderWeeklySrOverlay(summary, dataset){
   }
 }
 
+
+function clearWeeklyStructureLabelsOverlay(){
+  try { if(weeklyStructureLabelsLayer) weeklyStructureLabelsLayer.innerHTML = ""; } catch(_){}
+}
+function ensureWeeklyStructureLabelsOverlayLayer(root = els.priceChart){
+  if(!root || typeof document === "undefined") return null;
+  let layer = document.getElementById ? document.getElementById("weeklyStructureLabelsOverlay") : null;
+  if(!layer){
+    layer = document.createElement("div");
+    layer.id = "weeklyStructureLabelsOverlay";
+    layer.className = "weekly-structure-label-layer";
+    root.appendChild(layer);
+  }
+  weeklyStructureLabelsLayer = layer;
+  return layer;
+}
+function formatWeeklyStructureChartLabel(label){
+  const text = String(label?.label || "").toUpperCase();
+  return ["HH", "HL", "LH", "LL", "EH", "EL"].includes(text) ? text : "";
+}
+function getWeeklyStructureLabelClass(label){
+  const text = formatWeeklyStructureChartLabel(label);
+  const sideClass = label?.placement === "above" ? "weekly-structure-label-high" : "weekly-structure-label-low";
+  const equalClass = ["EH", "EL"].includes(text) ? " weekly-structure-label-equal" : "";
+  return `weekly-structure-label ${sideClass}${equalClass}`;
+}
+function getWeeklyStructureLabelTitle(label){
+  const meanings = { HH:"Higher High", HL:"Higher Low", LH:"Lower High", LL:"Lower Low", EH:"Equal High", EL:"Equal Low" };
+  const text = formatWeeklyStructureChartLabel(label);
+  const price = Number.isFinite(Number(label?.price)) ? formatWeeklyStructurePrice(label.price) : "Price unavailable";
+  return [meanings[text], "Structure context only", price].filter(Boolean).join(" · ");
+}
+function getWeeklyStructurePriorityValue(priority){
+  if(priority === "high") return 95;
+  if(priority === "medium") return 70;
+  if(priority === "low") return 45;
+  return Number.isFinite(Number(priority)) ? Number(priority) : 45;
+}
+function getWeeklyStructureChartLabelsForRender(context = latestWeeklyMajorStructureContext, maxLabels = 6){
+  const labels = Array.isArray(context?.structureEngine?.chartLabels) ? context.structureEngine.chartLabels : [];
+  const source = labels
+    .filter((label)=>formatWeeklyStructureChartLabel(label) && label.label !== "Unclassified")
+    .map((label,index)=>({ ...label, __order:index, __priority:getWeeklyStructurePriorityValue(label.priority) }))
+    .sort((a,b)=>b.__priority-a.__priority || a.__order-b.__order)
+    .slice(0, Math.min(6, Math.max(1, Number(maxLabels) || 6)))
+    .sort((a,b)=>a.__order-b.__order);
+  return source.map(({__order,__priority,...label})=>label);
+}
+function renderWeeklyStructureLabelsOverlay(context = latestWeeklyMajorStructureContext, chart = priceChart, series = candleSeries, root = els.priceChart){
+  try {
+    const layer = ensureWeeklyStructureLabelsOverlayLayer(root);
+    if(!layer) return [];
+    layer.innerHTML = "";
+    if(!chart || !series || !chart.timeScale || !series.priceToCoordinate) return [];
+    const labels = getWeeklyStructureChartLabelsForRender(context, 6);
+    if(!labels.length) return [];
+    const timeScale = chart.timeScale();
+    const bounds = root?.getBoundingClientRect?.() || { width: root?.clientWidth || 0, height: root?.clientHeight || 0 };
+    const width = Number(bounds.width || root?.clientWidth || 0);
+    const height = Number(bounds.height || root?.clientHeight || 0);
+    const candidates = labels.map((label,index)=>{
+      const text = formatWeeklyStructureChartLabel(label);
+      if(!text || !Number.isFinite(Number(label.price)) || label.time === null || label.time === undefined) return null;
+      const xCoord = typeof timeScale.timeToCoordinate === "function" ? timeScale.timeToCoordinate(label.time) : null;
+      const yCoord = series.priceToCoordinate(label.price);
+      if(!Number.isFinite(Number(xCoord)) || !Number.isFinite(Number(yCoord))) return null;
+      const placement = label.placement === "above" ? "above" : "below";
+      const labelWidth = 28;
+      const labelHeight = 18;
+      const yOffset = placement === "above" ? -24 : 8;
+      const x = Math.max(2, Math.min(Number(xCoord) - labelWidth / 2, Math.max(2, width - labelWidth - 2)));
+      const y = Math.max(2, Math.min(Number(yCoord) + yOffset, Math.max(2, height - labelHeight - 2)));
+      return { ...label, text, x, y, width:labelWidth, height:labelHeight, priority:getWeeklyStructurePriorityValue(label.priority), category:"structure", __index:index };
+    }).filter(Boolean);
+    const visible = limitChartLabels(candidates, { ...getChartLabelDensityConfig("W"), maxLabels:6, nearbyY:12, collisionGap:3 });
+    visible.forEach((label)=>{
+      const el = document.createElement("span");
+      el.className = getWeeklyStructureLabelClass(label);
+      el.textContent = label.text;
+      el.title = getWeeklyStructureLabelTitle(label);
+      el.dataset.sourceSwingId = label.sourceSwingId || "";
+      el.dataset.labelPriority = String(label.priority || "");
+      el.style.left = `${label.x}px`;
+      el.style.top = `${label.y}px`;
+      layer.appendChild(el);
+    });
+    return visible;
+  } catch (error) {
+    console.error("Weekly structure label overlay failed:", error);
+    return [];
+  }
+}
 
 function scanWeeklyFvg(dataset){
   const fvgs=[];
@@ -12311,8 +12454,8 @@ function renderFvgOverlay(activeFvgs, dataset){
     renderFvgFilledOverlay();
     render4hVsWeeklyFvgSummary();
 
-    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); renderWeeklyStructureLabelsOverlay(); scheduleTrendlineRedraw("weekly"); });
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); renderWeeklyStructureLabelsOverlay(); scheduleTrendlineRedraw("weekly"); });
   } catch (e) {
     console.error("FVG overlay render failed", e);
   }
@@ -12627,6 +12770,7 @@ function runWeeklyRsiCardFixtureTests(){
     { name: "Weekly swing classification fixture passes", passed: runWeeklySwingClassificationFixtureTests().passed === true },
     { name: "Weekly structure quality fixture passes", passed: runWeeklyStructureQualityFixtureTests().passed === true },
     { name: "Weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
+    { name: "Weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
     { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
   ];
   const failed = cases.filter((result)=>!result.passed).length;
@@ -14299,6 +14443,7 @@ window.addEventListener("resize", ()=>{
     priceChart.resize(els.priceChart.clientWidth, els.priceChart.clientHeight);
     renderFvgFilledOverlay();
     if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
+    renderWeeklyStructureLabelsOverlay();
   }
   if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); }
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
