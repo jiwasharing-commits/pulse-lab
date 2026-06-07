@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 12:52";
+const APP_LAST_UPDATED = "2026-06-07 01:05";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -43,9 +43,13 @@ let fvgOverlayLayer = null;
 let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
+let weeklyStructureLabelsLayer = null;
 let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
+let selectedWeeklyStructureRangeKey = "1y";
+let latestWeeklyStructureMetrics = null;
+let latestWeeklyStructureState = null;
 let latestDailyValidationContext = null;
 let latestH4ReactionContext = null;
 let latestH1TimingContext = null;
@@ -3713,6 +3717,7 @@ const WEEKLY_MAJOR_STRUCTURE_CONFIG = {
   swingRight: 3,
   recentSwingCount: 4,
   closeBreakBufferPct: 0.001,
+  equalSwingTolerancePct: 0.003,
   rangeMaxWidthPct: 85,
   rangeMinWidthPct: 8,
 };
@@ -3725,6 +3730,10 @@ function createEmptyWeeklyMajorStructureContext(reason = "Not enough closed week
     majorSwingHigh: null,
     majorSwingLow: null,
     swingSequence: { status: "Unavailable", recentSwings: [] },
+    structureEngine: { swingPoints: [], swingStructure: { status: "Unavailable", note: reason, latestHigh: null, latestLow: null }, confidence: "unavailable", rangeStatus: { status: "Unavailable", note: reason }, chartLabels: [], rangeKey: selectedWeeklyStructureRangeKey, rangeLabel: getWeeklyStructureRangeLabel(selectedWeeklyStructureRangeKey), closedCandlesUsed: 0 },
+    structureRange: { key: selectedWeeklyStructureRangeKey, label: getWeeklyStructureRangeLabel(selectedWeeklyStructureRangeKey), closedCandlesUsed: 0, note: reason },
+    normalizedSwingPoints: [],
+    normalizedSwingStructure: { status: "Unavailable", note: reason, latestHigh: null, latestLow: null },
     bosChochStatus: { status: "None", closeConfirmed: false, referenceLevel: null, note: reason },
     macroRangeStatus: { status: "Unavailable", support: null, resistance: null },
     majorSupport: null,
@@ -3809,6 +3818,144 @@ function classifyWeeklySwingSequence(swings, candles, config = WEEKLY_MAJOR_STRU
   if(Number.isFinite(widthPct) && widthPct <= (config.rangeMaxWidthPct || 85)) return { status: "Range", recentSwings };
   return { status: "Mixed", recentSwings };
 }
+function classifyWeeklySwingPointLabel(type, price, previousPrice, tolerancePct = WEEKLY_MAJOR_STRUCTURE_CONFIG.equalSwingTolerancePct){
+  const current = Number(price);
+  const previous = Number(previousPrice);
+  if(!Number.isFinite(current) || !Number.isFinite(previous)) return "Unclassified";
+  const tolerance = Math.abs(previous) * (Number.isFinite(Number(tolerancePct)) ? Number(tolerancePct) : 0.003);
+  if(Math.abs(current - previous) <= tolerance) return type === "high" ? "EH" : "EL";
+  if(type === "high") return current > previous ? "HH" : "LH";
+  if(type === "low") return current > previous ? "HL" : "LL";
+  return "Unclassified";
+}
+function detectWeeklyStructureSwingPoints(candles, options = {}){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, ...options };
+  const closedCandles = getClosedWeeklyStructureCandles(candles);
+  const left = Math.max(1, Number(config.swingLeft) || 3);
+  const right = Math.max(1, Number(config.swingRight) || 3);
+  if(closedCandles.length < left + right + 1) return [];
+  const swings = detectWeeklyMajorSwings(closedCandles, config);
+  const tolerancePct = Number.isFinite(Number(config.equalSwingTolerancePct)) ? Number(config.equalSwingTolerancePct) : 0.003;
+  let previousHigh = null;
+  let previousLow = null;
+  return (Array.isArray(swings?.all) ? swings.all : []).map((swing)=>{
+    const previous = swing.type === "high" ? previousHigh : previousLow;
+    const label = previous ? classifyWeeklySwingPointLabel(swing.type, swing.price, previous.price, tolerancePct) : "Unclassified";
+    const point = {
+      id: `weekly-swing-${swing.type}-${timeKey(swing.time) || swing.index}`,
+      time: swing.time,
+      index: swing.index,
+      price: Number(swing.price),
+      type: swing.type === "low" ? "low" : "high",
+      label,
+      comparisonPrice: previous ? Number(previous.price) : null,
+      comparisonTime: previous ? previous.time ?? null : null,
+      strength: options.strength === "minor" ? "minor" : "major",
+      confidence: ["strong", "weak"].includes(options.confidence) ? options.confidence : "moderate",
+      source: "closed_candle_swing",
+    };
+    if(point.type === "high") previousHigh = point;
+    else previousLow = point;
+    return point;
+  });
+}
+function getLatestMeaningfulWeeklySwingPoint(swingPoints, type){
+  return (Array.isArray(swingPoints) ? swingPoints : [])
+    .filter((point)=>point?.type === type && point.label && point.label !== "Unclassified")
+    .slice(-1)[0] || null;
+}
+function getWeeklySwingStructureNote(status){
+  if(status === "HH/HL") return "Higher high + higher low";
+  if(status === "LH/LL") return "Lower high + lower low";
+  if(status === "HH/LL") return "Expansion / volatile range";
+  if(status === "LH/HL") return "Compression / tightening range";
+  if(status === "Range") return "Equal high / equal low range";
+  if(status === "Unavailable") return "Structure unavailable";
+  return "Mixed swing structure context";
+}
+function deriveWeeklyNormalizedSwingStructure(swingPoints){
+  const latestHigh = getLatestMeaningfulWeeklySwingPoint(swingPoints, "high");
+  const latestLow = getLatestMeaningfulWeeklySwingPoint(swingPoints, "low");
+  if(!latestHigh || !latestLow) return { status: "Unavailable", note: getWeeklySwingStructureNote("Unavailable"), latestHigh: latestHigh || null, latestLow: latestLow || null };
+  const highLabel = latestHigh.label;
+  const lowLabel = latestLow.label;
+  let status = "Mixed";
+  if(highLabel === "HH" && lowLabel === "HL") status = "HH/HL";
+  else if(highLabel === "LH" && lowLabel === "LL") status = "LH/LL";
+  else if(highLabel === "HH" && lowLabel === "LL") status = "HH/LL";
+  else if(highLabel === "LH" && lowLabel === "HL") status = "LH/HL";
+  else if(highLabel === "EH" && lowLabel === "EL") status = "Range";
+  else if(highLabel === "EH" || lowLabel === "EL") status = "Range";
+  return { status, note: getWeeklySwingStructureNote(status), latestHigh, latestLow };
+}
+function isSameWeeklySwingReference(point, reference){
+  if(!point || !reference) return false;
+  const pointPrice = Number(point.price);
+  const referencePrice = Number(reference.price);
+  const samePrice = Number.isFinite(pointPrice) && Number.isFinite(referencePrice) && pointPrice === referencePrice;
+  const sameTime = point.time !== undefined && reference.time !== undefined && point.time === reference.time;
+  return samePrice && (sameTime || reference.time === null || reference.time === undefined);
+}
+function enrichWeeklySwingPointQuality(swingPoints, swingStructure = {}, majorSwingHigh = null, majorSwingLow = null){
+  const latestHighId = swingStructure?.latestHigh?.id || null;
+  const latestLowId = swingStructure?.latestLow?.id || null;
+  return (Array.isArray(swingPoints) ? swingPoints : []).map((point)=>{
+    const isLatestStructurePoint = point.id === latestHighId || point.id === latestLowId;
+    const isMajorReference = isSameWeeklySwingReference(point, majorSwingHigh) || isSameWeeklySwingReference(point, majorSwingLow);
+    const classified = point.label && point.label !== "Unclassified";
+    const strength = isLatestStructurePoint || isMajorReference ? "major" : "minor";
+    const confidence = !classified ? "weak" : strength === "major" ? "moderate" : "weak";
+    return { ...point, strength, confidence };
+  });
+}
+function deriveWeeklyStructureConfidence(swingStructure, swingPoints, bosChochStatus = null){
+  const status = swingStructure?.status || "Unavailable";
+  if(status === "Unavailable") return "unavailable";
+  const latestHighClassified = !!swingStructure?.latestHigh && swingStructure.latestHigh.label !== "Unclassified";
+  const latestLowClassified = !!swingStructure?.latestLow && swingStructure.latestLow.label !== "Unclassified";
+  if(!latestHighClassified || !latestLowClassified) return "weak";
+  const recentMeaningful = (Array.isArray(swingPoints) ? swingPoints : []).slice(-4).filter((point)=>point.label && point.label !== "Unclassified");
+  const hasConflict = hasWeeklyStructureCharacterConflict(status, bosChochStatus?.status || bosChochStatus);
+  if(status === "Mixed" || recentMeaningful.length < 2) return "weak";
+  if(status === "HH/HL" || status === "LH/LL") return hasConflict ? "moderate" : "strong";
+  if(status === "HH/LL" || status === "LH/HL" || status === "Range") return "moderate";
+  return "weak";
+}
+function deriveWeeklyRangeStatus(swingStructure){
+  const status = swingStructure?.status || "Unavailable";
+  if(status === "HH/LL") return { status: "Expansion", note: "Higher high + lower low" };
+  if(status === "LH/HL") return { status: "Compression", note: "Lower high + higher low" };
+  if(status === "Range") return { status: "Active Range", note: "Equal high / equal low context" };
+  if(status === "Mixed") return { status: "Mixed", note: "Mixed range context" };
+  if(status === "Unavailable") return { status: "Unavailable", note: "Range context unavailable" };
+  if(status === "HH/HL" || status === "LH/LL") return { status: "No Clear Range", note: "Trend-like structure context" };
+  return { status: "Mixed", note: "Mixed range context" };
+}
+function buildWeeklyStructureChartLabels(swingPoints, limit = 6){
+  const safeLimit = Math.min(6, Math.max(4, Number(limit) || 6));
+  const meaningful = (Array.isArray(swingPoints) ? swingPoints : [])
+    .filter((point)=>point && point.label && point.label !== "Unclassified" && Number.isFinite(Number(point.price)))
+    .sort((a,b)=>(Number(b.index) || 0) - (Number(a.index) || 0))
+    .slice(0, safeLimit);
+  return meaningful.map((point, order)=>({
+    time: point.time,
+    price: Number(point.price),
+    label: point.label,
+    placement: point.type === "high" ? "above" : "below",
+    priority: point.strength === "major" ? "high" : order < 2 ? "medium" : "low",
+    sourceSwingId: point.id || null,
+  }));
+}
+function buildWeeklyStructureEngineContext(candles, config = WEEKLY_MAJOR_STRUCTURE_CONFIG, context = {}){
+  const rawSwingPoints = detectWeeklyStructureSwingPoints(candles, config);
+  const rawSwingStructure = deriveWeeklyNormalizedSwingStructure(rawSwingPoints);
+  const swingPoints = enrichWeeklySwingPointQuality(rawSwingPoints, rawSwingStructure, context.majorSwingHigh, context.majorSwingLow);
+  const swingStructure = deriveWeeklyNormalizedSwingStructure(swingPoints);
+  const confidence = deriveWeeklyStructureConfidence(swingStructure, swingPoints, context.bosChochStatus);
+  const rangeStatus = deriveWeeklyRangeStatus(swingStructure);
+  const chartLabels = buildWeeklyStructureChartLabels(swingPoints, context.chartLabelLimit || 6);
+  return { swingPoints, swingStructure, confidence, rangeStatus, chartLabels };
+}
 function isWeeklyCloseBreakAbove(candle, level, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
   const close = Number(candle?.close);
   const reference = Number(level);
@@ -3821,23 +3968,62 @@ function isWeeklyCloseBreakBelow(candle, level, config = WEEKLY_MAJOR_STRUCTURE_
   if(!Number.isFinite(close) || !Number.isFinite(reference)) return false;
   return close < reference * (1 - (config.closeBreakBufferPct || 0));
 }
-function deriveWeeklyBosChochStatus(candles, swings, sequence, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
-  const latest = candles?.[candles.length - 1];
-  const priorHigh = selectWeeklyMajorSwingHigh(swings);
-  const priorLow = selectWeeklyMajorSwingLow(swings);
-  if(!latest || (!priorHigh && !priorLow)) return { status: "None", closeConfirmed: false, referenceLevel: null, note: "Waiting for major Weekly swing references." };
+function formatWeeklyBosChochStatus(status, fields = {}){
+  return { status, closeConfirmed: false, wickOnly: false, referenceLevel: null, referenceSwingId: null, note: "No close-confirmed Weekly BOS/CHOCH context.", ...fields };
+}
+function getLatestWeeklyBosChochReference(structureEngine, swings, type){
+  const points = Array.isArray(structureEngine?.swingPoints) ? structureEngine.swingPoints : [];
+  const meaningful = points.filter((point)=>point?.type === type && point.label && point.label !== "Unclassified" && Number.isFinite(Number(point.price)));
+  const latest = meaningful.length ? meaningful[meaningful.length - 1] : null;
+  if(latest) return latest;
+  const fallback = type === "high" ? selectWeeklyMajorSwingHigh(swings) : selectWeeklyMajorSwingLow(swings);
+  if(!fallback || !Number.isFinite(Number(fallback.price))) return null;
+  return { ...fallback, id: fallback.id || `weekly-major-${type}-${timeKey(fallback.time) || fallback.index}`, label: fallback.label || (type === "high" ? "Major Swing High" : "Major Swing Low") };
+}
+function classifyWeeklyCloseBreakStatus(direction, structureStatus, rangeStatus){
+  const structure = String(structureStatus || "Unavailable");
+  const range = String(rangeStatus?.status || rangeStatus || "");
+  if(structure === "HH/HL") return direction === "up" ? "BOS Up" : "CHOCH Down";
+  if(structure === "LH/LL") return direction === "down" ? "BOS Down" : "CHOCH Up";
+  if(structure === "Range" || range === "Active Range") return "Range Break";
+  if(structure === "LH/HL" || range === "Compression") return "Range Break";
+  if(structure === "HH/LL" || range === "Expansion") return "Structure Break";
+  if(structure === "Mixed") return "Structure Break";
+  return "Structure Break";
+}
+function getWeeklyCloseBreakNote(status, direction){
+  if(status === "BOS Up") return "Close-confirmed break above swing high.";
+  if(status === "BOS Down") return "Close-confirmed break below swing low.";
+  if(status === "CHOCH Up") return "Close-confirmed break above swing high.";
+  if(status === "CHOCH Down") return "Close-confirmed break below swing low.";
+  if(status === "Range Break") return "Close broke range boundary context.";
+  if(status === "Structure Break") return direction === "up" ? "Close-confirmed structure break above swing high." : "Close-confirmed structure break below swing low.";
+  return "No close-confirmed Weekly BOS/CHOCH context.";
+}
+function deriveWeeklyBosChochStatus(candles, swings, sequence, config = WEEKLY_MAJOR_STRUCTURE_CONFIG, structureEngine = null){
+  const closedCandles = getClosedWeeklyStructureCandles(candles);
+  const latest = closedCandles[closedCandles.length - 1];
+  if(!latest) return formatWeeklyBosChochStatus("Unavailable", { note: "Closed Weekly candle unavailable." });
+  const priorHigh = getLatestWeeklyBosChochReference(structureEngine, swings, "high");
+  const priorLow = getLatestWeeklyBosChochReference(structureEngine, swings, "low");
+  if(!priorHigh && !priorLow) return formatWeeklyBosChochStatus("Unavailable", { note: "Reference swing unavailable." });
+  const structureStatus = structureEngine?.swingStructure?.status || sequence?.status || "Unavailable";
+  const rangeStatus = structureEngine?.rangeStatus || null;
   if(priorHigh && isWeeklyCloseBreakAbove(latest, priorHigh.price, config)){
-    const continuation = sequence?.status === "HH/HL";
-    return { status: continuation ? "BOS Up" : "CHOCH Up", closeConfirmed: true, referenceLevel: priorHigh.price, note: continuation ? "Weekly close is above the prior major swing high." : "Weekly close is above the prior major swing high after non-bullish structure." };
+    const status = classifyWeeklyCloseBreakStatus("up", structureStatus, rangeStatus);
+    return formatWeeklyBosChochStatus(status, { closeConfirmed: true, referenceLevel: Number(priorHigh.price), referenceSwingId: priorHigh.id || null, note: getWeeklyCloseBreakNote(status, "up") });
   }
   if(priorLow && isWeeklyCloseBreakBelow(latest, priorLow.price, config)){
-    const continuation = sequence?.status === "LH/LL";
-    return { status: continuation ? "BOS Down" : "CHOCH Down", closeConfirmed: true, referenceLevel: priorLow.price, note: continuation ? "Weekly close is below the prior major swing low." : "Weekly close is below the prior major swing low after non-bearish structure." };
+    const status = classifyWeeklyCloseBreakStatus("down", structureStatus, rangeStatus);
+    return formatWeeklyBosChochStatus(status, { closeConfirmed: true, referenceLevel: Number(priorLow.price), referenceSwingId: priorLow.id || null, note: getWeeklyCloseBreakNote(status, "down") });
   }
   const wickAbove = priorHigh && Number(latest.high) > Number(priorHigh.price) * (1 + (config.closeBreakBufferPct || 0));
   const wickBelow = priorLow && Number(latest.low) < Number(priorLow.price) * (1 - (config.closeBreakBufferPct || 0));
-  if(wickAbove || wickBelow) return { status: "Unconfirmed", closeConfirmed: false, referenceLevel: wickAbove ? priorHigh.price : priorLow.price, note: "Weekly wick breached a major swing, but the weekly close did not confirm structure context." };
-  return { status: "None", closeConfirmed: false, referenceLevel: null, note: "No close-confirmed Weekly BOS/CHOCH context." };
+  if(wickAbove || wickBelow){
+    const reference = wickAbove ? priorHigh : priorLow;
+    return formatWeeklyBosChochStatus("Wick Break Warning", { wickOnly: true, referenceLevel: Number(reference.price), referenceSwingId: reference.id || null, note: wickAbove ? "Wick breached swing high, close did not confirm." : "Wick breached swing low, close did not confirm." });
+  }
+  return formatWeeklyBosChochStatus("None", { note: "No close-confirmed structure break." });
 }
 function deriveWeeklyMacroRangeStatus(candles, swings, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
   const high = selectWeeklyMajorSwingHigh(swings);
@@ -3865,7 +4051,7 @@ function deriveWeeklyStructureStatus(sequence, bosChochStatus, macroRangeStatus)
   if(hasWeeklyStructureCharacterConflict(sequenceStatus, bosStatus)) return { status: "Mixed Structure", majorBias: "mixed" };
   if(bosStatus === "BOS Up" && sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
   if(bosStatus === "BOS Down" && sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
-  if(["CHOCH Up", "CHOCH Down", "Unconfirmed"].includes(bosStatus) && ["Mixed", "Range", "Unavailable"].includes(sequenceStatus)) return { status: "Weak Structure", majorBias: "mixed" };
+  if(["CHOCH Up", "CHOCH Down", "Unconfirmed", "Wick Break Warning", "Structure Break", "Range Break", "Unavailable"].includes(bosStatus) && ["Mixed", "Range", "Unavailable", "HH/LL", "LH/HL"].includes(sequenceStatus)) return { status: "Weak Structure", majorBias: "mixed" };
   if(sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
   if(sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
   if(["Active Range", "Potential Range"].includes(macroRangeStatus?.status) || sequenceStatus === "Range") return { status: "Macro Range", majorBias: "range" };
@@ -3895,6 +4081,56 @@ function buildWeeklyMajorFvgContext(weeklyState = marketPreparationState.weekly)
   if(!details.length && !broken.length) return null;
   return { activeCount: details.length, recentBrokenCount: broken.length, source: "Weekly FVG / IFVG context" };
 }
+function normalizeWeeklyStructureRangeKey(key){
+  const text = String(key || "").trim().toLowerCase();
+  return text === "2y" ? "2y" : "1y";
+}
+function getWeeklyStructureRangeLimit(key = selectedWeeklyStructureRangeKey){
+  return normalizeWeeklyStructureRangeKey(key) === "2y" ? 104 : 52;
+}
+function getWeeklyStructureRangeLabel(key = selectedWeeklyStructureRangeKey){
+  return normalizeWeeklyStructureRangeKey(key) === "2y" ? "2Y" : "1Y";
+}
+function getWeeklyStructureRangePurpose(key = selectedWeeklyStructureRangeKey){
+  return normalizeWeeklyStructureRangeKey(key) === "2y" ? "macro Weekly structure" : "current Weekly structure";
+}
+function getWeeklyStructureCandlesForRange(candles, key = selectedWeeklyStructureRangeKey){
+  const rangeKey = normalizeWeeklyStructureRangeKey(key);
+  const closed = getClosedWeeklyStructureCandles(candles);
+  const limit = getWeeklyStructureRangeLimit(rangeKey);
+  return closed.slice(-limit);
+}
+function formatWeeklyStructureRangeNote(context){
+  const key = normalizeWeeklyStructureRangeKey(context?.structureRange?.key || context?.structureEngine?.rangeKey || selectedWeeklyStructureRangeKey);
+  const used = Number(context?.structureRange?.closedCandlesUsed ?? context?.structureEngine?.closedCandlesUsed);
+  const limit = getWeeklyStructureRangeLimit(key);
+  const base = `${getWeeklyStructureRangeLabel(key)} structure`;
+  if(Number.isFinite(used) && used > 0 && used < limit) return `${base} · Using available closed Weekly candles`;
+  return base;
+}
+function formatWeeklyStructureRangeSelector(context){
+  const active = normalizeWeeklyStructureRangeKey(context?.structureRange?.key || selectedWeeklyStructureRangeKey);
+  const buttons = ["1y", "2y"].map((key)=>`<button type="button" class="weekly-structure-range-btn ${active === key ? "is-active" : ""}" data-weekly-structure-range="${key}" aria-pressed="${active === key ? "true" : "false"}">${getWeeklyStructureRangeLabel(key)}</button>`).join("");
+  return `<div class="weekly-structure-range-selector" aria-label="Weekly Structure Range"><span>Structure Range</span><div class="weekly-structure-range-actions">${buttons}</div><small>${escapeHtml(getWeeklyStructureRangePurpose(active))}</small></div>`;
+}
+function setWeeklyStructureRange(key){
+  const next = normalizeWeeklyStructureRangeKey(key);
+  selectedWeeklyStructureRangeKey = next;
+  if(Array.isArray(weeklyDatasetCache) && weeklyDatasetCache.length){
+    const context = buildWeeklyMajorStructureContext(weeklyDatasetCache, latestWeeklyStructureMetrics, latestWeeklyStructureState, WEEKLY_MAJOR_STRUCTURE_CONFIG, next);
+    renderWeeklyMajorStructure(context);
+  } else {
+    renderWeeklyMajorStructure(createEmptyWeeklyMajorStructureContext("Weekly structure waits for closed Weekly candles."));
+  }
+  return selectedWeeklyStructureRangeKey;
+}
+function bindWeeklyStructureRangeSelector(root = els.weeklyMajorStructurePanel){
+  if(!root?.querySelectorAll) return;
+  root.querySelectorAll("[data-weekly-structure-range]").forEach((button)=>{
+    button.addEventListener("click", ()=>setWeeklyStructureRange(button.getAttribute("data-weekly-structure-range")));
+  });
+}
+
 function buildWeeklyStructureRiskNotes(structure, metrics){
   const notes = [];
   const direction = metrics?.direction || mtfState.weeklyDirection || null;
@@ -3905,15 +4141,20 @@ function buildWeeklyStructureRiskNotes(structure, metrics){
   if(!notes.length && direction) notes.push("RSI context is supporting information only and does not override structure context.");
   return notes;
 }
-function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState = marketPreparationState.weekly, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
-  const closedCandles = getClosedWeeklyStructureCandles(candles);
-  if(closedCandles.length < (config.minCandles || 24)) return createEmptyWeeklyMajorStructureContext(`Not enough closed weekly candles for major structure context (${closedCandles.length}/${config.minCandles || 24}).`);
+function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState = marketPreparationState.weekly, config = WEEKLY_MAJOR_STRUCTURE_CONFIG, rangeKey = selectedWeeklyStructureRangeKey){
+  const normalizedRangeKey = normalizeWeeklyStructureRangeKey(rangeKey);
+  const allClosedCandles = getClosedWeeklyStructureCandles(candles);
+  const closedCandles = getWeeklyStructureCandlesForRange(candles, normalizedRangeKey);
+  if(closedCandles.length < (config.minCandles || 24)) return createEmptyWeeklyMajorStructureContext(`${getWeeklyStructureRangeLabel(normalizedRangeKey)}: Not enough closed weekly candles for major structure context (${closedCandles.length}/${config.minCandles || 24}).`);
   const swings = detectWeeklyMajorSwings(closedCandles, config);
   const majorSwingHigh = formatWeeklySwingReference(selectWeeklyMajorSwingHigh(swings));
   const majorSwingLow = formatWeeklySwingReference(selectWeeklyMajorSwingLow(swings));
   if(!majorSwingHigh || !majorSwingLow) return createEmptyWeeklyMajorStructureContext("Waiting for both major Weekly swing high and swing low references.");
   const swingSequence = classifyWeeklySwingSequence(swings, closedCandles, config);
-  const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config);
+  let structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow });
+  const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config, structureEngine);
+  structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow, bosChochStatus });
+  structureEngine = { ...structureEngine, rangeKey: normalizedRangeKey, rangeLabel: getWeeklyStructureRangeLabel(normalizedRangeKey), closedCandlesUsed: closedCandles.length };
   const macroRangeStatus = deriveWeeklyMacroRangeStatus(closedCandles, swings, config);
   const structureStatus = deriveWeeklyStructureStatus(swingSequence, bosChochStatus, macroRangeStatus);
   const context = calibrateWeeklyStructureStatus({
@@ -3924,6 +4165,10 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
     majorSwingHigh,
     majorSwingLow,
     swingSequence,
+    structureEngine,
+    structureRange: { key: normalizedRangeKey, label: getWeeklyStructureRangeLabel(normalizedRangeKey), candleLimit: getWeeklyStructureRangeLimit(normalizedRangeKey), closedCandlesUsed: closedCandles.length, totalClosedCandles: allClosedCandles.length, note: closedCandles.length < getWeeklyStructureRangeLimit(normalizedRangeKey) ? "Using available closed Weekly candles." : `${getWeeklyStructureRangeLabel(normalizedRangeKey)} structure context.` },
+    normalizedSwingPoints: structureEngine.swingPoints,
+    normalizedSwingStructure: structureEngine.swingStructure,
     bosChochStatus,
     macroRangeStatus,
     majorSupport: majorSwingLow,
@@ -4035,11 +4280,12 @@ function getWeeklyContextCards(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
   const fvg = safe.majorFvgContext ? `${safe.majorFvgContext.activeCount || 0} active · ${safe.majorFvgContext.recentBrokenCount || 0} IFVG` : "FVG context unavailable";
   const risks = Array.isArray(safe.riskNotes) && safe.riskNotes.length ? safe.riskNotes : ["Daily / 4H validation needed."];
+  const swingStructure = safe.structureEngine?.swingStructure || safe.normalizedSwingStructure || safe.swingSequence || { status: "Unavailable", note: "Structure unavailable" };
   return [
     { label: "Weekly Bias", value: safe.status || safe.majorBias || "Unavailable", note: getWeeklyContextMeaning(safe.status) },
     { label: "Structure Shift", value: safe.bosChochStatus?.status || "None", note: safe.bosChochStatus?.note || "No close-confirmed Weekly shift." },
     { label: "Key Range", value: formatWeeklyMacroRangeDisplay(safe.macroRangeStatus), note: "Major range reference only." },
-    { label: "Swing Structure", value: safe.swingSequence?.status || "Unavailable", note: safe.swingSequence?.note || "Swing structure context." },
+    { label: "Swing Structure", value: swingStructure.status || "Unavailable", note: `${swingStructure.note || getWeeklySwingStructureNote(swingStructure.status)} · ${formatWeeklyStructureRangeNote(safe)}` },
     formatWeeklyRsiCard(),
     { label: "FVG Context", value: fvg, note: safe.majorFvgContext?.source || "Weekly FVG / IFVG context." },
     { label: "Need Confirmation", value: "Daily / 4H validation needed.", note: "Watch reclaim, rejection, or structure shift." },
@@ -4097,14 +4343,288 @@ function getH1ContextCards(context){
 }
 function formatWeeklyMajorStructurePanel(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context unavailable.");
-  return `<div class="weekly-major-structure-header timeframe-context-card-header"><div><h3>Weekly Major Structure</h3><p>Major Context only · scenario planning reference.</p></div><span class="weekly-major-status weekly-major-status-${String(safe.status || "unavailable").toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(safe.status || "Context Unavailable")}</span></div>${formatTimeframeContextCardGrid(getWeeklyContextCards(safe))}<p class="weekly-major-risk-notes timeframe-context-card-note">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
+  return `<div class="weekly-major-structure-header timeframe-context-card-header"><div><h3>Weekly Major Structure</h3><p>Major Context only · scenario planning reference.</p></div><span class="weekly-major-status weekly-major-status-${String(safe.status || "unavailable").toLowerCase().replace(/[^a-z]+/g,"-")}">${escapeHtml(safe.status || "Context Unavailable")}</span></div>${formatWeeklyStructureRangeSelector(safe)}${formatTimeframeContextCardGrid(getWeeklyContextCards(safe))}<p class="weekly-major-risk-notes timeframe-context-card-note">${escapeHtml(safe.disclaimer || createScenarioDisclaimer())}</p>`;
 }
 function renderWeeklyMajorStructure(context){
   const safe = context || createEmptyWeeklyMajorStructureContext("Weekly major structure context is loading.");
   latestWeeklyMajorStructureContext = safe;
   if(els.weeklyMajorStructurePanel) els.weeklyMajorStructurePanel.innerHTML = formatWeeklyMajorStructurePanel(safe);
+  bindWeeklyStructureRangeSelector();
+  renderWeeklyStructureLabelsOverlay(safe);
   renderDailyValidationFoundation();
 }
+function createWeeklySwingClassificationFixtureCandles(highPrices = [110, 120, 130], lowPrices = [80, 90, 95]){
+  const highIndexes = [3, 9, 15];
+  const lowIndexes = [6, 12, 18];
+  return Array.from({ length: 22 }, (_, index)=>{
+    const highSlot = highIndexes.indexOf(index);
+    const lowSlot = lowIndexes.indexOf(index);
+    const high = highSlot >= 0 ? highPrices[highSlot] : 101;
+    const low = lowSlot >= 0 ? lowPrices[lowSlot] : 96;
+    return { time:index, open:98, high, low, close:99, closeTime:index, closed:true };
+  });
+}
+function runWeeklySwingClassificationFixtureTests(){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2, equalSwingTolerancePct: 0.003 };
+  const classify = (candles)=>buildWeeklyStructureEngineContext(candles, config);
+  const hhHlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const hhLlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [95, 90, 80]);
+  const lhHlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [80, 90, 95]);
+  const ehElCandles = createWeeklySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const activeCandle = { time:22, open:99, high:1000, low:1, close:500, closeTime:Date.now() + 604800000, closed:false };
+  const beforeActive = classify(hhHlCandles);
+  const afterActive = classify([...hhHlCandles, activeCandle]);
+  const mutationInput = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const beforeMutation = JSON.stringify(mutationInput);
+  classify(mutationInput);
+  const safeWordingText = JSON.stringify([
+    deriveWeeklyNormalizedSwingStructure(classify(hhHlCandles).swingPoints),
+    deriveWeeklyNormalizedSwingStructure(classify(lhLlCandles).swingPoints),
+    deriveWeeklyNormalizedSwingStructure(classify(hhLlCandles).swingPoints),
+    deriveWeeklyNormalizedSwingStructure(classify(lhHlCandles).swingPoints),
+    deriveWeeklyNormalizedSwingStructure(classify(ehElCandles).swingPoints),
+  ]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"closed candles only", passed: beforeActive.swingStructure.status === afterActive.swingStructure.status && JSON.stringify(beforeActive.swingPoints) === JSON.stringify(afterActive.swingPoints) },
+    { name:"HH/HL case", passed: classify(hhHlCandles).swingStructure.status === "HH/HL" },
+    { name:"LH/LL case", passed: classify(lhLlCandles).swingStructure.status === "LH/LL" },
+    { name:"HH/LL case", passed: classify(hhLlCandles).swingStructure.status === "HH/LL" && /Expansion/.test(classify(hhLlCandles).swingStructure.note) },
+    { name:"LH/HL case", passed: classify(lhHlCandles).swingStructure.status === "LH/HL" && /Compression/.test(classify(lhHlCandles).swingStructure.note) },
+    { name:"EH/EL case", passed: classify(ehElCandles).swingStructure.status === "Range" && classify(ehElCandles).swingPoints.some((point)=>point.label === "EH") && classify(ehElCandles).swingPoints.some((point)=>point.label === "EL") },
+    { name:"insufficient data", passed: deriveWeeklyNormalizedSwingStructure(detectWeeklyStructureSwingPoints(hhHlCandles.slice(0, 4), config)).status === "Unavailable" },
+    { name:"input candles are not mutated", passed: JSON.stringify(mutationInput) === beforeMutation },
+    { name:"safe wording", passed: !forbidden.test(safeWordingText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runWeeklyStructureQualityFixtureTests(){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2, equalSwingTolerancePct: 0.003 };
+  const build = (candles)=>buildWeeklyStructureEngineContext(candles, config);
+  const hhHlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const hhLlCandles = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [95, 90, 80]);
+  const lhHlCandles = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [80, 90, 95]);
+  const ehElCandles = createWeeklySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const hhHl = build(hhHlCandles);
+  const lhLl = build(lhLlCandles);
+  const hhLl = build(hhLlCandles);
+  const lhHl = build(lhHlCandles);
+  const ehEl = build(ehElCandles);
+  const unavailable = build(hhHlCandles.slice(0, 4));
+  const mixedConfidence = deriveWeeklyStructureConfidence({ status:"Mixed", latestHigh:{ label:"HH" }, latestLow:{ label:"HL" } }, [{ label:"HH" }, { label:"HL" }]);
+  const mixedRange = deriveWeeklyRangeStatus({ status:"Mixed" });
+  const swingPointsBefore = JSON.stringify(hhHl.swingPoints);
+  const qualitySwingPoints = enrichWeeklySwingPointQuality(hhHl.swingPoints, hhHl.swingStructure, null, null);
+  const labelText = JSON.stringify([hhHl, lhLl, hhLl.rangeStatus, lhHl.rangeStatus, ehEl.rangeStatus, mixedRange]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const highLabelsAbove = hhHl.chartLabels.filter((label)=>["HH", "LH", "EH"].includes(label.label)).every((label)=>label.placement === "above");
+  const lowLabelsBelow = hhHl.chartLabels.filter((label)=>["HL", "LL", "EL"].includes(label.label)).every((label)=>label.placement === "below");
+  const cases = [
+    { name:"HH/HL returns strong or moderate confidence", passed: hhHl.swingStructure.status === "HH/HL" && ["strong", "moderate"].includes(hhHl.confidence) },
+    { name:"LH/LL returns strong or moderate confidence", passed: lhLl.swingStructure.status === "LH/LL" && ["strong", "moderate"].includes(lhLl.confidence) },
+    { name:"HH/LL returns Expansion rangeStatus", passed: hhLl.swingStructure.status === "HH/LL" && hhLl.rangeStatus.status === "Expansion" },
+    { name:"LH/HL returns Compression rangeStatus", passed: lhHl.swingStructure.status === "LH/HL" && lhHl.rangeStatus.status === "Compression" },
+    { name:"EH/EL returns Active Range status", passed: ehEl.swingStructure.status === "Range" && ehEl.rangeStatus.status === "Active Range" },
+    { name:"Mixed structure returns weak confidence or Mixed rangeStatus", passed: mixedConfidence === "weak" && mixedRange.status === "Mixed" },
+    { name:"Insufficient data returns unavailable confidence", passed: unavailable.swingStructure.status === "Unavailable" && unavailable.confidence === "unavailable" && unavailable.rangeStatus.status === "Unavailable" },
+    { name:"chartLabels exclude Unclassified", passed: hhHl.chartLabels.every((label)=>label.label !== "Unclassified") },
+    { name:"chartLabels are limited to 4–6 labels", passed: hhHl.chartLabels.length >= 4 && hhHl.chartLabels.length <= 6 },
+    { name:"chartLabels placement follows swing type", passed: highLabelsAbove && lowLabelsBelow },
+    { name:"input candles and swingPoints are not mutated", passed: JSON.stringify(hhHlCandles) === JSON.stringify(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95])) && JSON.stringify(hhHl.swingPoints) === swingPointsBefore && qualitySwingPoints !== hhHl.swingPoints },
+    { name:"safe wording only", passed: !forbidden.test(labelText) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyStructureQualityFixtureTests = runWeeklyStructureQualityFixtureTests;
+
+function runWeeklyBosChochRefinementFixtureTests(){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2, closeBreakBufferPct: 0, equalSwingTolerancePct: 0.003 };
+  const candle = (time, high, low, close, extra={})=>({ time, open: close, high, low, close, closeTime: time, closed: true, ...extra });
+  const evaluate = (candles)=>{
+    const closed = getClosedWeeklyStructureCandles(candles);
+    const swings = detectWeeklyMajorSwings(closed, config);
+    const engine = buildWeeklyStructureEngineContext(closed, config, {
+      majorSwingHigh: formatWeeklySwingReference(selectWeeklyMajorSwingHigh(swings)),
+      majorSwingLow: formatWeeklySwingReference(selectWeeklyMajorSwingLow(swings)),
+    });
+    return { engine, status: deriveWeeklyBosChochStatus(candles, swings, { status: engine.swingStructure.status }, config, engine) };
+  };
+  const hhHlBase = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlBase = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const rangeBase = createWeeklySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const bosUp = evaluate([...hhHlBase, candle(22, 132, 98, 131)]).status;
+  const chochDown = evaluate([...hhHlBase, candle(22, 100, 90, 94)]).status;
+  const bosDown = evaluate([...lhLlBase, candle(22, 100, 75, 79)]).status;
+  const chochUp = evaluate([...lhLlBase, candle(22, 112, 82, 111)]).status;
+  const wickAbove = evaluate([...hhHlBase, candle(22, 132, 98, 129)]).status;
+  const wickBelow = evaluate([...hhHlBase, candle(22, 100, 90, 96)]).status;
+  const rangeBreak = evaluate([...rangeBase, candle(22, 123, 95, 122)]).status;
+  const unavailable = evaluate(hhHlBase.slice(0, 4)).status;
+  const activeOnly = evaluate([...hhHlBase, candle(22, 132, 98, 131, { closed:false, closeTime:Date.now() + 604800000 })]).status;
+  const mutationCandles = [...hhHlBase, candle(22, 132, 98, 131)];
+  const beforeCandles = JSON.stringify(mutationCandles);
+  const mutationEval = evaluate(mutationCandles);
+  const beforePoints = JSON.stringify(mutationEval.engine.swingPoints);
+  deriveWeeklyBosChochStatus(mutationCandles, detectWeeklyMajorSwings(getClosedWeeklyStructureCandles(mutationCandles), config), { status: mutationEval.engine.swingStructure.status }, config, mutationEval.engine);
+  const wording = JSON.stringify([bosUp, chochDown, bosDown, chochUp, wickAbove, wickBelow, rangeBreak, unavailable, activeOnly]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Close above swing high in HH/HL context returns BOS Up", passed: bosUp.status === "BOS Up" && bosUp.closeConfirmed === true && bosUp.wickOnly === false },
+    { name:"Close below swing low in HH/HL context returns CHOCH Down", passed: chochDown.status === "CHOCH Down" && chochDown.closeConfirmed === true },
+    { name:"Close below swing low in LH/LL context returns BOS Down", passed: bosDown.status === "BOS Down" && bosDown.closeConfirmed === true },
+    { name:"Close above swing high in LH/LL context returns CHOCH Up", passed: chochUp.status === "CHOCH Up" && chochUp.closeConfirmed === true },
+    { name:"Wick above swing high but close below returns Wick Break Warning", passed: wickAbove.status === "Wick Break Warning" && wickAbove.wickOnly === true && wickAbove.closeConfirmed === false },
+    { name:"Wick below swing low but close above returns Wick Break Warning", passed: wickBelow.status === "Wick Break Warning" && wickBelow.wickOnly === true && wickBelow.closeConfirmed === false },
+    { name:"Mixed or Range context close break is not forced CHOCH", passed: ["Structure Break", "Range Break"].includes(rangeBreak.status) && !/^CHOCH/.test(rangeBreak.status) },
+    { name:"Insufficient reference swing returns Unavailable safely", passed: unavailable.status === "Unavailable" && /Reference swing unavailable|Closed Weekly candle unavailable/.test(unavailable.note) },
+    { name:"Active open candle does not confirm BOS or CHOCH", passed: !["BOS Up", "BOS Down", "CHOCH Up", "CHOCH Down", "Structure Break", "Range Break"].includes(activeOnly.status) },
+    { name:"Input candles and swingPoints are not mutated", passed: JSON.stringify(mutationCandles) === beforeCandles && JSON.stringify(mutationEval.engine.swingPoints) === beforePoints },
+    { name:"Safe wording only", passed: !forbidden.test(wording) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyBosChochRefinementFixtureTests = runWeeklyBosChochRefinementFixtureTests;
+
+function runWeeklyStructureChartLabelsFixtureTests(){
+  const makeRoot = ()=>({ clientWidth:360, clientHeight:220, children:[], appendChild(child){ this.children.push(child); return child; }, getBoundingClientRect(){ return { width:360, height:220 }; } });
+  const makeChart = (missingTime = null)=>({ timeScale(){ return { timeToCoordinate(time){ return time === missingTime ? null : Number(time) * 30 + 30; } }; } });
+  const makeSeries = (missingPrice = null)=>({ priceToCoordinate(price){ return price === missingPrice ? null : 200 - Number(price); } });
+  const labels = [
+    { time:1, price:120, label:"HH", placement:"above", priority:"high", sourceSwingId:"h1" },
+    { time:2, price:90, label:"HL", placement:"below", priority:"high", sourceSwingId:"l1" },
+    { time:3, price:115, label:"LH", placement:"above", priority:"medium", sourceSwingId:"h2" },
+    { time:4, price:85, label:"LL", placement:"below", priority:"medium", sourceSwingId:"l2" },
+    { time:5, price:116, label:"EH", placement:"above", priority:"low", sourceSwingId:"h3" },
+    { time:6, price:86, label:"EL", placement:"below", priority:"low", sourceSwingId:"l3" },
+    { time:7, price:100, label:"Unclassified", placement:"above", priority:"high", sourceSwingId:"x" },
+  ];
+  const context = { structureEngine:{ chartLabels:labels.map((label)=>({ ...label })) } };
+  const before = JSON.stringify(context.structureEngine.chartLabels);
+  clearWeeklyStructureLabelsOverlay();
+  const noop = renderWeeklyStructureLabelsOverlay({ structureEngine:{} }, makeChart(), makeSeries(), makeRoot());
+  const rendered = renderWeeklyStructureLabelsOverlay(context, makeChart(), makeSeries(), makeRoot());
+  const savedPriceChart = priceChart;
+  const savedCandleSeries = candleSeries;
+  priceChart = { timeScale(){ return { timeToCoordinate(){ return null; } }; } };
+  candleSeries = { priceToCoordinate(){ return null; } };
+  const missing = renderWeeklyStructureLabelsOverlay(context);
+  priceChart = savedPriceChart;
+  candleSeries = savedCandleSeries;
+  const highPlacement = rendered.filter((label)=>["HH", "LH", "EH"].includes(label.label)).every((label)=>label.placement === "above");
+  const lowPlacement = rendered.filter((label)=>["HL", "LL", "EL"].includes(label.label)).every((label)=>label.placement === "below");
+  const wording = rendered.map((label)=>getWeeklyStructureLabelTitle(label)).join(" ");
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Renderer no-ops safely when chartLabels are missing", passed: Array.isArray(noop) && noop.length === 0 },
+    { name:"Renderer uses only existing chartLabels data", passed: rendered.every((label)=>labels.some((source)=>source.sourceSwingId === label.sourceSwingId)) },
+    { name:"Labels are limited to maximum 6", passed: rendered.length <= 6 },
+    { name:"HH/LH/EH high labels use above placement", passed: highPlacement },
+    { name:"HL/LL/EL low labels use below placement", passed: lowPlacement },
+    { name:"Unclassified labels are not rendered", passed: rendered.every((label)=>label.label !== "Unclassified") },
+    { name:"Missing coordinates skip safely", passed: Array.isArray(missing) && missing.length <= rendered.length },
+    { name:"Existing Weekly FVG/SR overlay functions remain callable", passed: typeof renderFvgFilledOverlay === "function" && typeof renderWeeklySrOverlay === "function" },
+    { name:"Safe wording only", passed: !forbidden.test(wording) },
+    { name:"No mutation of structureEngine or chartLabels data", passed: JSON.stringify(context.structureEngine.chartLabels) === before },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyStructureChartLabelsFixtureTests = runWeeklyStructureChartLabelsFixtureTests;
+
+function createWeeklyStructureRangeFixtureCandles(count = 120){
+  const candles = Array.from({ length: count }, (_, index)=>({ time:index + 1, open:100, high:104, low:96, close:100, closeTime:index + 1, closed:true }));
+  const setHigh = (index, price)=>{ if(candles[index]) candles[index] = { ...candles[index], high:price, low:98, close:price - 3 }; };
+  const setLow = (index, price)=>{ if(candles[index]) candles[index] = { ...candles[index], high:102, low:price, close:price + 3 }; };
+  setHigh(24, 130);
+  setLow(34, 70);
+  setHigh(79, 140);
+  setLow(89, 82);
+  return candles;
+}
+function runWeeklyStructureRangeSelectorFixtureTests(){
+  const priorRange = selectedWeeklyStructureRangeKey;
+  const priorDataset = weeklyDatasetCache;
+  const priorMetrics = latestWeeklyStructureMetrics;
+  const priorState = latestWeeklyStructureState;
+  const priorWeekly = latestWeeklyMajorStructureContext;
+  const priorDaily = latestDailyValidationContext;
+  selectedWeeklyStructureRangeKey = "1y";
+  const candles = createWeeklyStructureRangeFixtureCandles(120);
+  const active = { time:121, open:100, high:1000, low:1, close:500, closeTime:Date.now() + 604800000, closed:false };
+  const withActive = [...candles, active];
+  const oneYearCandles = getWeeklyStructureCandlesForRange(withActive, "1y");
+  const twoYearCandles = getWeeklyStructureCandlesForRange(withActive, "2y");
+  const shortCandles = getWeeklyStructureCandlesForRange(candles.slice(0, 40), "2y");
+  const oneYearContext = buildWeeklyMajorStructureContext(withActive, null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 24, swingLeft: 2, swingRight: 2 }, "1y");
+  const twoYearContext = buildWeeklyMajorStructureContext(withActive, null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 24, swingLeft: 2, swingRight: 2 }, "2y");
+  const scenarioBefore = JSON.stringify(buildScenarioTimeframeContextSnapshot({ weekly:{ status:"Mixed Structure" }, daily:{ status:"Context Unavailable" }, h4:{ status:"Context Unavailable" }, h1:{ status:"Context Unavailable" } }));
+  const marketBefore = JSON.stringify(marketPreparationState);
+  weeklyDatasetCache = withActive;
+  latestWeeklyStructureMetrics = null;
+  latestWeeklyStructureState = {};
+  setWeeklyStructureRange("2y");
+  const selectedTwoYearContext = latestWeeklyMajorStructureContext;
+  setWeeklyStructureRange("1y");
+  const selectedOneYearContext = latestWeeklyMajorStructureContext;
+  const scenarioAfter = JSON.stringify(buildScenarioTimeframeContextSnapshot({ weekly:{ status:"Mixed Structure" }, daily:{ status:"Context Unavailable" }, h4:{ status:"Context Unavailable" }, h1:{ status:"Context Unavailable" } }));
+  const marketAfter = JSON.stringify(marketPreparationState);
+  const wording = `${formatWeeklyStructureRangeSelector(oneYearContext)} ${formatWeeklyStructureRangeNote(twoYearContext)}`;
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  weeklyDatasetCache = priorDataset;
+  latestWeeklyStructureMetrics = priorMetrics;
+  latestWeeklyStructureState = priorState;
+  latestWeeklyMajorStructureContext = priorWeekly;
+  latestDailyValidationContext = priorDaily;
+  selectedWeeklyStructureRangeKey = priorRange;
+  const oneYearLabelIds = (oneYearContext.structureEngine?.chartLabels || []).map((label)=>label.sourceSwingId).join("|");
+  const twoYearLabelIds = (twoYearContext.structureEngine?.chartLabels || []).map((label)=>label.sourceSwingId).join("|");
+  const cases = [
+    { name:"Default range is 1Y", passed: normalizeWeeklyStructureRangeKey(undefined) === "1y" && getWeeklyStructureRangeLabel() === "1Y" },
+    { name:"1Y maps to approximately 52 closed Weekly candles", passed: getWeeklyStructureRangeLimit("1y") === 52 && oneYearCandles.length === 52 },
+    { name:"2Y maps to approximately 104 closed Weekly candles", passed: getWeeklyStructureRangeLimit("2y") === 104 && twoYearCandles.length === 104 },
+    { name:"Open active Weekly candle is excluded from both ranges", passed: oneYearCandles.every((c)=>c.time !== active.time) && twoYearCandles.every((c)=>c.time !== active.time) },
+    { name:"Fewer available candles are used safely", passed: shortCandles.length === 40 },
+    { name:"Selected range changes structureEngine.rangeKey", passed: selectedTwoYearContext.structureEngine?.rangeKey === "2y" && selectedOneYearContext.structureEngine?.rangeKey === "1y" },
+    { name:"Selected range changes closedCandlesUsed", passed: selectedTwoYearContext.structureEngine?.closedCandlesUsed === 104 && selectedOneYearContext.structureEngine?.closedCandlesUsed === 52 },
+    { name:"Weekly structure chartLabels source changes when range data differs", passed: oneYearLabelIds !== twoYearLabelIds },
+    { name:"No scenario data mutation", passed: scenarioBefore === scenarioAfter },
+    { name:"No Market Map data mutation", passed: marketBefore === marketAfter },
+    { name:"Safe wording only", passed: !forbidden.test(wording) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyStructureRangeSelectorFixtureTests = runWeeklyStructureRangeSelectorFixtureTests;
+
+function runStructureEngineDataContractAuditFixtureTests(){
+  const context = buildWeeklyMajorStructureContext(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2 });
+  const point = context.structureEngine?.swingPoints?.[0];
+  const requiredPointKeys = ["id", "time", "index", "price", "type", "label", "comparisonPrice", "comparisonTime", "strength", "confidence", "source"];
+  const cases = [
+    { name:"structureEngine exists", passed: !!context.structureEngine && Array.isArray(context.structureEngine.swingPoints) && !!context.structureEngine.swingStructure },
+    { name:"normalized aliases exist", passed: Array.isArray(context.normalizedSwingPoints) && !!context.normalizedSwingStructure },
+    { name:"swing point shape is stable", passed: !!point && requiredPointKeys.every((key)=>Object.prototype.hasOwnProperty.call(point, key)) },
+    { name:"closed candle source is recorded", passed: context.structureEngine?.swingPoints?.every((item)=>item.source === "closed_candle_swing") === true },
+    { name:"aggregate status is contract-safe", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
+    { name:"quality fields are contract-safe", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
+    { name:"chart label shape is stable", passed: !context.structureEngine.chartLabels.length || ["time", "price", "label", "placement", "priority", "sourceSwingId"].every((key)=>Object.prototype.hasOwnProperty.call(context.structureEngine.chartLabels[0], key)) },
+    { name:"BOS/CHOCH status shape is stable", passed: ["status", "closeConfirmed", "wickOnly", "referenceLevel", "referenceSwingId", "note"].every((key)=>Object.prototype.hasOwnProperty.call(context.bosChochStatus, key)) },
+    { name:"BOS/CHOCH status is contract-safe", passed: ["BOS Up", "BOS Down", "CHOCH Up", "CHOCH Down", "Structure Break", "Range Break", "Wick Break Warning", "None", "Unavailable"].includes(context.bosChochStatus?.status) },
+    { name:"existing weekly fields remain", passed: !!context.majorSwingHigh && !!context.majorSwingLow && !!context.swingSequence && !!context.bosChochStatus && !!context.macroRangeStatus },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined"){
+  window.runWeeklySwingClassificationFixtureTests = runWeeklySwingClassificationFixtureTests;
+  window.runStructureEngineDataContractAuditFixtureTests = runStructureEngineDataContractAuditFixtureTests;
+}
+
 function runWeeklyMajorStructureFixtureTests(){
   const candle = (i, high, low, close, extra={})=>({ time:i, open:close, high, low, close, closeTime:i, closed:true, ...extra });
   const base = Array.from({ length: 32 }, (_, i)=>candle(i, 100 + i, 90 + i, 95 + i));
@@ -4123,8 +4643,14 @@ function runWeeklyMajorStructureFixtureTests(){
   const cases = [
     { name:"insufficient candles returns unavailable", passed: buildWeeklyMajorStructureContext(base.slice(0, 8), null, {}, WEEKLY_MAJOR_STRUCTURE_CONFIG).status === "Context Unavailable" },
     { name:"major swing high and low detection works", passed: !!high && !!low },
+    { name:"normalized weekly swing points are available", passed: Array.isArray(context.structureEngine?.swingPoints) && context.structureEngine.swingPoints.length > 0 },
+    { name:"normalized weekly swing structure is available", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
+    { name:"weekly structure quality fields are available", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
+    { name:"weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
+    { name:"weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
+    { name:"weekly structure range selector fixture passes", passed: runWeeklyStructureRangeSelectorFixtureTests().passed === true },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
-    { name:"wick-only breach is unconfirmed", passed: wickOnly.status === "Unconfirmed" && wickOnly.closeConfirmed === false },
+    { name:"wick-only breach is warning-only", passed: wickOnly.status === "Wick Break Warning" && wickOnly.closeConfirmed === false && wickOnly.wickOnly === true },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
     { name:"CHOCH classification is safe when structure flips", passed: choch.status === "CHOCH Up" },
     { name:"macro range fallback is available when sequence is unclear", passed: ["Active Range","Potential Range","No Clear Range"].includes(deriveWeeklyMacroRangeStatus(swingSet, swings, WEEKLY_MAJOR_STRUCTURE_CONFIG).status) },
@@ -10289,6 +10815,7 @@ function renderPriceChart(dataset){
   if (priceChart) { priceChart.remove(); priceChart = null; candleSeries = null; }
   els.priceChart.innerHTML = "";
   weeklySrOverlayLayer = null;
+  weeklyStructureLabelsLayer = null;
   const candles = dataset.map(d=>({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close }));
   if(!candles.length) throw new Error("No valid OHLC candle data.");
   const priceChartWidth = Math.max(els.priceChart.clientWidth||0,320);
@@ -10301,6 +10828,7 @@ function renderPriceChart(dataset){
   applyManualLinesToWeeklyChart();
   renderTrendlinesForChart("weekly");
   priceChart.timeScale().fitContent();
+  renderWeeklyStructureLabelsOverlay();
 }
 
 function renderRsiChart(dataset){
@@ -10607,6 +11135,98 @@ function renderWeeklySrOverlay(summary, dataset){
   }
 }
 
+
+function clearWeeklyStructureLabelsOverlay(){
+  try { if(weeklyStructureLabelsLayer) weeklyStructureLabelsLayer.innerHTML = ""; } catch(_){}
+}
+function ensureWeeklyStructureLabelsOverlayLayer(root = els.priceChart){
+  if(!root || typeof document === "undefined") return null;
+  let layer = document.getElementById ? document.getElementById("weeklyStructureLabelsOverlay") : null;
+  if(!layer){
+    layer = document.createElement("div");
+    layer.id = "weeklyStructureLabelsOverlay";
+    layer.className = "weekly-structure-label-layer";
+    root.appendChild(layer);
+  }
+  weeklyStructureLabelsLayer = layer;
+  return layer;
+}
+function formatWeeklyStructureChartLabel(label){
+  const text = String(label?.label || "").toUpperCase();
+  return ["HH", "HL", "LH", "LL", "EH", "EL"].includes(text) ? text : "";
+}
+function getWeeklyStructureLabelClass(label){
+  const text = formatWeeklyStructureChartLabel(label);
+  const sideClass = label?.placement === "above" ? "weekly-structure-label-high" : "weekly-structure-label-low";
+  const equalClass = ["EH", "EL"].includes(text) ? " weekly-structure-label-equal" : "";
+  return `weekly-structure-label ${sideClass}${equalClass}`;
+}
+function getWeeklyStructureLabelTitle(label){
+  const meanings = { HH:"Higher High", HL:"Higher Low", LH:"Lower High", LL:"Lower Low", EH:"Equal High", EL:"Equal Low" };
+  const text = formatWeeklyStructureChartLabel(label);
+  const price = Number.isFinite(Number(label?.price)) ? formatWeeklyStructurePrice(label.price) : "Price unavailable";
+  return [meanings[text], "Structure context only", price].filter(Boolean).join(" · ");
+}
+function getWeeklyStructurePriorityValue(priority){
+  if(priority === "high") return 95;
+  if(priority === "medium") return 70;
+  if(priority === "low") return 45;
+  return Number.isFinite(Number(priority)) ? Number(priority) : 45;
+}
+function getWeeklyStructureChartLabelsForRender(context = latestWeeklyMajorStructureContext, maxLabels = 6){
+  const labels = Array.isArray(context?.structureEngine?.chartLabels) ? context.structureEngine.chartLabels : [];
+  const source = labels
+    .filter((label)=>formatWeeklyStructureChartLabel(label) && label.label !== "Unclassified")
+    .map((label,index)=>({ ...label, __order:index, __priority:getWeeklyStructurePriorityValue(label.priority) }))
+    .sort((a,b)=>b.__priority-a.__priority || a.__order-b.__order)
+    .slice(0, Math.min(6, Math.max(1, Number(maxLabels) || 6)))
+    .sort((a,b)=>a.__order-b.__order);
+  return source.map(({__order,__priority,...label})=>label);
+}
+function renderWeeklyStructureLabelsOverlay(context = latestWeeklyMajorStructureContext, chart = priceChart, series = candleSeries, root = els.priceChart){
+  try {
+    const layer = ensureWeeklyStructureLabelsOverlayLayer(root);
+    if(!layer) return [];
+    layer.innerHTML = "";
+    if(!chart || !series || !chart.timeScale || !series.priceToCoordinate) return [];
+    const labels = getWeeklyStructureChartLabelsForRender(context, 6);
+    if(!labels.length) return [];
+    const timeScale = chart.timeScale();
+    const bounds = root?.getBoundingClientRect?.() || { width: root?.clientWidth || 0, height: root?.clientHeight || 0 };
+    const width = Number(bounds.width || root?.clientWidth || 0);
+    const height = Number(bounds.height || root?.clientHeight || 0);
+    const candidates = labels.map((label,index)=>{
+      const text = formatWeeklyStructureChartLabel(label);
+      if(!text || !Number.isFinite(Number(label.price)) || label.time === null || label.time === undefined) return null;
+      const xCoord = typeof timeScale.timeToCoordinate === "function" ? timeScale.timeToCoordinate(label.time) : null;
+      const yCoord = series.priceToCoordinate(label.price);
+      if(!Number.isFinite(Number(xCoord)) || !Number.isFinite(Number(yCoord))) return null;
+      const placement = label.placement === "above" ? "above" : "below";
+      const labelWidth = 28;
+      const labelHeight = 18;
+      const yOffset = placement === "above" ? -24 : 8;
+      const x = Math.max(2, Math.min(Number(xCoord) - labelWidth / 2, Math.max(2, width - labelWidth - 2)));
+      const y = Math.max(2, Math.min(Number(yCoord) + yOffset, Math.max(2, height - labelHeight - 2)));
+      return { ...label, text, x, y, width:labelWidth, height:labelHeight, priority:getWeeklyStructurePriorityValue(label.priority), category:"structure", __index:index };
+    }).filter(Boolean);
+    const visible = limitChartLabels(candidates, { ...getChartLabelDensityConfig("W"), maxLabels:6, nearbyY:12, collisionGap:3 });
+    visible.forEach((label)=>{
+      const el = document.createElement("span");
+      el.className = getWeeklyStructureLabelClass(label);
+      el.textContent = label.text;
+      el.title = getWeeklyStructureLabelTitle(label);
+      el.dataset.sourceSwingId = label.sourceSwingId || "";
+      el.dataset.labelPriority = String(label.priority || "");
+      el.style.left = `${label.x}px`;
+      el.style.top = `${label.y}px`;
+      layer.appendChild(el);
+    });
+    return visible;
+  } catch (error) {
+    console.error("Weekly structure label overlay failed:", error);
+    return [];
+  }
+}
 
 function scanWeeklyFvg(dataset){
   const fvgs=[];
@@ -11959,8 +12579,8 @@ function renderFvgOverlay(activeFvgs, dataset){
     renderFvgFilledOverlay();
     render4hVsWeeklyFvgSummary();
 
-    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
-    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); scheduleTrendlineRedraw("weekly"); });
+    priceChart.timeScale().subscribeVisibleTimeRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); renderWeeklyStructureLabelsOverlay(); scheduleTrendlineRedraw("weekly"); });
+    priceChart.timeScale().subscribeVisibleLogicalRangeChange(() => { renderFvgFilledOverlay(); if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, dataset); renderWeeklyStructureLabelsOverlay(); scheduleTrendlineRedraw("weekly"); });
   } catch (e) {
     console.error("FVG overlay render failed", e);
   }
@@ -12272,6 +12892,11 @@ function runWeeklyRsiCardFixtureTests(){
     { name: "Weekly RSI card does not introduce unsafe wording", passed: !forbidden.test(risingCard + missingCard + weeklyHtml) },
     { name: "Weekly context object is not mutated", passed: before === JSON.stringify(weeklyContext) },
     { name: "Existing Weekly Major Structure fixture still passes", passed: runWeeklyMajorStructureFixtureTests().passed === true },
+    { name: "Weekly swing classification fixture passes", passed: runWeeklySwingClassificationFixtureTests().passed === true },
+    { name: "Weekly structure quality fixture passes", passed: runWeeklyStructureQualityFixtureTests().passed === true },
+    { name: "Weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
+    { name: "Weekly structure chart labels fixture passes", passed: runWeeklyStructureChartLabelsFixtureTests().passed === true },
+    { name: "Weekly structure range selector fixture passes", passed: runWeeklyStructureRangeSelectorFixtureTests().passed === true },
     { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
   ];
   const failed = cases.filter((result)=>!result.passed).length;
@@ -13849,7 +14474,9 @@ async function loadDashboard(){
       const weeklyFvgDetails = enrichFvgDetailsWithIfvg(buildFvgDetailsForTimeframe(activeFvgs, dataset, "Weekly"), dataset, "Weekly");
       const weeklyRecentBrokenFvgDetails = buildRecentBrokenFvgDetails(allWeeklyFvgDetails, "Weekly");
       const weeklyRecentFvgReaction = buildRecentFvgReactionMemory(allWeeklyFvgDetails, dataset[dataset.length-1]?.close, "Weekly");
-      const weeklyMajorStructureContext = buildWeeklyMajorStructureContext(dataset, metrics, { fvgDetails: weeklyFvgDetails, recentBrokenFvgDetails: weeklyRecentBrokenFvgDetails });
+      latestWeeklyStructureMetrics = metrics;
+      latestWeeklyStructureState = { fvgDetails: weeklyFvgDetails, recentBrokenFvgDetails: weeklyRecentBrokenFvgDetails };
+      const weeklyMajorStructureContext = buildWeeklyMajorStructureContext(dataset, metrics, latestWeeklyStructureState, WEEKLY_MAJOR_STRUCTURE_CONFIG, selectedWeeklyStructureRangeKey);
       renderWeeklyMajorStructure(weeklyMajorStructureContext);
       renderWeeklySupportResistance(weeklySrSummary);
       renderWeeklyCandleCharacter(dataset);
@@ -13944,6 +14571,7 @@ window.addEventListener("resize", ()=>{
     priceChart.resize(els.priceChart.clientWidth, els.priceChart.clientHeight);
     renderFvgFilledOverlay();
     if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
+    renderWeeklyStructureLabelsOverlay();
   }
   if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); }
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
