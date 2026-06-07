@@ -3963,23 +3963,62 @@ function isWeeklyCloseBreakBelow(candle, level, config = WEEKLY_MAJOR_STRUCTURE_
   if(!Number.isFinite(close) || !Number.isFinite(reference)) return false;
   return close < reference * (1 - (config.closeBreakBufferPct || 0));
 }
-function deriveWeeklyBosChochStatus(candles, swings, sequence, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
-  const latest = candles?.[candles.length - 1];
-  const priorHigh = selectWeeklyMajorSwingHigh(swings);
-  const priorLow = selectWeeklyMajorSwingLow(swings);
-  if(!latest || (!priorHigh && !priorLow)) return { status: "None", closeConfirmed: false, referenceLevel: null, note: "Waiting for major Weekly swing references." };
+function formatWeeklyBosChochStatus(status, fields = {}){
+  return { status, closeConfirmed: false, wickOnly: false, referenceLevel: null, referenceSwingId: null, note: "No close-confirmed Weekly BOS/CHOCH context.", ...fields };
+}
+function getLatestWeeklyBosChochReference(structureEngine, swings, type){
+  const points = Array.isArray(structureEngine?.swingPoints) ? structureEngine.swingPoints : [];
+  const meaningful = points.filter((point)=>point?.type === type && point.label && point.label !== "Unclassified" && Number.isFinite(Number(point.price)));
+  const latest = meaningful.length ? meaningful[meaningful.length - 1] : null;
+  if(latest) return latest;
+  const fallback = type === "high" ? selectWeeklyMajorSwingHigh(swings) : selectWeeklyMajorSwingLow(swings);
+  if(!fallback || !Number.isFinite(Number(fallback.price))) return null;
+  return { ...fallback, id: fallback.id || `weekly-major-${type}-${timeKey(fallback.time) || fallback.index}`, label: fallback.label || (type === "high" ? "Major Swing High" : "Major Swing Low") };
+}
+function classifyWeeklyCloseBreakStatus(direction, structureStatus, rangeStatus){
+  const structure = String(structureStatus || "Unavailable");
+  const range = String(rangeStatus?.status || rangeStatus || "");
+  if(structure === "HH/HL") return direction === "up" ? "BOS Up" : "CHOCH Down";
+  if(structure === "LH/LL") return direction === "down" ? "BOS Down" : "CHOCH Up";
+  if(structure === "Range" || range === "Active Range") return "Range Break";
+  if(structure === "LH/HL" || range === "Compression") return "Range Break";
+  if(structure === "HH/LL" || range === "Expansion") return "Structure Break";
+  if(structure === "Mixed") return "Structure Break";
+  return "Structure Break";
+}
+function getWeeklyCloseBreakNote(status, direction){
+  if(status === "BOS Up") return "Close-confirmed break above swing high.";
+  if(status === "BOS Down") return "Close-confirmed break below swing low.";
+  if(status === "CHOCH Up") return "Close-confirmed break above swing high.";
+  if(status === "CHOCH Down") return "Close-confirmed break below swing low.";
+  if(status === "Range Break") return "Close broke range boundary context.";
+  if(status === "Structure Break") return direction === "up" ? "Close-confirmed structure break above swing high." : "Close-confirmed structure break below swing low.";
+  return "No close-confirmed Weekly BOS/CHOCH context.";
+}
+function deriveWeeklyBosChochStatus(candles, swings, sequence, config = WEEKLY_MAJOR_STRUCTURE_CONFIG, structureEngine = null){
+  const closedCandles = getClosedWeeklyStructureCandles(candles);
+  const latest = closedCandles[closedCandles.length - 1];
+  if(!latest) return formatWeeklyBosChochStatus("Unavailable", { note: "Closed Weekly candle unavailable." });
+  const priorHigh = getLatestWeeklyBosChochReference(structureEngine, swings, "high");
+  const priorLow = getLatestWeeklyBosChochReference(structureEngine, swings, "low");
+  if(!priorHigh && !priorLow) return formatWeeklyBosChochStatus("Unavailable", { note: "Reference swing unavailable." });
+  const structureStatus = structureEngine?.swingStructure?.status || sequence?.status || "Unavailable";
+  const rangeStatus = structureEngine?.rangeStatus || null;
   if(priorHigh && isWeeklyCloseBreakAbove(latest, priorHigh.price, config)){
-    const continuation = sequence?.status === "HH/HL";
-    return { status: continuation ? "BOS Up" : "CHOCH Up", closeConfirmed: true, referenceLevel: priorHigh.price, note: continuation ? "Weekly close is above the prior major swing high." : "Weekly close is above the prior major swing high after non-bullish structure." };
+    const status = classifyWeeklyCloseBreakStatus("up", structureStatus, rangeStatus);
+    return formatWeeklyBosChochStatus(status, { closeConfirmed: true, referenceLevel: Number(priorHigh.price), referenceSwingId: priorHigh.id || null, note: getWeeklyCloseBreakNote(status, "up") });
   }
   if(priorLow && isWeeklyCloseBreakBelow(latest, priorLow.price, config)){
-    const continuation = sequence?.status === "LH/LL";
-    return { status: continuation ? "BOS Down" : "CHOCH Down", closeConfirmed: true, referenceLevel: priorLow.price, note: continuation ? "Weekly close is below the prior major swing low." : "Weekly close is below the prior major swing low after non-bearish structure." };
+    const status = classifyWeeklyCloseBreakStatus("down", structureStatus, rangeStatus);
+    return formatWeeklyBosChochStatus(status, { closeConfirmed: true, referenceLevel: Number(priorLow.price), referenceSwingId: priorLow.id || null, note: getWeeklyCloseBreakNote(status, "down") });
   }
   const wickAbove = priorHigh && Number(latest.high) > Number(priorHigh.price) * (1 + (config.closeBreakBufferPct || 0));
   const wickBelow = priorLow && Number(latest.low) < Number(priorLow.price) * (1 - (config.closeBreakBufferPct || 0));
-  if(wickAbove || wickBelow) return { status: "Unconfirmed", closeConfirmed: false, referenceLevel: wickAbove ? priorHigh.price : priorLow.price, note: "Weekly wick breached a major swing, but the weekly close did not confirm structure context." };
-  return { status: "None", closeConfirmed: false, referenceLevel: null, note: "No close-confirmed Weekly BOS/CHOCH context." };
+  if(wickAbove || wickBelow){
+    const reference = wickAbove ? priorHigh : priorLow;
+    return formatWeeklyBosChochStatus("Wick Break Warning", { wickOnly: true, referenceLevel: Number(reference.price), referenceSwingId: reference.id || null, note: wickAbove ? "Wick breached swing high, close did not confirm." : "Wick breached swing low, close did not confirm." });
+  }
+  return formatWeeklyBosChochStatus("None", { note: "No close-confirmed structure break." });
 }
 function deriveWeeklyMacroRangeStatus(candles, swings, config = WEEKLY_MAJOR_STRUCTURE_CONFIG){
   const high = selectWeeklyMajorSwingHigh(swings);
@@ -4007,7 +4046,7 @@ function deriveWeeklyStructureStatus(sequence, bosChochStatus, macroRangeStatus)
   if(hasWeeklyStructureCharacterConflict(sequenceStatus, bosStatus)) return { status: "Mixed Structure", majorBias: "mixed" };
   if(bosStatus === "BOS Up" && sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
   if(bosStatus === "BOS Down" && sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
-  if(["CHOCH Up", "CHOCH Down", "Unconfirmed"].includes(bosStatus) && ["Mixed", "Range", "Unavailable"].includes(sequenceStatus)) return { status: "Weak Structure", majorBias: "mixed" };
+  if(["CHOCH Up", "CHOCH Down", "Unconfirmed", "Wick Break Warning", "Structure Break", "Range Break", "Unavailable"].includes(bosStatus) && ["Mixed", "Range", "Unavailable", "HH/LL", "LH/HL"].includes(sequenceStatus)) return { status: "Weak Structure", majorBias: "mixed" };
   if(sequenceStatus === "HH/HL") return { status: "Bullish Structure", majorBias: "bullish" };
   if(sequenceStatus === "LH/LL") return { status: "Bearish Structure", majorBias: "bearish" };
   if(["Active Range", "Potential Range"].includes(macroRangeStatus?.status) || sequenceStatus === "Range") return { status: "Macro Range", majorBias: "range" };
@@ -4055,9 +4094,9 @@ function buildWeeklyMajorStructureContext(candles, metrics = null, weeklyState =
   const majorSwingLow = formatWeeklySwingReference(selectWeeklyMajorSwingLow(swings));
   if(!majorSwingHigh || !majorSwingLow) return createEmptyWeeklyMajorStructureContext("Waiting for both major Weekly swing high and swing low references.");
   const swingSequence = classifyWeeklySwingSequence(swings, closedCandles, config);
-  const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config);
-  const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config);
-  const structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow, bosChochStatus });
+  let structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow });
+  const bosChochStatus = deriveWeeklyBosChochStatus(closedCandles, swings, swingSequence, config, structureEngine);
+  structureEngine = buildWeeklyStructureEngineContext(closedCandles, config, { majorSwingHigh, majorSwingLow, bosChochStatus });
   const macroRangeStatus = deriveWeeklyMacroRangeStatus(closedCandles, swings, config);
   const structureStatus = deriveWeeklyStructureStatus(swingSequence, bosChochStatus, macroRangeStatus);
   const context = calibrateWeeklyStructureStatus({
@@ -4341,6 +4380,55 @@ function runWeeklyStructureQualityFixtureTests(){
 }
 if(typeof window !== "undefined") window.runWeeklyStructureQualityFixtureTests = runWeeklyStructureQualityFixtureTests;
 
+function runWeeklyBosChochRefinementFixtureTests(){
+  const config = { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2, closeBreakBufferPct: 0, equalSwingTolerancePct: 0.003 };
+  const candle = (time, high, low, close, extra={})=>({ time, open: close, high, low, close, closeTime: time, closed: true, ...extra });
+  const evaluate = (candles)=>{
+    const closed = getClosedWeeklyStructureCandles(candles);
+    const swings = detectWeeklyMajorSwings(closed, config);
+    const engine = buildWeeklyStructureEngineContext(closed, config, {
+      majorSwingHigh: formatWeeklySwingReference(selectWeeklyMajorSwingHigh(swings)),
+      majorSwingLow: formatWeeklySwingReference(selectWeeklyMajorSwingLow(swings)),
+    });
+    return { engine, status: deriveWeeklyBosChochStatus(candles, swings, { status: engine.swingStructure.status }, config, engine) };
+  };
+  const hhHlBase = createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]);
+  const lhLlBase = createWeeklySwingClassificationFixtureCandles([130, 120, 110], [95, 90, 80]);
+  const rangeBase = createWeeklySwingClassificationFixtureCandles([120, 120.2, 120.1], [90, 90.2, 90.1]);
+  const bosUp = evaluate([...hhHlBase, candle(22, 132, 98, 131)]).status;
+  const chochDown = evaluate([...hhHlBase, candle(22, 100, 90, 94)]).status;
+  const bosDown = evaluate([...lhLlBase, candle(22, 100, 75, 79)]).status;
+  const chochUp = evaluate([...lhLlBase, candle(22, 112, 82, 111)]).status;
+  const wickAbove = evaluate([...hhHlBase, candle(22, 132, 98, 129)]).status;
+  const wickBelow = evaluate([...hhHlBase, candle(22, 100, 90, 96)]).status;
+  const rangeBreak = evaluate([...rangeBase, candle(22, 123, 95, 122)]).status;
+  const unavailable = evaluate(hhHlBase.slice(0, 4)).status;
+  const activeOnly = evaluate([...hhHlBase, candle(22, 132, 98, 131, { closed:false, closeTime:Date.now() + 604800000 })]).status;
+  const mutationCandles = [...hhHlBase, candle(22, 132, 98, 131)];
+  const beforeCandles = JSON.stringify(mutationCandles);
+  const mutationEval = evaluate(mutationCandles);
+  const beforePoints = JSON.stringify(mutationEval.engine.swingPoints);
+  deriveWeeklyBosChochStatus(mutationCandles, detectWeeklyMajorSwings(getClosedWeeklyStructureCandles(mutationCandles), config), { status: mutationEval.engine.swingStructure.status }, config, mutationEval.engine);
+  const wording = JSON.stringify([bosUp, chochDown, bosDown, chochUp, wickAbove, wickBelow, rangeBreak, unavailable, activeOnly]);
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Close above swing high in HH/HL context returns BOS Up", passed: bosUp.status === "BOS Up" && bosUp.closeConfirmed === true && bosUp.wickOnly === false },
+    { name:"Close below swing low in HH/HL context returns CHOCH Down", passed: chochDown.status === "CHOCH Down" && chochDown.closeConfirmed === true },
+    { name:"Close below swing low in LH/LL context returns BOS Down", passed: bosDown.status === "BOS Down" && bosDown.closeConfirmed === true },
+    { name:"Close above swing high in LH/LL context returns CHOCH Up", passed: chochUp.status === "CHOCH Up" && chochUp.closeConfirmed === true },
+    { name:"Wick above swing high but close below returns Wick Break Warning", passed: wickAbove.status === "Wick Break Warning" && wickAbove.wickOnly === true && wickAbove.closeConfirmed === false },
+    { name:"Wick below swing low but close above returns Wick Break Warning", passed: wickBelow.status === "Wick Break Warning" && wickBelow.wickOnly === true && wickBelow.closeConfirmed === false },
+    { name:"Mixed or Range context close break is not forced CHOCH", passed: ["Structure Break", "Range Break"].includes(rangeBreak.status) && !/^CHOCH/.test(rangeBreak.status) },
+    { name:"Insufficient reference swing returns Unavailable safely", passed: unavailable.status === "Unavailable" && /Reference swing unavailable|Closed Weekly candle unavailable/.test(unavailable.note) },
+    { name:"Active open candle does not confirm BOS or CHOCH", passed: !["BOS Up", "BOS Down", "CHOCH Up", "CHOCH Down", "Structure Break", "Range Break"].includes(activeOnly.status) },
+    { name:"Input candles and swingPoints are not mutated", passed: JSON.stringify(mutationCandles) === beforeCandles && JSON.stringify(mutationEval.engine.swingPoints) === beforePoints },
+    { name:"Safe wording only", passed: !forbidden.test(wording) },
+  ];
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runWeeklyBosChochRefinementFixtureTests = runWeeklyBosChochRefinementFixtureTests;
+
 function runStructureEngineDataContractAuditFixtureTests(){
   const context = buildWeeklyMajorStructureContext(createWeeklySwingClassificationFixtureCandles([110, 120, 130], [80, 90, 95]), null, {}, { ...WEEKLY_MAJOR_STRUCTURE_CONFIG, minCandles: 10, swingLeft: 2, swingRight: 2 });
   const point = context.structureEngine?.swingPoints?.[0];
@@ -4353,6 +4441,8 @@ function runStructureEngineDataContractAuditFixtureTests(){
     { name:"aggregate status is contract-safe", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
     { name:"quality fields are contract-safe", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
     { name:"chart label shape is stable", passed: !context.structureEngine.chartLabels.length || ["time", "price", "label", "placement", "priority", "sourceSwingId"].every((key)=>Object.prototype.hasOwnProperty.call(context.structureEngine.chartLabels[0], key)) },
+    { name:"BOS/CHOCH status shape is stable", passed: ["status", "closeConfirmed", "wickOnly", "referenceLevel", "referenceSwingId", "note"].every((key)=>Object.prototype.hasOwnProperty.call(context.bosChochStatus, key)) },
+    { name:"BOS/CHOCH status is contract-safe", passed: ["BOS Up", "BOS Down", "CHOCH Up", "CHOCH Down", "Structure Break", "Range Break", "Wick Break Warning", "None", "Unavailable"].includes(context.bosChochStatus?.status) },
     { name:"existing weekly fields remain", passed: !!context.majorSwingHigh && !!context.majorSwingLow && !!context.swingSequence && !!context.bosChochStatus && !!context.macroRangeStatus },
   ];
   const failed = cases.filter((item)=>!item.passed).length;
@@ -4384,8 +4474,9 @@ function runWeeklyMajorStructureFixtureTests(){
     { name:"normalized weekly swing points are available", passed: Array.isArray(context.structureEngine?.swingPoints) && context.structureEngine.swingPoints.length > 0 },
     { name:"normalized weekly swing structure is available", passed: ["HH/HL", "LH/LL", "HH/LL", "LH/HL", "Range", "Mixed", "Unavailable"].includes(context.structureEngine?.swingStructure?.status) },
     { name:"weekly structure quality fields are available", passed: ["strong", "moderate", "weak", "unavailable"].includes(context.structureEngine?.confidence) && !!context.structureEngine?.rangeStatus && Array.isArray(context.structureEngine?.chartLabels) },
+    { name:"weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
     { name:"bullish BOS requires weekly close above prior swing high", passed: bullishBreak.status === "BOS Up" && bullishBreak.closeConfirmed === true },
-    { name:"wick-only breach is unconfirmed", passed: wickOnly.status === "Unconfirmed" && wickOnly.closeConfirmed === false },
+    { name:"wick-only breach is warning-only", passed: wickOnly.status === "Wick Break Warning" && wickOnly.closeConfirmed === false && wickOnly.wickOnly === true },
     { name:"bearish BOS requires weekly close below prior swing low", passed: bearishBreak.status === "BOS Down" && bearishBreak.closeConfirmed === true },
     { name:"CHOCH classification is safe when structure flips", passed: choch.status === "CHOCH Up" },
     { name:"macro range fallback is available when sequence is unclear", passed: ["Active Range","Potential Range","No Clear Range"].includes(deriveWeeklyMacroRangeStatus(swingSet, swings, WEEKLY_MAJOR_STRUCTURE_CONFIG).status) },
@@ -12535,6 +12626,7 @@ function runWeeklyRsiCardFixtureTests(){
     { name: "Existing Weekly Major Structure fixture still passes", passed: runWeeklyMajorStructureFixtureTests().passed === true },
     { name: "Weekly swing classification fixture passes", passed: runWeeklySwingClassificationFixtureTests().passed === true },
     { name: "Weekly structure quality fixture passes", passed: runWeeklyStructureQualityFixtureTests().passed === true },
+    { name: "Weekly BOS/CHOCH refinement fixture passes", passed: runWeeklyBosChochRefinementFixtureTests().passed === true },
     { name: "Swing Structure label replaces Swing Sequence and FVG Context remains", passed: /Swing Structure/.test(weeklyHtml) && !/Swing Sequence/.test(weeklyHtml) && /FVG Context/.test(weeklyHtml) },
   ];
   const failed = cases.filter((result)=>!result.passed).length;
