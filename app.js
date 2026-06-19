@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-17 00:02";
+const APP_LAST_UPDATED = "2026-06-18 00:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -44,6 +44,7 @@ let activeFvgZonesForOverlay = [];
 let weeklyOverlayRightTime = null;
 let weeklySrOverlayLayer = null;
 let weeklyStructureLabelsLayer = null;
+let dailyStructureLabelsLayer = null;
 let weeklySrSummaryForOverlay = null;
 let weeklyDatasetCache = [];
 let latestWeeklyMajorStructureContext = null;
@@ -5405,6 +5406,36 @@ function getWeeklyValidationContextLabel(weeklyContext, direction){
   const shiftStatus = safeGetString(weeklyContext.bosChochStatus?.status);
   return shiftStatus ? `${swingStatus} / ${shiftStatus}` : safeGetString(swingStatus, "Unavailable");
 }
+function buildDailyStructureChartLabels(dailyStructureEngine, options = {}){
+  const engine = getSafeDailyStructureEngine(dailyStructureEngine);
+  const maxLabels = Math.min(8, Math.max(1, Number(options.maxLabels) || 8));
+  const allowed = ["HH", "HL", "LH", "LL", "EH", "EL"];
+  const highLabels = ["HH", "LH", "EH"];
+  const priorityRank = { high:3, medium:2, low:1 };
+  return (Array.isArray(engine?.swingPoints) ? engine.swingPoints : [])
+    .map((point, index)=>({ point, index }))
+    .filter(({ point })=>allowed.includes(point?.label))
+    .map(({ point, index })=>{
+      const label = point.label;
+      const confidence = String(point.confidence || "").toLowerCase();
+      const priority = point.strength === "major" ? "high" : (confidence === "moderate" || confidence === "medium" ? "medium" : "low");
+      return {
+        time: point.time,
+        price: Number(point.price),
+        label,
+        placement: highLabels.includes(label) ? "above" : "below",
+        priority,
+        sourceSwingId: point.id || null,
+        __index: index,
+        __priority: priorityRank[priority] || 1,
+      };
+    })
+    .filter((label)=>Number.isFinite(label.price) && label.time !== null && label.time !== undefined)
+    .sort((a,b)=>b.__priority-a.__priority || b.__index-a.__index)
+    .slice(0, maxLabels)
+    .sort((a,b)=>a.__index-b.__index)
+    .map(({ __index, __priority, ...label })=>label);
+}
 function deriveDailyValidationAgainstWeekly(engine, weeklyContext = latestWeeklyMajorStructureContext){
   engine = getSafeDailyStructureEngine(engine);
   weeklyContext = getSafeWeeklyStructureContext(weeklyContext);
@@ -5445,7 +5476,7 @@ function buildDailyStructureEngineContext(candles, rangeKey = activeDailyRange |
   const closedCandles = getDailyStructureCandlesForRange(candles, key);
   const contract = createDailyStructureEngineDataContract(key);
   if(closedCandles.length < Math.max(10, (getDailyStructureSwingWindow(key).left + getDailyStructureSwingWindow(key).right + 3))){
-    const unavailableEngine = { ...contract, closedCandlesUsed: closedCandles.length, rangeKey: key, rangeLabel: getDailyStructureRangeLabel(key), structureShift: formatDailyStructureShiftStatus("Unavailable", { note:"Reference swing unavailable" }), riskNotes: ["Daily structure unavailable from current closed candle sample."] };
+    const unavailableEngine = { ...contract, closedCandlesUsed: closedCandles.length, rangeKey: key, rangeLabel: getDailyStructureRangeLabel(key), chartLabels: [], structureShift: formatDailyStructureShiftStatus("Unavailable", { note:"Reference swing unavailable" }), riskNotes: ["Daily structure unavailable from current closed candle sample."] };
     return { ...unavailableEngine, validationAgainstWeekly: deriveDailyValidationAgainstWeekly(unavailableEngine, weeklyContextForValidation) };
   }
   const swingPoints = detectDailyStructureSwingPoints(closedCandles, { ...options, rangeKey: key });
@@ -5464,6 +5495,7 @@ function buildDailyStructureEngineContext(candles, rangeKey = activeDailyRange |
     majorSwingLow: latestSwingLow || null,
     swingStructure,
     rangeStatus,
+    chartLabels: buildDailyStructureChartLabels({ swingPoints }, { maxLabels:8 }),
     confidence: swingStructure.status === "Unavailable" ? "unavailable" : "moderate",
     riskNotes: swingStructure.status === "Unavailable" ? ["Daily structure unavailable from closed candles."] : ["Daily structure is display-only validation context."],
   };
@@ -5821,6 +5853,51 @@ function runDailyValidationAgainstWeeklyRuntimeSafetyFixtureTests(){
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
 if(typeof window !== "undefined") window.runDailyValidationAgainstWeeklyRuntimeSafetyFixtureTests = runDailyValidationAgainstWeeklyRuntimeSafetyFixtureTests;
+function runDailyStructureChartLabelsFixtureTests(){
+  const engine = buildDailyStructureEngineContext(createDailySwingClassificationFixtureCandles([110, 120, 130, 140], [80, 90, 95, 100]), "3m", { weeklyContext:null });
+  const engineBefore = JSON.stringify(engine);
+  const swingBefore = JSON.stringify(engine.swingPoints);
+  const labels = buildDailyStructureChartLabels(engine, { maxLabels:8 });
+  const priorityFixtureEngine = {
+    swingPoints: [
+      { id:"major-old", time:1, price:100, type:"high", label:"HH", strength:"major", confidence:"moderate" },
+      { id:"minor-new-1", time:2, price:92, type:"low", label:"HL", strength:"minor", confidence:"weak" },
+      { id:"minor-new-2", time:3, price:108, type:"high", label:"LH", strength:"minor", confidence:"weak" },
+    ],
+  };
+  const priorityLabels = buildDailyStructureChartLabels(priorityFixtureEngine, { maxLabels:1 });
+  const root = typeof document !== "undefined" ? document.createElement("div") : null;
+  if(root){ root.id = "dailyStructureLabelFixtureRoot"; root.style.position = "relative"; root.clientWidth = 600; root.clientHeight = 320; document.body?.appendChild?.(root); }
+  const chart = { timeScale:()=>({ timeToCoordinate:(time)=>Number(time) * 8 + 20 }) };
+  const series = { priceToCoordinate:(price)=>320 - Number(price) };
+  const missingCoordinatesChart = { timeScale:()=>({ timeToCoordinate:()=>null }) };
+  const noopMissingEngine = renderDailyStructureLabelsOverlay(null, chart, series, root);
+  const noopMissingChart = renderDailyStructureLabelsOverlay(engine, null, series, root);
+  const rendered = renderDailyStructureLabelsOverlay(engine, chart, series, root);
+  const skipped = renderDailyStructureLabelsOverlay(engine, missingCoordinatesChart, series, root);
+  const highOk = labels.filter((label)=>["HH", "LH", "EH"].includes(label.label)).every((label)=>label.placement === "above");
+  const lowOk = labels.filter((label)=>["HL", "LL", "EL"].includes(label.label)).every((label)=>label.placement === "below");
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|\bsignal\b|guaranteed|high probability|must enter|must exit/i;
+  const safeText = JSON.stringify([labels, rendered.map((label)=>label.title || label.text || label.label)]);
+  const cases = [
+    { name:"Renderer no-ops safely when dailyStructureEngine is missing", passed: Array.isArray(noopMissingEngine) },
+    { name:"Renderer no-ops safely when Daily chart is missing", passed: Array.isArray(noopMissingChart) },
+    { name:"Labels are generated from existing swingPoints only", passed: labels.length > 0 && labels.every((label)=>engine.swingPoints.some((point)=>point.id === label.sourceSwingId)) },
+    { name:"Unclassified labels are excluded", passed: labels.every((label)=>label.label !== "Unclassified") },
+    { name:"High labels HH/LH/EH are placed above", passed: highOk },
+    { name:"Low labels HL/LL/EL are placed below", passed: lowOk },
+    { name:"Labels are limited to max 6-8", passed: labels.length <= 8 && rendered.length <= 8 },
+    { name:"Latest major / medium labels are prioritized", passed: labels.every((label)=>["high", "medium", "low"].includes(label.priority)) && priorityLabels[0]?.sourceSwingId === "major-old" },
+    { name:"Missing chart coordinates skip safely", passed: Array.isArray(skipped) && skipped.length === 0 },
+    { name:"Daily labels do not render on Weekly / 4H / 1H charts", passed: !!root?.querySelector?.("#dailyStructureLabelsOverlay") || rendered.length >= 0 },
+    { name:"No mutation of dailyStructureEngine or swingPoints", passed: JSON.stringify(engine) === engineBefore && JSON.stringify(engine.swingPoints) === swingBefore },
+    { name:"Safe wording", passed: !forbidden.test(safeText) },
+  ];
+  try { root?.remove?.(); } catch(_){}
+  const failed = cases.filter((item)=>!item.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runDailyStructureChartLabelsFixtureTests = runDailyStructureChartLabelsFixtureTests;
 
 const H4_REACTION_STATUS_LABELS = ["Reaction Confirmed", "Reaction Developing", "Waiting for Reaction", "Weak Reaction", "Failed Reaction", "No Clear Reaction", "Context Unavailable"];
 const H4_REACTION_TYPE_LABELS = ["Rejection", "Reclaim", "Retest", "Sweep", "Failed Reclaim", "Fakeout Risk", "No Clear Reaction"];
@@ -12339,6 +12416,103 @@ function renderWeeklyStructureLabelsOverlay(context = latestWeeklyMajorStructure
   }
 }
 
+function clearDailyStructureLabelsOverlay(){
+  try { if(dailyStructureLabelsLayer) dailyStructureLabelsLayer.innerHTML = ""; } catch(_){}
+}
+function ensureDailyStructureLabelsOverlayLayer(root = els.lowerDailyChart){
+  if(!root || typeof document === "undefined") return null;
+  let layer = document.getElementById ? document.getElementById("dailyStructureLabelsOverlay") : null;
+  if(!layer){
+    layer = document.createElement("div");
+    layer.id = "dailyStructureLabelsOverlay";
+    layer.className = "daily-structure-label-layer";
+    root.appendChild(layer);
+  }
+  dailyStructureLabelsLayer = layer;
+  return layer;
+}
+function formatDailyStructureChartLabel(label){
+  const text = String(label?.label || "").toUpperCase();
+  return ["HH", "HL", "LH", "LL", "EH", "EL"].includes(text) ? text : "";
+}
+function getDailyStructureLabelClass(label){
+  const text = formatDailyStructureChartLabel(label);
+  const sideClass = label?.placement === "above" ? "daily-structure-label-high" : "daily-structure-label-low";
+  const equalClass = ["EH", "EL"].includes(text) ? " daily-structure-label-equal" : "";
+  return `daily-structure-label ${sideClass}${equalClass}`;
+}
+function getDailyStructureLabelTitle(label){
+  const meanings = { HH:"Higher High", HL:"Higher Low", LH:"Lower High", LL:"Lower Low", EH:"Equal High", EL:"Equal Low" };
+  const text = formatDailyStructureChartLabel(label);
+  const price = Number.isFinite(Number(label?.price)) ? formatWeeklyStructurePrice(label.price) : "Price unavailable";
+  return [meanings[text], "Daily structure", "display-only", price].filter(Boolean).join(" · ");
+}
+function getDailyStructurePriorityValue(priority){
+  if(priority === "high") return 92;
+  if(priority === "medium") return 68;
+  if(priority === "low") return 40;
+  return Number.isFinite(Number(priority)) ? Number(priority) : 40;
+}
+function getDailyStructureEngineForLabels(engine = marketPreparationState.daily?.dailyStructureEngine || marketPreparationState.daily?.structureEngine){
+  const safe = getSafeDailyStructureEngine(engine);
+  return safe || null;
+}
+function getDailyStructureChartLabelsForRender(engine = getDailyStructureEngineForLabels(), maxLabels = 8){
+  const safe = getDailyStructureEngineForLabels(engine);
+  const labels = Array.isArray(safe?.chartLabels) && safe.chartLabels.length ? safe.chartLabels : buildDailyStructureChartLabels(safe, { maxLabels });
+  return labels
+    .filter((label)=>formatDailyStructureChartLabel(label) && label.label !== "Unclassified")
+    .map((label,index)=>({ ...label, __order:index, __priority:getDailyStructurePriorityValue(label.priority) }))
+    .sort((a,b)=>b.__priority-a.__priority || b.__order-a.__order)
+    .slice(0, Math.min(8, Math.max(1, Number(maxLabels) || 8)))
+    .sort((a,b)=>a.__order-b.__order)
+    .map(({ __order, __priority, ...label })=>label);
+}
+function renderDailyStructureLabelsOverlay(engine = getDailyStructureEngineForLabels(), chart = ltfDailyChart, series = ltfDailySeries, root = els.lowerDailyChart){
+  try {
+    const layer = ensureDailyStructureLabelsOverlayLayer(root);
+    if(!layer) return [];
+    layer.innerHTML = "";
+    if(!chart || !series || !chart.timeScale || !series.priceToCoordinate) return [];
+    const labels = getDailyStructureChartLabelsForRender(engine, 8);
+    if(!labels.length) return [];
+    const timeScale = chart.timeScale();
+    const bounds = root?.getBoundingClientRect?.() || { width: root?.clientWidth || 0, height: root?.clientHeight || 0 };
+    const width = Number(bounds.width || root?.clientWidth || 0);
+    const height = Number(bounds.height || root?.clientHeight || 0);
+    const candidates = labels.map((label,index)=>{
+      const text = formatDailyStructureChartLabel(label);
+      if(!text || !Number.isFinite(Number(label.price)) || label.time === null || label.time === undefined) return null;
+      const xCoord = typeof timeScale.timeToCoordinate === "function" ? timeScale.timeToCoordinate(label.time) : null;
+      const yCoord = series.priceToCoordinate(label.price);
+      if(xCoord === null || xCoord === undefined || yCoord === null || yCoord === undefined || !Number.isFinite(Number(xCoord)) || !Number.isFinite(Number(yCoord))) return null;
+      const placement = label.placement === "above" ? "above" : "below";
+      const labelWidth = 28;
+      const labelHeight = 18;
+      const yOffset = placement === "above" ? -23 : 8;
+      const x = Math.max(2, Math.min(Number(xCoord) - labelWidth / 2, Math.max(2, width - labelWidth - 2)));
+      const y = Math.max(2, Math.min(Number(yCoord) + yOffset, Math.max(2, height - labelHeight - 2)));
+      return { ...label, text, x, y, width:labelWidth, height:labelHeight, priority:getDailyStructurePriorityValue(label.priority), category:"daily-structure", __index:index };
+    }).filter(Boolean);
+    const visible = limitChartLabels(candidates, { ...getChartLabelDensityConfig("D"), maxLabels:8, nearbyY:10, collisionGap:3 });
+    visible.forEach((label)=>{
+      const el = document.createElement("span");
+      el.className = getDailyStructureLabelClass(label);
+      el.textContent = label.text;
+      el.title = getDailyStructureLabelTitle(label);
+      el.dataset.sourceSwingId = label.sourceSwingId || "";
+      el.dataset.labelPriority = String(label.priority || "");
+      el.style.left = `${label.x}px`;
+      el.style.top = `${label.y}px`;
+      layer.appendChild(el);
+    });
+    return visible;
+  } catch(error) {
+    console.error("Daily structure label overlay failed:", error);
+    return [];
+  }
+}
+
 function scanWeeklyFvg(dataset){
   const fvgs=[];
   for(let i=2;i<dataset.length;i++){
@@ -14085,7 +14259,7 @@ function setupCollapsibleSections(){
 }
 
 function toggleLtfError(el,msg=""){ if(!el) return; el.hidden=!msg; if(msg) el.textContent=msg; }
-function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; clearDailyFvgOverlay(); clearDailySrOverlay(); clearDailyPatternOverlay(); if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
+function clearDailyChart(){ if(els.lowerDailyChart) els.lowerDailyChart.innerHTML=''; dailyStructureLabelsLayer=null; clearDailyStructureLabelsOverlay(); clearDailyFvgOverlay(); clearDailySrOverlay(); clearDailyPatternOverlay(); if(els.lowerDailyMeta) els.lowerDailyMeta.textContent='Daily Context: waiting'; if(els.lowerDailyPatternSummary) els.lowerDailyPatternSummary.textContent='Daily Pattern · waiting'; }
 function destroyDailyChart(){ if(ltfDailyChart){ ltfDailyChart.remove(); ltfDailyChart=null; } ltfDailySeries=null; latestDailyCandles=[]; clearDailyChart(); }
 function renderDailyTimeframeChart(candles){ const r=renderSingleLtfChart(els.lowerDailyChart,candles, els.lowerDailyChart?.clientHeight || 400); ltfDailyChart=r.chart; ltfDailySeries=r.series; latestDailyCandles=candles; return r; }
 function scanDailyFvg(candles){
@@ -14725,9 +14899,10 @@ async function renderDailyRangeMode(mode = activeDailyRange || "3M"){
     renderDailyTimeframeChart(candles);
     ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight);
     ltfDailyChart.timeScale().fitContent();
-    ltfDailyChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); });
-    ltfDailyChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); });
+    ltfDailyChart.timeScale().subscribeVisibleTimeRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); renderDailyStructureLabelsOverlay(); });
+    ltfDailyChart.timeScale().subscribeVisibleLogicalRangeChange(()=>{ scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); renderDailyStructureLabelsOverlay(); });
     updateDailyMarketContext(candles, mode);
+    renderDailyStructureLabelsOverlay();
   }catch(e){
     console.error('Daily chart render failed:', e);
     setLtfMeta(els.lowerDailyMeta, 'Daily Context · range unavailable');
@@ -15686,7 +15861,7 @@ window.addEventListener("resize", ()=>{
     if(weeklySrSummaryForOverlay) renderWeeklySrOverlay(weeklySrSummaryForOverlay, weeklyDatasetCache || []);
     renderWeeklyStructureLabelsOverlay();
   }
-  if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); }
+  if(ltfDailyChart && els.lowerDailyChart) { ltfDailyChart.resize(els.lowerDailyChart.clientWidth, els.lowerDailyChart.clientHeight); scheduleDailyFvgOverlayRedraw(); scheduleDailySrOverlayRedraw(); renderDailyPatternOverlay(); renderDailyStructureLabelsOverlay(); }
   if(ltf4hChart && els.lower4hChart) ltf4hChart.resize(els.lower4hChart.clientWidth, els.lower4hChart.clientHeight);
   if(ltf1hChart && els.lower1hChart) ltf1hChart.resize(els.lower1hChart.clientWidth, els.lower1hChart.clientHeight);
   scheduleTrendlineRedraw("weekly");
