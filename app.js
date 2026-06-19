@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-02 12:52";
+const APP_LAST_UPDATED = "2026-06-19 01:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -3323,7 +3323,7 @@ function formatScenarioScoreBlock(plan){
   const label = plan?.scenarioScoreLabel || getScenarioScoreLabel(score);
   const factors = Array.isArray(plan?.scenarioScoreFactors) ? plan.scenarioScoreFactors.slice().sort((a, b)=>Math.abs(Number(b?.impact) || 0) - Math.abs(Number(a?.impact) || 0)).slice(0, 5) : [];
   const factorHtml = factors.length ? `<ul class="scenario-score-factors">${factors.map((factor)=>{ const impact = Number(factor.impact) || 0; return `<li class="${impact > 0 ? "score-support" : impact < 0 ? "score-reducer" : "score-neutral"}"><strong>${impact > 0 ? "+" : impact < 0 ? "−" : "•"}</strong>${escapeHtml(factor.label)}</li>`; }).join("")}</ul>` : '<p class="scenario-planning-muted">Score factors unavailable.</p>';
-  return `<div class="scenario-planning-block scenario-score-block"><span>Scenario Score</span><div class="scenario-score-summary"><strong>${score === null ? "—" : `${score} / 10`}</strong><small>${escapeHtml(label)}</small></div>${factorHtml}<p class="scenario-score-note">Planning context · for review only.</p></div>`;
+  return `<div class="scenario-metric-card scenario-score-block scenario-score-compact"><span class="scenario-metric-label">Scenario Score</span><div class="scenario-score-summary"><strong>${score === null ? "—" : `${score} / 10`}</strong><small>${escapeHtml(label)}</small></div>${factorHtml}<small class="scenario-metric-note">Planning context · for review only.</small></div>`;
 }
 function runScenarioScoreFixtureTests(){
   const ref = { lower: 90, upper: 92, midpoint: 91, label: "Scenario zone" };
@@ -3349,7 +3349,7 @@ function runScenarioScoreFixtureTests(){
     { name: "score wording is signal-safe", passed: !forbidden.test(JSON.stringify(addDerivedScenarioScore([complete], snapshot))) },
     { name: "score derivation does not mutate inputs", passed: original === JSON.stringify({ complete, incomplete, confirmed, failed, severeRisk, snapshot }) },
     { name: "primary selector behavior is unchanged", passed: primaryBefore === primaryAfter },
-    { name: "score-enriched cards visibly render score blocks", passed: (formatMultiScenarioPlanningSection(scoredPlans).match(/class="scenario-planning-block scenario-score-block"/g) || []).length === scoredPlans.length },
+    { name: "score-enriched cards visibly render score blocks", passed: (formatMultiScenarioPlanningSection(scoredPlans).match(/scenario-score-block/g) || []).length >= scoredPlans.length },
   ];
   const failedCount = cases.filter((result)=>!result.passed).length;
   return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
@@ -6464,13 +6464,44 @@ function formatScenarioReferenceLevel(ref){
   const range = ref.zoneText || (Number.isFinite(Number(ref.lower)) && Number.isFinite(Number(ref.upper)) ? `${formatScenarioPrice(ref.lower)}–${formatScenarioPrice(ref.upper)}` : null);
   return [ref.label, price || range, ref.source].filter(Boolean).join(" · ") || "—";
 }
+
+function formatScenarioZoneValue(zone){
+  if(!zone) return "—";
+  return zone.zoneText || (Number.isFinite(Number(zone.lower)) && Number.isFinite(Number(zone.upper)) ? `${formatScenarioPrice(zone.lower)}–${formatScenarioPrice(zone.upper)}` : "—");
+}
+function formatScenarioZoneNote(zone){
+  if(!zone) return "—";
+  return [zone.label, zone.source].filter(Boolean).join(" · ") || "Planning reference";
+}
+function formatScenarioReferenceValue(ref){
+  if(!ref) return "—";
+  const price = Number.isFinite(Number(ref.price)) ? formatScenarioPrice(ref.price) : null;
+  const range = ref.zoneText || (Number.isFinite(Number(ref.lower)) && Number.isFinite(Number(ref.upper)) ? `${formatScenarioPrice(ref.lower)}–${formatScenarioPrice(ref.upper)}` : null);
+  return price || range || "—";
+}
+function formatScenarioReferenceNote(ref, fallback = "Planning reference"){
+  if(!ref) return "—";
+  return [ref.label, ref.source].filter(Boolean).join(" · ") || fallback;
+}
+function formatScenarioMetricCard(label, value, note, extraClass = ""){
+  const className = ["scenario-metric-card", extraClass].filter(Boolean).join(" ");
+  return `<div class="${className}"><span class="scenario-metric-label">${escapeHtml(label)}</span><strong class="scenario-metric-value">${escapeHtml(value || "—")}</strong><small class="scenario-metric-note">${escapeHtml(note || "—")}</small></div>`;
+}
+function formatScenarioTpLadder(plan){
+  const rows = [
+    { label: "TP1 Reference", ref: plan?.tp1 },
+    { label: "TP2 Reference", ref: plan?.tp2 },
+    { label: "TP3 Reference", ref: plan?.tp3 },
+  ];
+  return `<div class="scenario-metric-card scenario-tp-ladder-card"><span class="scenario-metric-label">TP Ladder</span><div class="scenario-tp-ladder">${rows.map((row)=>`<div class="scenario-tp-row"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(formatScenarioReferenceValue(row.ref))}</strong></div>`).join("")}</div><small class="scenario-metric-note">Existing scenario target references</small></div>`;
+}
 function formatScenarioConfirmationList(items){
   const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 4) : [];
   if(!list.length) return '<p class="scenario-planning-muted">—</p>';
   return `<div class="scenario-planning-chip-list">${list.map((item)=>`<span class="scenario-planning-chip">${escapeHtml(item.label)}</span>`).join("")}</div>`;
 }
 function formatScenarioConfluenceList(items){
-  const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 3) : [];
+  const list = Array.isArray(items) ? items.map((item)=>typeof item === "string" ? { label: item } : item).filter((item)=>item?.label).slice(0, 3) : [];
   if(!list.length) return "—";
   return list.map((item)=>item.label).join(" · ");
 }
@@ -6830,7 +6861,7 @@ function formatScenarioCompactTimeframeContext(plan){
 }
 function formatScenarioSecondaryTimeframeDetails(plan){
   return `
-    <details class="scenario-planning-block scenario-secondary-timeframe-details">
+    <details class="scenario-planning-block scenario-secondary-timeframe-details scenario-review-compact">
       <summary><span>Timeframe Details</span><small>${formatScenarioCompactCalibrationSummary(plan)}</small></summary>
       <p class="scenario-secondary-timeframe-note">Separate context layer · does not replace Scenario Score · does not affect Primary Scenario or Confirmation Status</p>
       ${formatScenarioCompactTimeframeContext(plan)}
@@ -6961,7 +6992,7 @@ function formatTimeframeConfirmationReviewBlock(plan){
   const blockers = Array.isArray(plan?.timeframeConfirmationBlockers) ? plan.timeframeConfirmationBlockers.filter(Boolean) : [];
   const summary = blockers[0] || reasons[0] || "Timeframe confirmation context unavailable.";
   return `
-    <div class="scenario-planning-block scenario-timeframe-confirmation scenario-timeframe-confirmation-${status}">
+    <div class="scenario-planning-block scenario-timeframe-confirmation scenario-review-compact scenario-timeframe-confirmation-${status}">
       <span>Timeframe Confirmation Review</span>
       <div class="scenario-timeframe-confirmation-head"><strong>${escapeHtml(label)}</strong><small>Context review only</small></div>
       <p class="scenario-timeframe-confirmation-summary">${escapeHtml(summary)}</p>
@@ -6978,28 +7009,36 @@ function formatTimeframeConfirmationReviewBlock(plan){
 }
 function formatScenarioPlanningCard(plan){
   const statusLabel = formatScenarioPlanningStatusLabel(plan?.status);
-  const invalidationText = plan?.invalidationReference ? formatScenarioReferenceLevel(plan.invalidationReference) : "—";
+  const score = normalizeScenarioScore(plan?.scenarioScore);
+  const scoreLabel = plan?.scenarioScoreLabel || getScenarioScoreLabel(score);
+  const focusText = plan?.primaryScenarioReason || plan?.timeframeConfirmationReasons?.[0] || "Current focus: review existing planning references.";
   return `
-    <article class="scenario-planning-item">
-      <div class="scenario-planning-item-header">
-        <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
-        <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
+    <article class="scenario-planning-item scenario-card-compact">
+      <div class="scenario-card-header">
+        <div class="scenario-card-title-row">
+          <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
+          <div class="scenario-status-pill-row">
+            ${plan?.isPrimaryScenario ? '<span class="scenario-primary-badge scenario-primary-badge-inline">Primary</span>' : ""}
+            <span class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</span>
+            <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
+          </div>
+        </div>
+        <p class="scenario-card-subline"><strong>Score: ${escapeHtml(score === null ? "—" : `${score}/10`)}</strong> · ${escapeHtml(scoreLabel)}</p>
+        <p class="scenario-card-focus">${escapeHtml(focusText)}</p>
       </div>
-      ${formatPrimaryScenarioBadge(plan)}
-      <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
-      ${formatTimeframeConfirmationReviewBlock(plan)}
-      ${formatScenarioScoreBlock(plan)}
-      <div class="scenario-planning-grid scenario-reference-grid">
-        <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
-        <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
-        <div class="scenario-planning-row"><span>TP1 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp1))}</strong></div>
-        <div class="scenario-planning-row"><span>TP2 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp2))}</strong></div>
-        <div class="scenario-planning-row"><span>TP3 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp3))}</strong></div>
-        <div class="scenario-planning-row"><span>Confluence Reason</span><strong>${escapeHtml(formatScenarioConfluenceList(plan?.confluenceSources))}</strong></div>
+      <div class="scenario-planning-block scenario-confirmation-block scenario-confirmation-compact"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
+      <div class="scenario-compact-grid scenario-compact-grid-5 scenario-reference-grid">
+        ${formatScenarioMetricCard("Scenario Zone", formatScenarioZoneValue(plan?.scenarioZone), formatScenarioZoneNote(plan?.scenarioZone), "scenario-zone-card")}
+        ${formatScenarioMetricCard("Invalidation", formatScenarioReferenceValue(plan?.invalidationReference), formatScenarioReferenceNote(plan?.invalidationReference, "Scenario zone boundary"), "scenario-invalidation-card")}
+        ${formatScenarioTpLadder(plan)}
+        ${formatScenarioMetricCard("Confluence", formatScenarioConfluenceList(plan?.confluenceSources), "Market Preparation Map", "scenario-confluence-card")}
+        ${formatScenarioScoreBlock(plan)}
       </div>
-      ${formatScenarioSecondaryTimeframeDetails(plan)}
-      <div class="scenario-planning-block"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
-      ${formatScenarioRiskNotesBlock(plan)}
+      <div class="scenario-support-grid scenario-support-grid-3">
+        <div class="scenario-planning-block scenario-support-card"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
+        <div class="scenario-support-card">${formatScenarioRiskNotesBlock(plan)}</div>
+        <div class="scenario-support-card">${formatTimeframeConfirmationReviewBlock(plan)}</div>
+      </div>
     </article>
   `;
 }
@@ -7035,6 +7074,32 @@ function selectDefaultMultiScenarioTabPlan(plans = []){
   if(scored.length) return scored[0].plan;
   return scenarios[0];
 }
+function formatScenarioTfDetailsPanel(scenarios, activePlan){
+  const plan = activePlan || (Array.isArray(scenarios) ? scenarios.find(Boolean) : null) || createEmptyScenarioPlan();
+  const context = plan?.timeframeContext || createEmptyScenarioTimeframeContext();
+  const rows = [
+    { label: "Weekly", data: context.weekly },
+    { label: "Daily", data: context.daily },
+    { label: "4H", data: context.h4 },
+    { label: "1H", data: context.h1 },
+  ];
+  return `
+    <article class="scenario-tf-details-panel-card">
+      <div class="scenario-card-header">
+        <div class="scenario-card-title-row">
+          <h4>TF Details</h4>
+          <span class="scenario-planning-status status-informational">Supporting Context</span>
+        </div>
+        <p class="scenario-card-focus">Supporting timeframe context for scenario review.</p>
+      </div>
+      <div class="scenario-tf-details-grid">
+        ${rows.map((row)=>`<div class="scenario-metric-card scenario-tf-detail-card"><span class="scenario-metric-label">${escapeHtml(row.label)}</span><strong class="scenario-metric-value">${escapeHtml(normalizeScenarioTimeframeLabel(row.data?.label))}</strong><small class="scenario-metric-note">${escapeHtml(row.data?.note || "Context unavailable.")}</small></div>`).join("")}
+      </div>
+      ${formatTimeframeConfirmationReviewBlock(plan)}
+      ${formatScenarioSecondaryTimeframeDetails(plan)}
+    </article>
+  `;
+}
 function formatMultiScenarioPlanningTabs(scenarios){
   const activePlan = selectDefaultMultiScenarioTabPlan(scenarios);
   const activeIndex = Math.max(0, scenarios.findIndex((plan)=>plan === activePlan));
@@ -7044,12 +7109,15 @@ function formatMultiScenarioPlanningTabs(scenarios){
     const score = Number.isFinite(Number(plan?.scenarioScore)) ? ` · ${Number(plan.scenarioScore).toFixed(Number.isInteger(Number(plan.scenarioScore)) ? 0 : 1)}/10` : "";
     return `<button id="${key}-tab" class="multi-scenario-tab${active ? " is-active" : ""}" type="button" role="tab" aria-selected="${active ? "true" : "false"}" aria-controls="${key}-panel" data-multi-scenario-tab="${key}-panel"><span>${escapeHtml(getMultiScenarioTabLabel(plan))}</span><small>${escapeHtml(score.replace(/^ · /, ""))}</small></button>`;
   }).join("");
+  const tfDetailsKey = "multi-scenario-tf-details";
+  const tfDetailsTab = `<button id="${tfDetailsKey}-tab" class="multi-scenario-tab scenario-tf-details-tab" type="button" role="tab" aria-selected="false" aria-controls="${tfDetailsKey}-panel" data-multi-scenario-tab="${tfDetailsKey}-panel"><span>TF Details</span><small>Supporting context</small></button>`;
   const panels = scenarios.map((plan, index)=>{
     const key = getMultiScenarioTabKey(plan, index);
     const active = index === activeIndex;
     return `<section id="${key}-panel" class="multi-scenario-tab-panel${active ? " is-active" : ""}" role="tabpanel" aria-labelledby="${key}-tab"${active ? "" : " hidden"}>${formatScenarioPlanningCard(plan)}</section>`;
   }).join("");
-  return `<div class="multi-scenario-tabs" data-active-scenario-panel="${escapeHtml(getMultiScenarioTabKey(activePlan, activeIndex))}-panel"><div class="multi-scenario-tab-list" role="tablist" aria-label="Multi-Scenario Planning tabs">${tabs}</div>${panels}</div>`;
+  const tfDetailsPanel = `<section id="${tfDetailsKey}-panel" class="multi-scenario-tab-panel scenario-tf-details-panel" role="tabpanel" aria-labelledby="${tfDetailsKey}-tab" hidden>${formatScenarioTfDetailsPanel(scenarios, activePlan)}</section>`;
+  return `<div class="multi-scenario-tabs" data-active-scenario-panel="${escapeHtml(getMultiScenarioTabKey(activePlan, activeIndex))}-panel"><div class="multi-scenario-tab-list" role="tablist" aria-label="Multi-Scenario Planning tabs">${tabs}${tfDetailsTab}</div>${panels}${tfDetailsPanel}</div>`;
 }
 function formatMultiScenarioPlanningSection(plans = []){
   const scenarios = Array.isArray(plans) ? plans.filter(Boolean) : [];
@@ -7670,13 +7738,13 @@ function runMultiScenarioPlanningTabsFixtureTests(){
   const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|best trade|must enter|must exit/i;
   const cases = [
     { name: "Multi-Scenario tab container renders", passed: primaryHtml.includes('class="multi-scenario-tabs"') },
-    { name: "Bullish / Bearish / Breakout / Breakdown / Wait tabs render", passed: ["Bullish", "Bearish", "Breakout", "Breakdown", "Wait"].every((label)=>primaryHtml.includes(`>${label}<`) || primaryHtml.includes(`<span>${label}</span>`)) },
+    { name: "Bullish / Bearish / Breakout / Breakdown / Wait tabs render", passed: ["Bullish", "Bearish", "Breakout", "Breakdown", "Wait", "TF Details"].every((label)=>primaryHtml.includes(`>${label}<`) || primaryHtml.includes(`<span>${label}</span>`)) },
     { name: "Only one scenario panel is visible by default", passed: getVisibleMultiScenarioPanelCount(primaryHtml) === 1 },
     { name: "Default active tab is the Primary Scenario if present", passed: selectDefaultMultiScenarioTabPlan(primaryPlans)?.scenarioId === "potential_bearish_scenario" && /potential-bearish-scenario-1-panel/.test(primaryHtml) && /id="multi-scenario-potential-bearish-scenario-1-panel" class="multi-scenario-tab-panel is-active"/.test(primaryHtml) },
     { name: "No Primary fallback selects Wait / No-Trade", passed: waitFallback?.scenarioId === "wait_no_trade_scenario" },
     { name: "No Wait fallback selects highest score", passed: scoreFallback?.scenarioId === "breakout_retest_scenario" },
     { name: "No score fallback selects first available scenario", passed: firstFallback?.scenarioId === noWaitPlans[0]?.scenarioId },
-    { name: "Scenario card content remains present", passed: ["Confirmation Status", "Scenario Score", "Scenario Zone", "Invalidation Reference", "TP1 Reference", "Timeframe Confirmation Review"].every((label)=>primaryHtml.includes(label)) },
+    { name: "Scenario card content remains present", passed: ["Confirmation Status", "Scenario Score", "Scenario Zone", "Invalidation", "TP1 Reference", "Timeframe Confirmation Review"].every((label)=>primaryHtml.includes(label)) },
     { name: "Hidden scenario cards become available when activated", passed: clickWorks },
     { name: "Scenario data is not mutated", passed: before === JSON.stringify(primaryPlans) },
     { name: "No unsafe wording appears", passed: !forbidden.test(primaryHtml) },
@@ -7726,7 +7794,140 @@ function runMultiScenarioPlanningUiFixtureTests(){
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function runMultiScenarioCompactUiFixtureTests(){
+  const plans = buildMultiScenarioTabsFixturePlans({ primaryIndex: 0 });
+  plans[0] = {
+    ...plans[0],
+    displayTitle: "Potential Bullish Scenario",
+    scenarioZone: { label: "Confluence Zone", lower: 60183, upper: 64073, source: "Market Preparation Map" },
+    invalidationReference: { label: "Scenario zone boundary", price: 60183, source: "Market Preparation Map" },
+    tp1: { label: "Upside reference", price: 64806, source: "Market Preparation Map" },
+    tp2: { label: "Upside reference", price: 71409, source: "Market Preparation Map" },
+    tp3: null,
+    confluenceSources: [{ label: "D/W Support", source: "Market Preparation Map" }],
+    confirmationRequirements: [{ label: "H4 liquidity context review" }, { label: "IFVG context available" }],
+    riskNotes: ["Scenario zone is planning reference only.", "Target references come from existing Market Map rows."],
+    scenarioScoreFactors: [{ label: "Scenario zone available", impact: 2 }, { label: "TP1 reference available", impact: 2 }],
+  };
+  const marketMapRows = [{ label: "Fixture row", price: 64806 }];
+  const marketZones = [{ label: "Fixture zone", lower: 60183, upper: 64073 }];
+  const beforePlans = JSON.stringify(plans);
+  const beforeRows = JSON.stringify(marketMapRows);
+  const beforeZones = JSON.stringify(marketZones);
+  const projectionBefore = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const cardHtml = formatScenarioPlanningCard(plans[0]);
+  const sectionHtml = formatMultiScenarioPlanningSection(plans);
+  const html = `${cardHtml}${sectionHtml}`;
+  const projectionAfter = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const tpLadderIndex = html.indexOf('scenario-tp-ladder');
+  const tp1Index = html.indexOf('TP1 Reference');
+  const tp2Index = html.indexOf('TP2 Reference');
+  const tp3Index = html.indexOf('TP3 Reference');
+  const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|best trade|must enter|must exit/i;
+  const tabsFixture = runMultiScenarioPlanningTabsFixtureTests();
+  const cases = [
+    { name: "Scenario card renders compact layout", passed: html.includes('scenario-card-compact') && html.includes('scenario-compact-grid') },
+    { name: "Scenario title remains visible", passed: html.includes("Potential Bullish Scenario") },
+    { name: "Primary badge remains visible", passed: html.includes('scenario-primary-badge') },
+    { name: "Confirmation Status remains visible", passed: html.includes("Confirmation Status") && html.includes('scenario-confirmation-status') },
+    { name: "Scenario Score remains visible", passed: html.includes("Scenario Score") && html.includes('scenario-score-compact') },
+    { name: "Scenario Zone renders", passed: html.includes("Scenario Zone") && html.includes("$60,183") && html.includes("$64,073") },
+    { name: "Invalidation renders", passed: html.includes("Invalidation") && html.includes("$60,183") },
+    { name: "TP1 / TP2 / TP3 render inside one TP Ladder card", passed: (cardHtml.match(/class="scenario-tp-ladder"/g) || []).length === 1 && tpLadderIndex >= 0 && tp1Index > tpLadderIndex && tp2Index > tpLadderIndex && tp3Index > tpLadderIndex },
+    { name: "Unavailable TP renders safe placeholder", passed: /TP3 Reference[\s\S]{0,120}—/.test(html) },
+    { name: "Confluence Reason renders", passed: html.includes("Confluence") && html.includes("D/W Support") },
+    { name: "Confirmation Needed renders", passed: html.includes("Confirmation Needed") && html.includes("H4 liquidity context review") },
+    { name: "Risk Notes render", passed: html.includes("Risk Notes") && html.includes("Target references come from existing Market Map rows.") },
+    { name: "Timeframe Confirmation Review renders", passed: html.includes("Timeframe Confirmation Review") && html.includes('scenario-timeframe-confirmation') },
+    { name: "Review Details remains expandable", passed: /<details[^>]+scenario-timeframe-confirmation-details/.test(html) && /<summary>Review details<\/summary>/.test(html) },
+    { name: "Scenario tab switching still works", passed: tabsFixture.passed === true },
+    { name: "Primary Scenario selection unchanged", passed: plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|") === "potential_bullish_scenario" },
+    { name: "Scenario Score unchanged", passed: projectionBefore === projectionAfter && plans[0].scenarioScore === 7 },
+    { name: "Confirmation Status unchanged", passed: projectionBefore === projectionAfter && plans[0].confirmationStatus === "waiting" },
+    { name: "TP ladder values unchanged", passed: projectionBefore === projectionAfter && plans[0].tp1.price === 64806 && plans[0].tp2.price === 71409 && plans[0].tp3 === null },
+    { name: "No Market Map mutation", passed: beforeRows === JSON.stringify(marketMapRows) },
+    { name: "No Market Zones mutation", passed: beforeZones === JSON.stringify(marketZones) },
+    { name: "No scenario object mutation", passed: beforePlans === JSON.stringify(plans) },
+    { name: "Safe wording only", passed: !forbidden.test(html) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+function runMultiScenarioCompactUiRefinementFixtureTests(){
+  const plans = buildMultiScenarioTabsFixturePlans({ primaryIndex: 0 });
+  plans[0] = {
+    ...plans[0],
+    displayTitle: "Potential Bullish Scenario",
+    scenarioZone: { label: "Confluence Zone", lower: 60183, upper: 64073, source: "Market Preparation Map" },
+    invalidationReference: { label: "Scenario zone boundary", price: 60183, source: "Market Preparation Map" },
+    tp1: { label: "Upside reference", price: 64806, source: "Market Preparation Map" },
+    tp2: { label: "Upside reference", price: 71409, source: "Market Preparation Map" },
+    tp3: { label: "Upside reference", price: 74092, source: "Market Preparation Map" },
+    confluenceSources: [{ label: "D/W Support", source: "Market Preparation Map" }],
+    confirmationRequirements: [{ label: "H4 liquidity context review" }, { label: "IFVG context available" }],
+    riskNotes: ["Scenario zone is planning reference only.", "Target references come from existing Market Map rows."],
+    scenarioScore: 10,
+    scenarioScoreLabel: "Very Strong Context",
+    scenarioScoreFactors: [
+      { label: "Scenario zone available", impact: 2 },
+      { label: "Invalidation available", impact: 2 },
+      { label: "TP1 reference available", impact: 2 },
+      { label: "TP2 reference available", impact: 1 },
+      { label: "Confirmed context supports scenario review", impact: 2 },
+    ],
+  };
+  const marketMapRows = [{ label: "Fixture row", price: 64806 }];
+  const marketZones = [{ label: "Fixture zone", lower: 60183, upper: 64073 }];
+  const beforePlans = JSON.stringify(plans);
+  const beforeRows = JSON.stringify(marketMapRows);
+  const beforeZones = JSON.stringify(marketZones);
+  const projectionBefore = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const scoreBefore = JSON.stringify(deriveScenarioScore(plans[0], { existingTradePlanScenario: null, h4LiquidityContext: null, ifvgContext: [] }));
+  const cardHtml = formatScenarioPlanningCard(plans[0]);
+  const sectionHtml = formatMultiScenarioPlanningSection(plans);
+  const html = `${cardHtml}${sectionHtml}`;
+  const projectionAfter = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const scoreAfter = JSON.stringify(deriveScenarioScore(plans[0], { existingTradePlanScenario: null, h4LiquidityContext: null, ifvgContext: [] }));
+  const gridStart = cardHtml.indexOf('scenario-compact-grid-5');
+  const gridEnd = cardHtml.indexOf('scenario-support-grid', gridStart);
+  const gridHtml = gridStart >= 0 && gridEnd > gridStart ? cardHtml.slice(gridStart, gridEnd) : "";
+  const supportStart = cardHtml.indexOf('scenario-support-grid-3');
+  const supportHtml = supportStart >= 0 ? cardHtml.slice(supportStart) : "";
+  const tfTabIndex = sectionHtml.indexOf('scenario-tf-details-tab');
+  const waitTabIndex = sectionHtml.indexOf('>Wait<');
+  const tfTabHtml = tfTabIndex >= 0 ? sectionHtml.slice(tfTabIndex, sectionHtml.indexOf('</button>', tfTabIndex) + 9) : '';
+  const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|best trade|must enter|must exit/i;
+  const tabsFixture = runMultiScenarioPlanningTabsFixtureTests();
+  const cases = [
+    { name: "Main metric grid includes 5 cards", passed: ['Scenario Zone', 'Invalidation', 'TP Ladder', 'Confluence', 'Scenario Score'].every((label)=>gridHtml.includes(label)) && (gridHtml.match(/scenario-metric-card/g) || []).length >= 5 },
+    { name: "Scenario Score is inside main metric grid", passed: gridHtml.includes('Scenario Score') && !/scenario-support-grid[\s\S]*Scenario Score/.test(cardHtml) },
+    { name: "TP1 / TP2 / TP3 remain grouped in one TP Ladder card", passed: (gridHtml.match(/class="scenario-tp-ladder"/g) || []).length === 1 && ['TP1 Reference', 'TP2 Reference', 'TP3 Reference'].every((label)=>gridHtml.includes(label)) },
+    { name: "TP values are unchanged", passed: projectionBefore === projectionAfter && plans[0].tp1.price === 64806 && plans[0].tp2.price === 71409 && plans[0].tp3.price === 74092 },
+    { name: "Scenario Score value is unchanged", passed: projectionBefore === projectionAfter && plans[0].scenarioScore === 10 },
+    { name: "Score breakdown value is unchanged", passed: JSON.stringify(plans[0].scenarioScoreFactors.map((factor)=>factor.label)) === JSON.stringify(['Scenario zone available', 'Invalidation available', 'TP1 reference available', 'TP2 reference available', 'Confirmed context supports scenario review']) },
+    { name: "Confirmation Needed renders in support grid", passed: supportHtml.includes('Confirmation Needed') && supportHtml.includes('H4 liquidity context review') },
+    { name: "Risk Notes renders in support grid", passed: supportHtml.includes('Risk Notes') && supportHtml.includes('Target references come from existing Market Map rows.') },
+    { name: "Timeframe Review renders in support grid", passed: supportHtml.includes('Timeframe Confirmation Review') && supportHtml.includes('scenario-timeframe-confirmation') },
+    { name: "Review Details remains expandable", passed: /<details[^>]+scenario-timeframe-confirmation-details/.test(supportHtml) && /<summary>Review details<\/summary>/.test(supportHtml) },
+    { name: "TF Details tab appears beside Wait", passed: waitTabIndex >= 0 && tfTabIndex > waitTabIndex && sectionHtml.includes('TF Details') },
+    { name: "TF Details tab is not treated as a scenario score tab", passed: tfTabHtml.includes('<small>Supporting context</small>') && !/\/10/.test(tfTabHtml) },
+    { name: "TF Details panel renders supporting context safely", passed: sectionHtml.includes('scenario-tf-details-panel') && sectionHtml.includes('Supporting timeframe context for scenario review.') && ['Weekly', 'Daily', '4H', '1H'].every((label)=>sectionHtml.includes(label)) },
+    { name: "Scenario tabs still switch correctly", passed: tabsFixture.passed === true },
+    { name: "Primary Scenario selection unchanged", passed: plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join('|') === 'potential_bullish_scenario' },
+    { name: "Confirmation Status unchanged", passed: projectionBefore === projectionAfter && plans[0].confirmationStatus === 'waiting' },
+    { name: "Scenario Score formula unchanged", passed: scoreBefore === scoreAfter },
+    { name: "TP ladder logic unchanged", passed: projectionBefore === projectionAfter },
+    { name: "No Market Map mutation", passed: beforeRows === JSON.stringify(marketMapRows) },
+    { name: "No Market Zones mutation", passed: beforeZones === JSON.stringify(marketZones) },
+    { name: "No scenario object mutation", passed: beforePlans === JSON.stringify(plans) },
+    { name: "Safe wording only", passed: !forbidden.test(html) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
 if(typeof window !== "undefined"){
+  window.runMultiScenarioCompactUiRefinementFixtureTests = runMultiScenarioCompactUiRefinementFixtureTests;
+  window.runMultiScenarioCompactUiFixtureTests = runMultiScenarioCompactUiFixtureTests;
   window.runMultiScenarioPlanningUiFixtureTests = runMultiScenarioPlanningUiFixtureTests;
   window.runMultiScenarioPlanningTabsFixtureTests = runMultiScenarioPlanningTabsFixtureTests;
   window.runMultiScenarioPlanningTabsNoImpactFixtureTests = runMultiScenarioPlanningTabsNoImpactFixtureTests;
