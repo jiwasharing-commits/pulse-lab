@@ -6,7 +6,7 @@ const RSI_WINDOW = 49;
 // IMPORTANT:
 // Update APP_LAST_UPDATED every time the app code is modified or deployed.
 // This value represents app/code update time, not live API refresh time.
-const APP_LAST_UPDATED = "2026-06-18 00:00";
+const APP_LAST_UPDATED = "2026-06-19 00:00";
 
 const els = {
   statusText: document.getElementById("statusText"), refreshBtn: document.getElementById("refreshBtn"), appLastUpdated: document.getElementById("appLastUpdated"), dataRefreshed: document.getElementById("dataRefreshed"), globalLayerToggleBtn: document.getElementById("globalLayerToggleBtn"), globalLayerMenu: document.getElementById("globalLayerMenu"), resetAllLayersBtn: document.getElementById("resetAllLayersBtn"), chartZoomToggleBtn: document.getElementById("chartZoomToggleBtn"),
@@ -2915,6 +2915,84 @@ function normalizeScenarioTargetReference(row, role = "target"){
   if(!base) return null;
   return { ...base, price: base.midpoint };
 }
+function getScenarioDirection(direction){
+  if(direction === "bullish" || direction === "bearish") return direction;
+  return "neutral";
+}
+function getScenarioZoneBoundary(zoneRef, direction){
+  if(!zoneRef) return null;
+  const lower = Number(zoneRef.lower);
+  const upper = Number(zoneRef.upper);
+  if(direction === "bullish" && Number.isFinite(upper)) return upper;
+  if(direction === "bearish" && Number.isFinite(lower)) return lower;
+  return null;
+}
+function getTargetReferencePrice(targetRef, direction){
+  if(!targetRef) return null;
+  const lower = Number(targetRef.lower);
+  const upper = Number(targetRef.upper);
+  const price = Number(targetRef.price);
+  if(direction === "bullish" && Number.isFinite(lower)) return lower;
+  if(direction === "bearish" && Number.isFinite(upper)) return upper;
+  if(Number.isFinite(price)) return price;
+  if(Number.isFinite(lower) && Number.isFinite(upper)) return (lower + upper) / 2;
+  return null;
+}
+function getScenarioTargetDuplicateTolerance(price){
+  const value = Math.abs(Number(price));
+  return Number.isFinite(value) ? Math.max(value * 0.002, 1) : 1;
+}
+function areScenarioReferencePricesNear(a, b){
+  const left = Number(a);
+  const right = Number(b);
+  if(!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  return Math.abs(left - right) <= getScenarioTargetDuplicateTolerance(right);
+}
+function areScenarioReferenceRangesSame(a, b){
+  if(!a || !b) return false;
+  const aLower = Number(a.lower);
+  const aUpper = Number(a.upper);
+  const bLower = Number(b.lower);
+  const bUpper = Number(b.upper);
+  if(!Number.isFinite(aLower) || !Number.isFinite(aUpper) || !Number.isFinite(bLower) || !Number.isFinite(bUpper)) return false;
+  return areScenarioReferencePricesNear(aLower, bLower) && areScenarioReferencePricesNear(aUpper, bUpper);
+}
+function isScenarioTargetSameAsScenarioZone(candidate, scenarioZone){
+  if(!candidate || !scenarioZone) return false;
+  if(candidate.sourceRowKey && scenarioZone.sourceRowKey && candidate.sourceRowKey === scenarioZone.sourceRowKey) return true;
+  return areScenarioReferenceRangesSame(candidate, scenarioZone);
+}
+function isScenarioTargetSameAsInvalidation(candidate, invalidationReference){
+  if(!candidate || !invalidationReference) return false;
+  return areScenarioReferencePricesNear(candidate.price, invalidationReference.price);
+}
+function isTargetCandidateOnCorrectSide(candidate, direction, scenarioZone = null, currentPrice = null){
+  const side = getScenarioDirection(direction);
+  if(side === "neutral") return false;
+  const price = Number(candidate?.price);
+  if(!Number.isFinite(price)) return false;
+  const zoneBoundary = getScenarioZoneBoundary(scenarioZone, side);
+  const current = Number(currentPrice);
+  const references = [zoneBoundary, Number.isFinite(current) ? current : null].filter((value)=>Number.isFinite(Number(value))).map(Number);
+  if(!references.length) return true;
+  return side === "bullish" ? price > Math.max(...references) : price < Math.min(...references);
+}
+function isDuplicateTargetCandidate(candidate, selectedTargets = []){
+  if(!candidate) return true;
+  return selectedTargets.some((selected)=>areScenarioReferencePricesNear(candidate.price, selected.price) || areScenarioReferenceRangesSame(candidate, selected));
+}
+function normalizeScenarioTargetCandidates(rows = [], direction = "neutral"){
+  const side = getScenarioDirection(direction);
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index)=>{
+      const target = normalizeScenarioTargetReference(row, "targetCandidate");
+      if(!target) return null;
+      const price = getTargetReferencePrice(target, side);
+      if(!Number.isFinite(Number(price))) return null;
+      return { ...target, price: Number(price), candidateIndex: index, direction: side };
+    })
+    .filter(Boolean);
+}
 function buildScenarioLiquidityContext(state){
   const liquidity = state?.h4?.liquidityOrderflowState;
   const episode = liquidity?.activeEpisode;
@@ -2972,9 +3050,21 @@ function buildScenarioInvalidationReference(zoneRef, direction){
   }
   return { label: "Invalidation reference unavailable", price: null, boundary: null, direction: direction || "neutral", role: "invalidationReference", source: "Scenario zone boundary", detail: "Scenario zone unavailable." };
 }
-function buildScenarioTargetLadder(oppositeRows = [], direction = "neutral"){
-  const rows = Array.isArray(oppositeRows) ? oppositeRows : [];
-  const targets = [0, 1, 2].map((index)=>normalizeScenarioTargetReference(rows[index], `tp${index + 1}`));
+function buildScenarioTargetLadder(oppositeRows = [], direction = "neutral", options = {}){
+  const side = getScenarioDirection(direction);
+  if(side === "neutral") return { tp1: null, tp2: null, tp3: null, direction: side };
+  const candidates = normalizeScenarioTargetCandidates(oppositeRows, side)
+    .filter((candidate)=>!isScenarioTargetSameAsScenarioZone(candidate, options.scenarioZone))
+    .filter((candidate)=>!isScenarioTargetSameAsInvalidation(candidate, options.invalidationReference))
+    .filter((candidate)=>isTargetCandidateOnCorrectSide(candidate, side, options.scenarioZone, options.currentPrice))
+    .sort((a,b)=>side === "bullish" ? a.price - b.price : b.price - a.price);
+  const selected = [];
+  candidates.forEach((candidate)=>{
+    if(selected.length >= 3) return;
+    if(isDuplicateTargetCandidate(candidate, selected)) return;
+    selected.push(candidate);
+  });
+  const targets = [0, 1, 2].map((index)=>selected[index] ? { ...selected[index], role: `tp${index + 1}` } : null);
   return {
     tp1: targets[0] || null,
     tp2: targets[1] || null,
@@ -3041,7 +3131,8 @@ function isTargetLadderIncomplete(ladder){
 }
 function buildBullishScenarioFromSnapshot(snapshot){
   const scenarioZone = snapshot?.nearestDownside || null;
-  const targetLadder = buildScenarioTargetLadder(snapshot?.upsideRows, "bullish");
+  const invalidationReference = buildScenarioInvalidationReference(scenarioZone, "bullish");
+  const targetLadder = buildScenarioTargetLadder(snapshot?.upsideRows, "bullish", { scenarioZone, invalidationReference, currentPrice: snapshot?.currentPrice });
   const hasZone = hasScenarioZone(scenarioZone);
   return createScenarioPlanFromParts({
     scenarioId: "potential_bullish_scenario",
@@ -3049,7 +3140,7 @@ function buildBullishScenarioFromSnapshot(snapshot){
     direction: "bullish",
     status: hasZone ? "waiting" : "informational",
     scenarioZone,
-    invalidationReference: buildScenarioInvalidationReference(scenarioZone, "bullish"),
+    invalidationReference,
     tp1: targetLadder.tp1,
     tp2: targetLadder.tp2,
     tp3: targetLadder.tp3,
@@ -3061,7 +3152,8 @@ function buildBullishScenarioFromSnapshot(snapshot){
 }
 function buildBearishScenarioFromSnapshot(snapshot){
   const scenarioZone = snapshot?.nearestUpside || null;
-  const targetLadder = buildScenarioTargetLadder(snapshot?.downsideRows, "bearish");
+  const invalidationReference = buildScenarioInvalidationReference(scenarioZone, "bearish");
+  const targetLadder = buildScenarioTargetLadder(snapshot?.downsideRows, "bearish", { scenarioZone, invalidationReference, currentPrice: snapshot?.currentPrice });
   const hasZone = hasScenarioZone(scenarioZone);
   return createScenarioPlanFromParts({
     scenarioId: "potential_bearish_scenario",
@@ -3069,7 +3161,7 @@ function buildBearishScenarioFromSnapshot(snapshot){
     direction: "bearish",
     status: hasZone ? "waiting" : "informational",
     scenarioZone,
-    invalidationReference: buildScenarioInvalidationReference(scenarioZone, "bearish"),
+    invalidationReference,
     tp1: targetLadder.tp1,
     tp2: targetLadder.tp2,
     tp3: targetLadder.tp3,
@@ -3419,6 +3511,72 @@ function runScenarioConfirmationStatusFixtureTests(){
   return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
 }
 if(typeof window !== "undefined") window.runScenarioConfirmationStatusFixtureTests = runScenarioConfirmationStatusFixtureTests;
+function runScenarioTpLadderIntegrityFixtureTests(){
+  const row = (label, side, lower, upper, key = label)=>({ label, side, lower, upper, center: (Number(lower) + Number(upper)) / 2, key, source:"fixture", zoneText:`${lower}–${upper}`, sources:[{ label, source:"fixture" }] });
+  const bullishZone = normalizeScenarioZoneReference(row("Confluence Zone", "downside", 60104, 64073, "bull-zone"));
+  const bullishInvalidation = buildScenarioInvalidationReference(bullishZone, "bullish");
+  const bullishRows = [
+    row("Far Resistance", "upside", 78561, 79000, "far"),
+    row("Near Resistance", "upside", 69156, 69600, "near"),
+    row("Mid Resistance", "upside", 72404, 72800, "mid"),
+  ];
+  const bullishBefore = JSON.stringify({ bullishRows, bullishZone, bullishInvalidation });
+  const bullish = buildScenarioTargetLadder(bullishRows, "bullish", { scenarioZone: bullishZone, invalidationReference: bullishInvalidation, currentPrice: 65000 });
+  const bullishFiltered = buildScenarioTargetLadder([
+    row("Wrong Side", "upside", 62000, 62100, "wrong"),
+    row("Scenario Zone Copy", "downside", 60104, 64073, "bull-zone"),
+    row("Invalidation Copy", "upside", 60104, 60200, "invalid"),
+    row("Duplicate A", "upside", 69156, 69600, "dup-a"),
+    row("Duplicate B", "upside", 69200, 69650, "dup-b"),
+    row("Next Valid", "upside", 72404, 72800, "next-valid"),
+  ], "bullish", { scenarioZone: bullishZone, invalidationReference: bullishInvalidation, currentPrice: 65000 });
+  const bearishZone = normalizeScenarioZoneReference(row("Upside Scenario Zone", "upside", 90000, 92000, "bear-zone"));
+  const bearishInvalidation = buildScenarioInvalidationReference(bearishZone, "bearish");
+  const bearish = buildScenarioTargetLadder([
+    row("Far Support", "downside", 70000, 70400, "bear-far"),
+    row("Near Support", "downside", 84500, 85000, "bear-near"),
+    row("Mid Support", "downside", 78000, 78500, "bear-mid"),
+  ], "bearish", { scenarioZone: bearishZone, invalidationReference: bearishInvalidation, currentPrice: 88000 });
+  const bearishWrongSide = buildScenarioTargetLadder([
+    row("Wrong Side", "downside", 91000, 91200, "bear-wrong"),
+    row("Valid Bearish", "downside", 84500, 85000, "bear-valid"),
+  ], "bearish", { scenarioZone: bearishZone, invalidationReference: bearishInvalidation, currentPrice: 88000 });
+  const single = buildScenarioTargetLadder([row("Only Target", "upside", 70000, 70500, "single")], "bullish", { scenarioZone: bullishZone, invalidationReference: bullishInvalidation, currentPrice: 65000 });
+  const none = buildScenarioTargetLadder([row("Wrong Only", "upside", 62000, 62500, "wrong-only")], "bullish", { scenarioZone: bullishZone, invalidationReference: bullishInvalidation, currentPrice: 65000 });
+  const wait = buildScenarioTargetLadder(bullishRows, "neutral", { scenarioZone: bullishZone, currentPrice: 65000 });
+  const snapshotRows = {
+    upside: [...bullishRows],
+    downside: [row("Near Support", "downside", 58000, 59000, "support-near"), row("Mid Support", "downside", 52000, 53000, "support-mid"), row("Far Support", "downside", 48000, 49000, "support-far")],
+  };
+  const snapshot = buildScenarioInputSnapshot(snapshotRows, { currentPrice: 65000, h4:{}, weekly:{}, daily:{}, tradePlanScenario: createEmptyTradePlanScenario() });
+  const snapshotBefore = JSON.stringify(snapshot);
+  const mapRowsBefore = JSON.stringify(snapshotRows);
+  const plans = buildMultiScenarioPlansFromSnapshot(snapshot);
+  const primaryBefore = selectPrimaryScenarioPlan(plans, snapshot)?.scenarioId || null;
+  const primaryAfter = selectPrimaryScenarioPlan(addDerivedScenarioScore(plans, snapshot), snapshot)?.scenarioId || null;
+  const forbidden = /\bbuy\b|\bsell\b|\bentry\b|guaranteed|high probability|must enter|must exit/i;
+  const cases = [
+    { name:"Bullish unordered targets are sorted nearest-upside first", passed: bullish.tp1?.price === 69156 && bullish.tp2?.price === 72404 && bullish.tp3?.price === 78561 },
+    { name:"Bullish excludes wrong-side targets", passed: ![bullishFiltered.tp1, bullishFiltered.tp2, bullishFiltered.tp3].filter(Boolean).some((target)=>target.sourceRowKey === "wrong") },
+    { name:"Bullish excludes scenario zone as TP", passed: ![bullishFiltered.tp1, bullishFiltered.tp2, bullishFiltered.tp3].filter(Boolean).some((target)=>target.sourceRowKey === "bull-zone") },
+    { name:"Bullish excludes invalidation reference as TP", passed: ![bullishFiltered.tp1, bullishFiltered.tp2, bullishFiltered.tp3].filter(Boolean).some((target)=>areScenarioReferencePricesNear(target.price, bullishInvalidation.price)) },
+    { name:"Bullish removes duplicate / near-duplicate targets", passed: [bullishFiltered.tp1, bullishFiltered.tp2, bullishFiltered.tp3].filter(Boolean).filter((target)=>target?.sourceRowKey?.startsWith("dup")).length === 1 },
+    { name:"Bearish unordered targets are sorted nearest-downside first", passed: bearish.tp1?.price === 85000 && bearish.tp2?.price === 78500 && bearish.tp3?.price === 70400 },
+    { name:"Bearish excludes wrong-side targets", passed: bearishWrongSide.tp1?.sourceRowKey === "bear-valid" && !bearishWrongSide.tp2 && !bearishWrongSide.tp3 },
+    { name:"One valid target keeps TP1 and leaves TP2 / TP3 unavailable", passed: !!single.tp1 && single.tp2 === null && single.tp3 === null },
+    { name:"No valid targets leaves all TP references unavailable", passed: none.tp1 === null && none.tp2 === null && none.tp3 === null },
+    { name:"Wait / no-trade direction does not force TP ladder", passed: wait.tp1 === null && wait.tp2 === null && wait.tp3 === null },
+    { name:"Existing scenario order unchanged", passed: plans.slice(0, 4).map((plan)=>plan.scenarioId).join("|") === "potential_bullish_scenario|potential_bearish_scenario|breakout_retest_scenario|breakdown_retest_scenario" },
+    { name:"Primary Scenario unchanged", passed: primaryBefore === primaryAfter },
+    { name:"Market Map rows unchanged", passed: JSON.stringify(snapshotRows) === mapRowsBefore },
+    { name:"Market Zones unchanged", passed: JSON.stringify(snapshot.upsideRows) === JSON.stringify(snapshotRows.upside) && JSON.stringify(snapshot.downsideRows) === JSON.stringify(snapshotRows.downside) },
+    { name:"No mutation of source rows or scenario snapshot", passed: JSON.stringify({ bullishRows, bullishZone, bullishInvalidation }) === bullishBefore && JSON.stringify(snapshot) === snapshotBefore },
+    { name:"Safe wording only", passed: !forbidden.test(JSON.stringify([bullish, bearish, plans])) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
+if(typeof window !== "undefined") window.runScenarioTpLadderIntegrityFixtureTests = runScenarioTpLadderIntegrityFixtureTests;
 function runMultiScenarioPlanFixtureTests(){
   const row = (label, side, lower, upper, source = "h4_sr")=>({ label, side, lower, upper, center: (lower + upper) / 2, source, distancePct: 1, zoneText: `${lower}–${upper}`, sources: [{ label, source }] });
   const snapshot = buildScenarioInputSnapshot({
