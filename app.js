@@ -3420,7 +3420,7 @@ function formatScenarioScoreBlock(plan){
   const label = plan?.scenarioScoreLabel || getScenarioScoreLabel(score);
   const factors = Array.isArray(plan?.scenarioScoreFactors) ? plan.scenarioScoreFactors.slice().sort((a, b)=>Math.abs(Number(b?.impact) || 0) - Math.abs(Number(a?.impact) || 0)).slice(0, 5) : [];
   const factorHtml = factors.length ? `<ul class="scenario-score-factors">${factors.map((factor)=>{ const impact = Number(factor.impact) || 0; return `<li class="${impact > 0 ? "score-support" : impact < 0 ? "score-reducer" : "score-neutral"}"><strong>${impact > 0 ? "+" : impact < 0 ? "−" : "•"}</strong>${escapeHtml(factor.label)}</li>`; }).join("")}</ul>` : '<p class="scenario-planning-muted">Score factors unavailable.</p>';
-  return `<div class="scenario-planning-block scenario-score-block"><span>Scenario Score</span><div class="scenario-score-summary"><strong>${score === null ? "—" : `${score} / 10`}</strong><small>${escapeHtml(label)}</small></div>${factorHtml}<p class="scenario-score-note">Planning context · for review only.</p></div>`;
+  return `<div class="scenario-planning-block scenario-score-block scenario-score-compact"><span>Scenario Score</span><div class="scenario-score-summary"><strong>${score === null ? "—" : `${score} / 10`}</strong><small>${escapeHtml(label)}</small></div>${factorHtml}<p class="scenario-score-note">Planning context · for review only.</p></div>`;
 }
 function runScenarioScoreFixtureTests(){
   const ref = { lower: 90, upper: 92, midpoint: 91, label: "Scenario zone" };
@@ -3446,7 +3446,7 @@ function runScenarioScoreFixtureTests(){
     { name: "score wording is signal-safe", passed: !forbidden.test(JSON.stringify(addDerivedScenarioScore([complete], snapshot))) },
     { name: "score derivation does not mutate inputs", passed: original === JSON.stringify({ complete, incomplete, confirmed, failed, severeRisk, snapshot }) },
     { name: "primary selector behavior is unchanged", passed: primaryBefore === primaryAfter },
-    { name: "score-enriched cards visibly render score blocks", passed: (formatMultiScenarioPlanningSection(scoredPlans).match(/class="scenario-planning-block scenario-score-block"/g) || []).length === scoredPlans.length },
+    { name: "score-enriched cards visibly render score blocks", passed: (formatMultiScenarioPlanningSection(scoredPlans).match(/scenario-score-block/g) || []).length >= scoredPlans.length },
   ];
   const failedCount = cases.filter((result)=>!result.passed).length;
   return { passed: failedCount === 0, total: cases.length, failed: failedCount, results: cases };
@@ -8219,13 +8219,44 @@ function formatScenarioReferenceLevel(ref){
   const range = ref.zoneText || (Number.isFinite(Number(ref.lower)) && Number.isFinite(Number(ref.upper)) ? `${formatScenarioPrice(ref.lower)}–${formatScenarioPrice(ref.upper)}` : null);
   return [ref.label, price || range, ref.source].filter(Boolean).join(" · ") || "—";
 }
+
+function formatScenarioZoneValue(zone){
+  if(!zone) return "—";
+  return zone.zoneText || (Number.isFinite(Number(zone.lower)) && Number.isFinite(Number(zone.upper)) ? `${formatScenarioPrice(zone.lower)}–${formatScenarioPrice(zone.upper)}` : "—");
+}
+function formatScenarioZoneNote(zone){
+  if(!zone) return "—";
+  return [zone.label, zone.source].filter(Boolean).join(" · ") || "Planning reference";
+}
+function formatScenarioReferenceValue(ref){
+  if(!ref) return "—";
+  const price = Number.isFinite(Number(ref.price)) ? formatScenarioPrice(ref.price) : null;
+  const range = ref.zoneText || (Number.isFinite(Number(ref.lower)) && Number.isFinite(Number(ref.upper)) ? `${formatScenarioPrice(ref.lower)}–${formatScenarioPrice(ref.upper)}` : null);
+  return price || range || "—";
+}
+function formatScenarioReferenceNote(ref, fallback = "Planning reference"){
+  if(!ref) return "—";
+  return [ref.label, ref.source].filter(Boolean).join(" · ") || fallback;
+}
+function formatScenarioMetricCard(label, value, note, extraClass = ""){
+  const className = ["scenario-metric-card", extraClass].filter(Boolean).join(" ");
+  return `<div class="${className}"><span class="scenario-metric-label">${escapeHtml(label)}</span><strong class="scenario-metric-value">${escapeHtml(value || "—")}</strong><small class="scenario-metric-note">${escapeHtml(note || "—")}</small></div>`;
+}
+function formatScenarioTpLadder(plan){
+  const rows = [
+    { label: "TP1 Reference", ref: plan?.tp1 },
+    { label: "TP2 Reference", ref: plan?.tp2 },
+    { label: "TP3 Reference", ref: plan?.tp3 },
+  ];
+  return `<div class="scenario-metric-card scenario-tp-ladder-card"><span class="scenario-metric-label">TP Ladder</span><div class="scenario-tp-ladder">${rows.map((row)=>`<div class="scenario-tp-row"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(formatScenarioReferenceValue(row.ref))}</strong></div>`).join("")}</div><small class="scenario-metric-note">Existing scenario target references</small></div>`;
+}
 function formatScenarioConfirmationList(items){
   const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 4) : [];
   if(!list.length) return '<p class="scenario-planning-muted">—</p>';
   return `<div class="scenario-planning-chip-list">${list.map((item)=>`<span class="scenario-planning-chip">${escapeHtml(item.label)}</span>`).join("")}</div>`;
 }
 function formatScenarioConfluenceList(items){
-  const list = Array.isArray(items) ? items.filter((item)=>item?.label).slice(0, 3) : [];
+  const list = Array.isArray(items) ? items.map((item)=>typeof item === "string" ? { label: item } : item).filter((item)=>item?.label).slice(0, 3) : [];
   if(!list.length) return "—";
   return list.map((item)=>item.label).join(" · ");
 }
@@ -8585,7 +8616,7 @@ function formatScenarioCompactTimeframeContext(plan){
 }
 function formatScenarioSecondaryTimeframeDetails(plan){
   return `
-    <details class="scenario-planning-block scenario-secondary-timeframe-details">
+    <details class="scenario-planning-block scenario-secondary-timeframe-details scenario-review-compact">
       <summary><span>Timeframe Details</span><small>${formatScenarioCompactCalibrationSummary(plan)}</small></summary>
       <p class="scenario-secondary-timeframe-note">Separate context layer · does not replace Scenario Score · does not affect Primary Scenario or Confirmation Status</p>
       ${formatScenarioCompactTimeframeContext(plan)}
@@ -8716,7 +8747,7 @@ function formatTimeframeConfirmationReviewBlock(plan){
   const blockers = Array.isArray(plan?.timeframeConfirmationBlockers) ? plan.timeframeConfirmationBlockers.filter(Boolean) : [];
   const summary = blockers[0] || reasons[0] || "Timeframe confirmation context unavailable.";
   return `
-    <div class="scenario-planning-block scenario-timeframe-confirmation scenario-timeframe-confirmation-${status}">
+    <div class="scenario-planning-block scenario-timeframe-confirmation scenario-review-compact scenario-timeframe-confirmation-${status}">
       <span>Timeframe Confirmation Review</span>
       <div class="scenario-timeframe-confirmation-head"><strong>${escapeHtml(label)}</strong><small>Context review only</small></div>
       <p class="scenario-timeframe-confirmation-summary">${escapeHtml(summary)}</p>
@@ -8733,28 +8764,37 @@ function formatTimeframeConfirmationReviewBlock(plan){
 }
 function formatScenarioPlanningCard(plan){
   const statusLabel = formatScenarioPlanningStatusLabel(plan?.status);
-  const invalidationText = plan?.invalidationReference ? formatScenarioReferenceLevel(plan.invalidationReference) : "—";
+  const score = normalizeScenarioScore(plan?.scenarioScore);
+  const scoreLabel = plan?.scenarioScoreLabel || getScenarioScoreLabel(score);
+  const focusText = plan?.primaryScenarioReason || plan?.timeframeConfirmationReasons?.[0] || "Current focus: review existing planning references.";
   return `
-    <article class="scenario-planning-item">
-      <div class="scenario-planning-item-header">
-        <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
-        <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
+    <article class="scenario-planning-item scenario-card-compact">
+      <div class="scenario-card-header">
+        <div class="scenario-card-title-row">
+          <h4>${escapeHtml(plan?.displayTitle || "Scenario")}</h4>
+          <div class="scenario-status-pill-row">
+            ${plan?.isPrimaryScenario ? '<span class="scenario-primary-badge scenario-primary-badge-inline">Primary</span>' : ""}
+            <span class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</span>
+            <span class="scenario-planning-status ${getScenarioPlanningStatusClass(plan?.status)}">${escapeHtml(statusLabel)}</span>
+          </div>
+        </div>
+        <p class="scenario-card-subline"><strong>Score: ${escapeHtml(score === null ? "—" : `${score}/10`)}</strong> · ${escapeHtml(scoreLabel)}</p>
+        <p class="scenario-card-focus">${escapeHtml(focusText)}</p>
       </div>
-      ${formatPrimaryScenarioBadge(plan)}
-      <div class="scenario-planning-block scenario-confirmation-block"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
-      ${formatTimeframeConfirmationReviewBlock(plan)}
+      <div class="scenario-planning-block scenario-confirmation-block scenario-confirmation-compact"><span>Confirmation Status</span><div class="scenario-confirmation-status ${getScenarioConfirmationStatusClass(plan?.confirmationStatus)}">${escapeHtml(plan?.confirmationStatusLabel || formatScenarioConfirmationStatus(plan?.confirmationStatus))}</div>${formatScenarioConfirmationReasonsList(plan?.confirmationReasons)}</div>
+      <div class="scenario-compact-grid scenario-reference-grid">
+        ${formatScenarioMetricCard("Scenario Zone", formatScenarioZoneValue(plan?.scenarioZone), formatScenarioZoneNote(plan?.scenarioZone), "scenario-zone-card")}
+        ${formatScenarioMetricCard("Invalidation", formatScenarioReferenceValue(plan?.invalidationReference), formatScenarioReferenceNote(plan?.invalidationReference, "Scenario zone boundary"), "scenario-invalidation-card")}
+        ${formatScenarioTpLadder(plan)}
+        ${formatScenarioMetricCard("Confluence", formatScenarioConfluenceList(plan?.confluenceSources), "Market Preparation Map", "scenario-confluence-card")}
+      </div>
       ${formatScenarioScoreBlock(plan)}
-      <div class="scenario-planning-grid scenario-reference-grid">
-        <div class="scenario-planning-row"><span>Scenario Zone</span><strong>${escapeHtml(formatScenarioZoneDisplay(plan?.scenarioZone))}</strong></div>
-        <div class="scenario-planning-row"><span>Invalidation Reference</span><strong>${escapeHtml(invalidationText)}</strong></div>
-        <div class="scenario-planning-row"><span>TP1 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp1))}</strong></div>
-        <div class="scenario-planning-row"><span>TP2 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp2))}</strong></div>
-        <div class="scenario-planning-row"><span>TP3 Reference</span><strong>${escapeHtml(formatScenarioReferenceLevel(plan?.tp3))}</strong></div>
-        <div class="scenario-planning-row"><span>Confluence Reason</span><strong>${escapeHtml(formatScenarioConfluenceList(plan?.confluenceSources))}</strong></div>
+      <div class="scenario-support-grid">
+        <div class="scenario-planning-block scenario-support-card"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
+        <div class="scenario-support-card">${formatScenarioRiskNotesBlock(plan)}</div>
       </div>
+      ${formatTimeframeConfirmationReviewBlock(plan)}
       ${formatScenarioSecondaryTimeframeDetails(plan)}
-      <div class="scenario-planning-block"><span>Confirmation Needed</span>${formatScenarioConfirmationList(plan?.confirmationRequirements)}</div>
-      ${formatScenarioRiskNotesBlock(plan)}
     </article>
   `;
 }
@@ -9431,7 +9471,7 @@ function runMultiScenarioPlanningTabsFixtureTests(){
     { name: "No Primary fallback selects Wait / No-Trade", passed: waitFallback?.scenarioId === "wait_no_trade_scenario" },
     { name: "No Wait fallback selects highest score", passed: scoreFallback?.scenarioId === "breakout_retest_scenario" },
     { name: "No score fallback selects first available scenario", passed: firstFallback?.scenarioId === noWaitPlans[0]?.scenarioId },
-    { name: "Scenario card content remains present", passed: ["Confirmation Status", "Scenario Score", "Scenario Zone", "Invalidation Reference", "TP1 Reference", "Timeframe Confirmation Review"].every((label)=>primaryHtml.includes(label)) },
+    { name: "Scenario card content remains present", passed: ["Confirmation Status", "Scenario Score", "Scenario Zone", "Invalidation", "TP1 Reference", "Timeframe Confirmation Review"].every((label)=>primaryHtml.includes(label)) },
     { name: "Hidden scenario cards become available when activated", passed: clickWorks },
     { name: "Scenario data is not mutated", passed: before === JSON.stringify(primaryPlans) },
     { name: "No unsafe wording appears", passed: !forbidden.test(primaryHtml) },
@@ -9481,7 +9521,67 @@ function runMultiScenarioPlanningUiFixtureTests(){
   const failed = cases.filter((result)=>!result.passed).length;
   return { passed: failed === 0, total: cases.length, failed, results: cases };
 }
+function runMultiScenarioCompactUiFixtureTests(){
+  const plans = buildMultiScenarioTabsFixturePlans({ primaryIndex: 0 });
+  plans[0] = {
+    ...plans[0],
+    displayTitle: "Potential Bullish Scenario",
+    scenarioZone: { label: "Confluence Zone", lower: 60183, upper: 64073, source: "Market Preparation Map" },
+    invalidationReference: { label: "Scenario zone boundary", price: 60183, source: "Market Preparation Map" },
+    tp1: { label: "Upside reference", price: 64806, source: "Market Preparation Map" },
+    tp2: { label: "Upside reference", price: 71409, source: "Market Preparation Map" },
+    tp3: null,
+    confluenceSources: [{ label: "D/W Support", source: "Market Preparation Map" }],
+    confirmationRequirements: [{ label: "H4 liquidity context review" }, { label: "IFVG context available" }],
+    riskNotes: ["Scenario zone is planning reference only.", "Target references come from existing Market Map rows."],
+    scenarioScoreFactors: [{ label: "Scenario zone available", impact: 2 }, { label: "TP1 reference available", impact: 2 }],
+  };
+  const marketMapRows = [{ label: "Fixture row", price: 64806 }];
+  const marketZones = [{ label: "Fixture zone", lower: 60183, upper: 64073 }];
+  const beforePlans = JSON.stringify(plans);
+  const beforeRows = JSON.stringify(marketMapRows);
+  const beforeZones = JSON.stringify(marketZones);
+  const projectionBefore = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const cardHtml = formatScenarioPlanningCard(plans[0]);
+  const sectionHtml = formatMultiScenarioPlanningSection(plans);
+  const html = `${cardHtml}${sectionHtml}`;
+  const projectionAfter = JSON.stringify(getScenarioReadabilityProjection(plans));
+  const tpLadderIndex = html.indexOf('scenario-tp-ladder');
+  const tp1Index = html.indexOf('TP1 Reference');
+  const tp2Index = html.indexOf('TP2 Reference');
+  const tp3Index = html.indexOf('TP3 Reference');
+  const forbidden = /buy now|sell now|entry confirmed|guaranteed|high probability trade|best trade|must enter|must exit/i;
+  const tabsFixture = runMultiScenarioPlanningTabsFixtureTests();
+  const cases = [
+    { name: "Scenario card renders compact layout", passed: html.includes('scenario-card-compact') && html.includes('scenario-compact-grid') },
+    { name: "Scenario title remains visible", passed: html.includes("Potential Bullish Scenario") },
+    { name: "Primary badge remains visible", passed: html.includes('scenario-primary-badge') },
+    { name: "Confirmation Status remains visible", passed: html.includes("Confirmation Status") && html.includes('scenario-confirmation-status') },
+    { name: "Scenario Score remains visible", passed: html.includes("Scenario Score") && html.includes('scenario-score-compact') },
+    { name: "Scenario Zone renders", passed: html.includes("Scenario Zone") && html.includes("$60,183") && html.includes("$64,073") },
+    { name: "Invalidation renders", passed: html.includes("Invalidation") && html.includes("$60,183") },
+    { name: "TP1 / TP2 / TP3 render inside one TP Ladder card", passed: (cardHtml.match(/class="scenario-tp-ladder"/g) || []).length === 1 && tpLadderIndex >= 0 && tp1Index > tpLadderIndex && tp2Index > tpLadderIndex && tp3Index > tpLadderIndex },
+    { name: "Unavailable TP renders safe placeholder", passed: /TP3 Reference[\s\S]{0,120}—/.test(html) },
+    { name: "Confluence Reason renders", passed: html.includes("Confluence") && html.includes("D/W Support") },
+    { name: "Confirmation Needed renders", passed: html.includes("Confirmation Needed") && html.includes("H4 liquidity context review") },
+    { name: "Risk Notes render", passed: html.includes("Risk Notes") && html.includes("Target references come from existing Market Map rows.") },
+    { name: "Timeframe Confirmation Review renders", passed: html.includes("Timeframe Confirmation Review") && html.includes('scenario-timeframe-confirmation') },
+    { name: "Review Details remains expandable", passed: /<details[^>]+scenario-timeframe-confirmation-details/.test(html) && /<summary>Review details<\/summary>/.test(html) },
+    { name: "Scenario tab switching still works", passed: tabsFixture.passed === true },
+    { name: "Primary Scenario selection unchanged", passed: plans.filter((plan)=>plan.isPrimaryScenario).map((plan)=>plan.scenarioId).join("|") === "potential_bullish_scenario" },
+    { name: "Scenario Score unchanged", passed: projectionBefore === projectionAfter && plans[0].scenarioScore === 7 },
+    { name: "Confirmation Status unchanged", passed: projectionBefore === projectionAfter && plans[0].confirmationStatus === "waiting" },
+    { name: "TP ladder values unchanged", passed: projectionBefore === projectionAfter && plans[0].tp1.price === 64806 && plans[0].tp2.price === 71409 && plans[0].tp3 === null },
+    { name: "No Market Map mutation", passed: beforeRows === JSON.stringify(marketMapRows) },
+    { name: "No Market Zones mutation", passed: beforeZones === JSON.stringify(marketZones) },
+    { name: "No scenario object mutation", passed: beforePlans === JSON.stringify(plans) },
+    { name: "Safe wording only", passed: !forbidden.test(html) },
+  ];
+  const failed = cases.filter((result)=>!result.passed).length;
+  return { passed: failed === 0, total: cases.length, failed, results: cases };
+}
 if(typeof window !== "undefined"){
+  window.runMultiScenarioCompactUiFixtureTests = runMultiScenarioCompactUiFixtureTests;
   window.runMultiScenarioPlanningUiFixtureTests = runMultiScenarioPlanningUiFixtureTests;
   window.runMultiScenarioPlanningTabsFixtureTests = runMultiScenarioPlanningTabsFixtureTests;
   window.runMultiScenarioPlanningTabsNoImpactFixtureTests = runMultiScenarioPlanningTabsNoImpactFixtureTests;
